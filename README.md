@@ -206,6 +206,148 @@ Then update your MCP client configuration to use the Docker container:
 
 ---
 
+## ⚡ Best Practices
+
+MCPGen is designed to scaffold a well-structured MCP servers from OpenAPI specs. This is a great starting point, not necessarily a `Best Practice`. Wrapping an OpenAPI spec under an MCP facade is convenient, but not always the “proper” way to build MCPs. For robust, agent-friendly tools, consider how your server can best expose business logic, aggregate data, and provide clear, useful tool contracts.
+
+**Considerations:**
+- Treat the generated code as a foundation to extend and customize.
+- Don't assume a 1:1 mapping of OpenAPI endpoints to MCP tools is ideal; you may want to aggregate multiple API calls into a single tool, or refactor handlers for advanced logic.
+- Use the scaffold to rapidly stub out endpoints, then iterate and enhance as needed.
+
+---
+
+## 🤔 Why MCPGen?
+
+Postman now offers robust support for the Model Context Protocol (MCP), including:
+- MCP client and server features
+- Code generation
+- A catalog of hosted, discoverable MCP endpoints
+- Visual agent-building and cloud collaboration
+
+**When should you use MCPGen?**
+- **Offline, air-gapped, or regulated environments** where cloud-based tools aren’t an option
+- **Rust-first, codegen-centric workflows:** Generate type-safe, production-grade Rust MCP servers from OpenAPI specs, ready for CI/CD and self-hosting
+- **Full template control:** Tweak every line of generated code, use custom templates, and integrate with your own infra
+- **CLI-first automation:** Perfect for embedding in build scripts, Docker, and serverless workflows
+
+**When should you use Postman?**
+- Visual design, rapid prototyping, and cloud collaboration
+- Building, testing, and deploying MCP agents with a GUI
+- Discovering and consuming public MCP endpoints
+
+**Summary:**
+- Use Postman for visual, collaborative, and cloud-first agent development
+- Use MCPGen for local, reproducible, code-first MCP server generation with maximum control and zero cloud dependencies
+
+---
+
+## 🏛️ Architecture
+
+MCPGen is built for extensibility, automation, and code quality. Here’s how the core pieces fit together:
+
+**Core Modules:**
+- `openapi`: Loads and validates OpenAPI specs (YAML/JSON, local or URL)
+- `generator`: Orchestrates code generation from the parsed OpenAPI model
+- `template`: Handles Tera-based templates for idiomatic Rust code
+- `cli`: Command-line interface for scaffolding, configuration, and workflow
+
+**Code Generation Flow:**
+
+```
+OpenAPI Spec (local file or URL)
+         │
+         ▼
+   [openapi module]
+         │
+         ▼
+   [generator module]
+         │
+         ▼
+   [template module]
+         │
+         ▼
+Generated Rust MCP Server (Axum, etc.)
+```
+
+- The generated server uses [Stdio](https://modelcontextprotocol.io/introduction) as the primary MCP protocol for agent integration, but can be extended for HTTP/SSE and other transports.
+- All code is idiomatic Rust, ready for further customization and production deployment.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from the community! To keep MCPGen high-quality and maintainable, please follow these guidelines:
+
+- **Fork & Clone**: Fork the repo and clone your fork locally.
+- **Branch Naming**: Use the convention `GH-<issue-number>_<ProperCaseSummary>` (e.g., `GH-9_EndToEndIntegrationTest`).
+- **Pull Requests**:
+  - All PRs require review.
+  - All tests must pass (`cargo test` and integration tests).
+  - Code coverage must not decrease.
+  - Update documentation for any user-facing or API changes.
+- **Testing**:
+  - Add or update unit and integration tests for all new features or bugfixes.
+  - Run: `cargo test -p mcpgen test_all_templates_with_openapi_specs`
+- **Docs**:
+  - Update relevant docs and add examples for new features.
+  - Document any new patterns or conventions.
+- **CI/CD**:
+  - Ensure your branch passes all checks before requesting review.
+
+For more details, see [CONTRIBUTING.md](CONTRIBUTING.md) if available.
+
+---
+
+## 🛠️ Developer Workflow
+
+Here’s how to work productively with MCPGen as a contributor or advanced user:
+
+### 🧪 Running Tests
+- **Unit & Integration Tests:**
+  - Run all tests: `cargo test`
+  - Run integration tests (all templates with OpenAPI specs):
+    ```bash
+    cargo test -p mcpgen test_all_templates_with_openapi_specs
+    ```
+- **Test Location:** See [`crates/mcpgen-cli/tests/integration_test.rs`](crates/mcpgen-cli/tests/integration_test.rs) for integration coverage.
+- **Test-First Principle:** Add failing tests before implementing new features or bugfixes.
+
+### 🏗️ Building
+- **Standard build:**
+  ```bash
+  cargo build --release
+  ```
+- **Docker build:**
+  ```bash
+  docker build -t mcpgen .
+  ```
+
+### 🧩 Adding Templates or Plugins
+- See [`docs/TEMPLATES.md`](docs/TEMPLATES.md) for template structure, manifest, variables, and hooks.
+- Add new templates under the `templates/` directory (do not modify existing templates without explicit approval).
+
+### ⚡ Local Development Tips
+- Use branch naming convention: `GH-<issue-number>_<ProperCaseSummary>`
+- Run `cargo fmt` and `cargo clippy` before pushing
+- Update documentation and examples with every user-facing change
+- All code must be idiomatic Rust and pass CI checks
+
+---
+
+## 🎬 Demo
+
+Want to see MCPGen in action? Check back soon for:
+- **Loom/asciinema walkthroughs** showing:
+  - Scaffolding an MCP server from an OpenAPI spec (local & URL)
+  - Running the generated server (locally or via Docker)
+  - Integrating with AI agents via the MCP protocol
+- **Community demos**: Submit your own demo links via PR!
+
+👉 _Have a killer workflow or agent integration? [Open a PR](https://github.com/clafollett/mcpgen/pulls) to add your demo here!_
+
+---
+
 ## 🏗️ Project Structure
 
 ```
