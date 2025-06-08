@@ -4,7 +4,7 @@
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/clafollett/mcpgen?style=for-the-badge)](https://github.com/clafollett/mcpgen/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.86.0%2B-orange?logo=rust&style=for-the-badge)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=for-the-badge)](https://github.com/clafollett/mcpgen)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-85ea2d?logo=openapi-initiative&style=for-the-badge)](https://www.openapis.org/)
 
 ---
@@ -368,56 +368,6 @@ petstore-server/
 └── README.md           # Project documentation
 ```
 
-## 📚 Documentation
-
-For detailed documentation, check out:
-
-- [CLI Reference](docs/CLI_REFERENCE.md) - Complete command-line options
-- [Configuration Guide](docs/CONFIGURATION.md) - Customizing your MCP server
-- [Template System](docs/TEMPLATES.md) - Creating custom templates
-- [MCP Protocol](https://modelcontextprotocol.io) - Learn about Model Context Protocol
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-```bash
-# Clone the repository
-git clone https://github.com/clafollett/mcpgen.git
-
-# Build in development mode
-cargo build
-
-# Run tests
-cargo test
-
-# Run lints
-cargo clippy
-```
-
-## 📄 License
-
-This project is licensed under either of:
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
-
-at your option.
-
----
-
-## 🙌 Acknowledgments
-
-- Built with ❤️ and [Rust](https://www.rust-lang.org/)
-- Inspired by the [Model Context Protocol](https://modelcontextprotocol.io/)
-- Uses [axum](https://github.com/tokio-rs/axum) for the web server
-- Powered by [clap](https://github.com/clap-rs/clap) for CLI parsing
-│   └── main.rs          # Server entry point
-└── templates/           # Custom templates (optional)
-```
-
 ## Configuration ⚙️
 
 MCPGen can be configured through multiple methods (in order of precedence):
@@ -452,15 +402,6 @@ MCPGen uses [Tera](https://tera.netlify.app/) templates for code generation. You
 ### Custom Templates
 Create a `templates` directory in your project root and add your template files. MCPGen will use these instead of the built-in templates.
 
-## Documentation 📚
-
-For detailed documentation, please refer to:
-
-- [Configuration Guide](docs/CONFIGURATION.md) - Complete reference for configuring MCPGen
-- [CLI Reference](docs/CLI_REFERENCE.md) - Detailed documentation of all commands and options
-- [Templates](docs/TEMPLATES.md) - Guide to creating and customizing templates
-- [Contributing](CONTRIBUTING.md) - How to contribute to the project
-
 ## Examples 📚
 
 ### Generate a server from Petstore API
@@ -480,14 +421,10 @@ cargo run
 
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
-## License 📄
+## 📄 License
 
-This project is dual-licensed under either:
+This project is licensed under the [MIT License](LICENSE).
 
-- MIT License ([LICENSE-MIT](LICENSE-MIT))
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-
-at your option.
 
 ## Related Projects 🔗
 
