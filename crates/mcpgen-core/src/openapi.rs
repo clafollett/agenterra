@@ -157,26 +157,75 @@ pub struct OpenApiContext {
 }
 
 impl OpenApiContext {
+    /// Create a new OpenAPISpec from a file or URL (supports both YAML and JSON)
+    pub async fn from_file_or_url<P: AsRef<str>>(location: P) -> crate::Result<Self> {
+        let location = location.as_ref();
+        
+        // Check if the input looks like a URL
+        if location.starts_with("http://") || location.starts_with("https://") {
+            return Self::from_url(location).await;
+        }
+        
+        // Otherwise treat as a file path
+        Self::from_file(location).await
+    }
+    
     /// Create a new OpenAPISpec from a file (supports both YAML and JSON)
     pub async fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
         let content = fs::read_to_string(path).await?;
-
+        Self::parse_content(&content).map_err(|e| {
+            crate::Error::openapi(format!(
+                "Failed to parse OpenAPI spec at {}: {}",
+                path.display(),
+                e
+            ))
+        })
+    }
+    
+    /// Create a new OpenAPISpec from a URL (supports both YAML and JSON)
+    pub async fn from_url(url: &str) -> crate::Result<Self> {
+        let response = reqwest::get(url).await.map_err(|e| {
+            crate::Error::openapi(format!("Failed to fetch OpenAPI spec from {}: {}", url, e))
+        })?;
+        
+        if !response.status().is_success() {
+            return Err(crate::Error::openapi(format!(
+                "Failed to fetch OpenAPI spec from {}: HTTP {}",
+                url,
+                response.status()
+            )));
+        }
+        
+        let content = response.text().await.map_err(|e| {
+            crate::Error::openapi(format!(
+                "Failed to read response from {}: {}",
+                url, e
+            ))
+        })?;
+        
+        Self::parse_content(&content).map_err(|e| {
+            crate::Error::openapi(format!(
+                "Failed to parse OpenAPI spec from {}: {}",
+                url, e
+            ))
+        })
+    }
+    
+    /// Parse content as either JSON or YAML
+    fn parse_content(content: &str) -> Result<Self, String> {
         // Try to parse as JSON first
-        if let Ok(json) = serde_json::from_str(&content) {
+        if let Ok(json) = serde_json::from_str(content) {
             return Ok(Self { json });
         }
 
         // If JSON parsing fails, try YAML
-        if let Ok(json) = serde_yaml::from_str(&content) {
+        if let Ok(json) = serde_yaml::from_str(content) {
             return Ok(Self { json });
         }
 
         // If both parsers fail, return an error
-        Err(crate::Error::openapi(format!(
-            "Failed to parse OpenAPI spec at {}: invalid JSON or YAML",
-            path.display()
-        )))
+        Err("content is neither valid JSON nor YAML".to_string())
     }
 
     /// Get a reference to the raw JSON value

@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use clap::Parser;
 use mcpgen_core::{
-    TemplateOptions, openapi::OpenApiContext, template::Template, template_manager::TemplateManager,
+    TemplateOptions, template::Template, template_manager::TemplateManager,
 };
+use reqwest;
+use tempfile;
 use tokio::fs;
 
 #[derive(Parser)]
@@ -25,9 +27,13 @@ pub enum Commands {
     // TODO: Add future subcommands here (e.g., Validate, ListTemplates, etc.)
     /// Scaffold a new MCP server from an OpenAPI spec
     Scaffold {
-        /// Path to OpenAPI spec file (YAML or JSON)
+        /// Path or URL to OpenAPI spec (YAML or JSON)
+        ///
+        /// Can be a local file path or an HTTP/HTTPS URL
+        /// Example: --spec path/to/spec.yaml
+        /// Example: --spec https://example.com/openapi.json
         #[arg(long)]
-        spec: PathBuf,
+        spec: String,
         /// Output directory for generated code
         #[arg(long)]
         output: PathBuf,
@@ -141,18 +147,6 @@ async fn main() -> anyhow::Result<()> {
                     .await
                     .context("Failed to initialize template manager")?;
 
-            // Create template options
-            let template_opts = TemplateOptions {
-                all_operations: true,
-                include_operations: Vec::new(),
-                exclude_operations: Vec::new(),
-                server_port: *port,
-                log_file: log_file.clone(),
-                include_tests: false,
-                overwrite: false,
-                agent_instructions: None,
-            };
-
             tracing::debug!("Creating output directory: {}", output.display());
 
             // Create output directory if it doesn't exist
@@ -195,15 +189,45 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
-            // Load OpenAPI spec
-            tracing::debug!("Loading OpenAPI spec from: {}", spec.display());
-            let spec_obj = OpenApiContext::from_file(spec)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to load OpenAPI spec: {}", e))?;
+            // Load the OpenAPI spec from either a file or URL
+            tracing::debug!("Loading OpenAPI spec from: {}", spec);
+            
+            // Check if the spec is a URL or a file path
+            let spec_obj = if spec.starts_with("http://") || spec.starts_with("https://") {
+                // It's a URL, use from_url
+                let response = reqwest::get(spec.as_str()).await
+                    .map_err(|e| anyhow::anyhow!("Failed to fetch OpenAPI spec from {}: {}", spec, e))?;
+                
+                if !response.status().is_success() {
+                    return Err(anyhow::anyhow!(
+                        "Failed to fetch OpenAPI spec from {}: HTTP {}",
+                        spec,
+                        response.status()
+                    ));
+                }
+                
+                let content = response.text().await
+                    .map_err(|e| anyhow::anyhow!("Failed to read response from {}: {}", spec, e))?;
+                
+                // Parse the content as OpenAPI spec
+                // We need to save it to a temporary file since OpenApiContext::from_file expects a file path
+                let temp_dir = tempfile::tempdir()?;
+                let temp_file = temp_dir.path().join("openapi_spec.json");
+                tokio::fs::write(&temp_file, &content).await?;
+                
+                mcpgen_core::openapi::OpenApiContext::from_file(&temp_file)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to parse OpenAPI spec from {}: {}", spec, e))?
+            } else {
+                // It's a file path
+                mcpgen_core::openapi::OpenApiContext::from_file(&spec)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to load OpenAPI spec: {}", e))?
+            };
 
             // Create config with template
             let config = mcpgen_core::Config {
-                openapi_spec: spec.to_string_lossy().to_string(),
+                openapi_spec: spec.to_string(),
                 output_dir: output.to_string_lossy().to_string(),
                 template: template.to_string(),
                 include_all: true,              // Include all operations by default
@@ -211,14 +235,17 @@ async fn main() -> anyhow::Result<()> {
                 exclude_operations: Vec::new(), // No operations to exclude
             };
 
-            // Generate code
-            if let Err(e) = template_manager
-                .generate(&spec_obj, &config, Some(template_opts))
-                .await
-            {
-                eprintln!("Codegen failed: {e}");
-                std::process::exit(1);
-            }
+            // Create template options
+            let template_opts = TemplateOptions {
+                server_port: *port,
+                log_file: log_file.clone(),
+                ..Default::default()
+            };
+
+            // Generate the server using the template manager we already created
+            template_manager.generate(&spec_obj, &config, Some(template_opts)).await?;
+            
+            println!("✅ Successfully generated server in: {}", output.display());
         }
     }
     Ok(())
