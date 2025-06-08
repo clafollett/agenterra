@@ -66,7 +66,7 @@ impl TestContext {
             let url_path = spec_name
                 .trim_start_matches("http://")
                 .trim_start_matches("https://");
-            
+
             // Get the last path component or domain if no path
             let parts: Vec<&str> = url_path.split('/').collect();
             let name_part = if parts.len() > 1 && !parts.last().unwrap().is_empty() {
@@ -76,7 +76,7 @@ impl TestContext {
                 // Use the domain name if no meaningful path
                 parts[0].split('.').next().unwrap_or("unknown")
             };
-            
+
             // Remove file extension and clean up
             Path::new(name_part)
                 .file_stem()
@@ -143,17 +143,12 @@ mod tests {
     }
 
     lazy_static! {
-        static ref TEST_SPECS: Vec<String> = vec![
-            get_test_spec_path("tests/fixtures/openapi/petstore.openapi.v3.json"),
-            get_test_spec_path("tests/fixtures/openapi/petstore.swagger.v2.json"),
-        ];
+        static ref OPENAPI_V3_URL: String =
+            "https://petstore3.swagger.io/api/v3/openapi.json".to_string();
         static ref OPENAPI_V3_SPEC: String =
             get_test_spec_path("tests/fixtures/openapi/petstore.openapi.v3.json");
         static ref SWAGGER_V2_SPEC: String =
             get_test_spec_path("tests/fixtures/openapi/petstore.swagger.v2.json");
-        // Public URL to a sample OpenAPI spec for testing
-        static ref OPENAPI_V3_URL: &'static str =
-            "https://petstore3.swagger.io/api/v3/openapi.json";
     }
 
     // Required files that must exist in the generated output
@@ -164,18 +159,13 @@ mod tests {
         // This test verifies that the CLI can load OpenAPI specs from URLs
         // and successfully generate a server
 
-        // Clean up any existing environment variables
         cleanup_env_vars();
         let ctx = TestContext::new()?;
 
-        // Use a simple template for faster testing
         let template = "rust-axum";
         let template_dir = ctx.workspace_root.join("templates").join(template);
+        let output_dir = ctx.output_path(template, OPENAPI_V3_URL.as_str());
 
-        // Use the output_path method to get consistent naming
-        let output_dir = ctx.output_path(template, *OPENAPI_V3_URL);
-
-        // Clean up any existing output directory
         if output_dir.exists() {
             std::fs::remove_dir_all(&output_dir)?;
         }
@@ -187,7 +177,7 @@ mod tests {
         let mut cmd = ctx.build_command()?;
         cmd.arg("scaffold")
             .arg("--spec")
-            .arg(*OPENAPI_V3_URL)
+            .arg(OPENAPI_V3_URL.as_str())
             .arg("--template")
             .arg(template)
             .arg("--output")
