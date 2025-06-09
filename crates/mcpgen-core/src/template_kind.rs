@@ -20,15 +20,10 @@
 //!
 //! // The default template is RustAxum
 //! assert_eq!(TemplateKind::default(), TemplateKind::RustAxum);
-//!
-//! // Find the base template directory (synchronous example)
-//! if let Some(base_dir) = template.find_template_base_dir() {
-//!     println!("Found template base directory: {}", base_dir.display());
-//! }
 //! ```
 //!
-//! For async operations like `template_dir()`, you would typically use an async runtime
-//! like `tokio` or `async-std` in your application.
+//! For template directory discovery, use the `TemplateDir::discover()` method from the
+//! `template_dir` module, which handles finding template directories automatically.
 //!
 //! # Template Discovery
 //!

@@ -1119,7 +1119,8 @@ mod tests {
     #[tokio::test]
     async fn test_template_manager() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let template_dir = temp_dir.path().join("templates");
+        let templates_base_dir = temp_dir.path().join("templates");
+        let template_dir = templates_base_dir.join("custom");
         tokio::fs::create_dir_all(&template_dir).await?;
 
         // Create a simple template
@@ -1147,13 +1148,13 @@ mod tests {
 
         // Test creating a new TemplateManager
         let manager =
-            TemplateManager::new(TemplateKind::Custom, Some(template_dir.clone())).await?;
+            TemplateManager::new(TemplateKind::Custom, Some(templates_base_dir.clone())).await?;
 
         // Test template_kind
         assert_eq!(manager.template_kind(), TemplateKind::Custom);
 
         // Test template_dir_path
-        assert!(manager.template_dir_path().ends_with("templates"));
+        assert!(manager.template_dir_path().ends_with("custom"));
 
         // Test has_template
         assert!(manager.has_template("test.tera"));

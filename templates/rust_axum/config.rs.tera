@@ -8,12 +8,8 @@ use std::time::Duration;
 /// Server configuration
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Server port
-    pub port: u16,
     /// Log directory
     pub log_dir: PathBuf,
-    /// Log file name
-    pub log_file: String,
     /// Base API URL
     pub api_url: String,
     /// Transport type (stdio or sse)
@@ -27,28 +23,29 @@ pub struct Config {
 impl Config {
     /// Load configuration from environment variables
     pub fn load() -> Self {
-        let port = env::var("PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or({{ server_port | default(value=8080) }});
-            
         let log_dir = env::var("LOG_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("logs"));
-            
-        let log_file = env::var("LOG_FILE")
-            .unwrap_or_else(|_| "{{ log_file | default(value="{{ project_name }}-mcp.log") }}".to_string());
+            .unwrap_or_else(|_| {
+                // Default to logs directory next to the executable
+                if let Ok(exe_path) = std::env::current_exe() {
+                    if let Some(exe_dir) = exe_path.parent() {
+                        return exe_dir.join("logs");
+                    }
+                }
+                // Fallback to current directory if we can't determine executable path
+                PathBuf::from("logs")
+            });
             
         let api_url = env::var("API_URL")
-            .unwrap_or_else(|_| "https://api.example.com".to_string());
+            .unwrap_or_else(|_| "{{ base_api_url }}".to_string());
             
         let transport = env::var("TRANSPORT")
             .unwrap_or_else(|_| "stdio".to_string());
             
         let sse_addr = env::var("SSE_ADDR")
-            .unwrap_or_else(|_| "127.0.0.1:8080".to_string())
+            .unwrap_or_else(|_| "127.0.0.1:{{ server_port | default(value=8080) }}".to_string())
             .parse()
-            .unwrap_or_else(|_| "127.0.0.1:8080".parse().unwrap());
+            .unwrap_or_else(|_| "127.0.0.1:{{ server_port | default(value=8080) }}".parse().unwrap());
             
         let sse_keep_alive = env::var("SSE_KEEP_ALIVE")
             .ok()
@@ -57,9 +54,7 @@ impl Config {
             .unwrap_or_else(|| Duration::from_secs(30));
             
         Self {
-            port,
             log_dir,
-            log_file,
             api_url,
             transport,
             sse_addr,
@@ -70,13 +65,21 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let log_dir = if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                exe_dir.join("logs")
+            } else {
+                PathBuf::from("logs")
+            }
+        } else {
+            PathBuf::from("logs")
+        };
+        
         Self {
-            port: {{ server_port | default(value=8080) }},
-            log_dir: PathBuf::from("logs"),
-            log_file: "{{ log_file | default(value="{{ project_name }}-mcp.log") }}".to_string(),
-            api_url: "https://api.example.com".to_string(),
+            log_dir,
+            api_url: "{{ base_api_url }}".to_string(),
             transport: "stdio".to_string(),
-            sse_addr: "127.0.0.1:8080".parse().unwrap(),
+            sse_addr: "127.0.0.1:{{ server_port | default(value=8080) }}".parse().unwrap(),
             sse_keep_alive: Duration::from_secs(30),
         }
     }

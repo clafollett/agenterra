@@ -179,12 +179,14 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use std::net::SocketAddr;
+    use std::path::PathBuf;
     use std::time::Duration;
 
     #[test]
     fn test_select_server_mode_stdio() {
         let cfg = Config {
-            log_dir: "logs".to_string(),
+            log_dir: PathBuf::from("logs"),
+            api_url: "https://api.example.com".to_string(),
             transport: "stdio".to_string(),
             sse_addr: "1.2.3.4:8000".parse::<SocketAddr>().unwrap(),
             sse_keep_alive: Duration::from_secs(5),
@@ -197,7 +199,8 @@ mod tests {
     #[test]
     fn test_select_server_mode_sse() {
         let mut cfg = Config {
-            log_dir: "logs".to_string(),
+            log_dir: PathBuf::from("logs"),
+            api_url: "https://api.example.com".to_string(),
             transport: "stdio".to_string(),
             sse_addr: "1.2.3.4:9000".parse::<SocketAddr>().unwrap(),
             sse_keep_alive: Duration::from_secs(10),

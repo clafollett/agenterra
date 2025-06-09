@@ -27,7 +27,7 @@ pub struct {{ parameters_type }} {
 // Implement Endpoint for generic handler
 impl Endpoint for {{ parameters_type }} {
     fn name() -> &'static str {
-        "{{ endpoint }}"
+        "{{ endpoint_raw }}"
     }
 
     fn get_params(&self) -> HashMap<String, String> {
@@ -82,7 +82,7 @@ impl IntoContents for {{ response_type }} {
     }
 }
 
-/// `/{{ endpoint }}` endpoint handler
+/// `{{ endpoint_raw }}` endpoint handler
 /// {{ summary }}
 {% if description -%}
 /// {{ description }}
@@ -92,7 +92,7 @@ impl IntoContents for {{ response_type }} {
 {{ p.example }}{% endif %}{% endif %}{% endfor %}"#]
 {%- endif %}
 #[doc = r#"Verb: GET
-Path: /{{ endpoint }}
+Path: {{ endpoint_raw }}
 Parameters: {{ parameters_type }}
 Responses:
     200: Successful Operation
@@ -109,7 +109,7 @@ pub async fn {{ endpoint }}_handler(config: &Config, params: &{{ parameters_type
         event = "incoming_request",
         endpoint = "{{ endpoint }}",
         method = "GET",
-        path = "/{{ endpoint }}",
+        path = "{{ endpoint_raw }}",
         params = serde_json::to_string(params).unwrap()
     );
     debug!(target = "handler", event = "before_api_call", endpoint = "{{ endpoint }}");

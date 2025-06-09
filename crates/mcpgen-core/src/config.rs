@@ -10,8 +10,8 @@
 //! use mcpgen_core::config::Config;
 //!
 //! // Create a new config programmatically
-//! let mut config = Config::new("openapi.yaml", "output");
-//! config.template = "rust_axum".to_string();
+//! let mut config = Config::new("my-project", "openapi.yaml", "output");
+//! config.template_kind = "rust_axum".to_string();
 //! config.include_all = true;
 //!
 //! // Or load from a config file

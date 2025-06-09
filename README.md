@@ -231,7 +231,7 @@ We welcome contributions from the community! To keep MCPGen high-quality and mai
   - Update documentation for any user-facing or API changes.
 - **Testing**:
   - Add or update unit and integration tests for all new features or bugfixes.
-  - Run: `cargo test -p mcpgen test_all_templates_with_openapi_specs`
+  - Run: `cargo test -p mcpgen --test integration_test`
 - **Docs**:
   - Update relevant docs and add examples for new features.
   - Document any new patterns or conventions.
@@ -251,7 +251,7 @@ Here’s how to work productively with MCPGen as a contributor or advanced user:
   - Run all tests: `cargo test`
   - Run integration tests (all templates with OpenAPI specs):
     ```bash
-    cargo test -p mcpgen test_all_templates_with_openapi_specs
+    cargo test -p mcpgen --test integration_test
     ```
 - **Test Location:** See [`crates/mcpgen-cli/tests/integration_test.rs`](crates/mcpgen-cli/tests/integration_test.rs) for integration coverage.
 - **Test-First Principle:** Add failing tests before implementing new features or bugfixes.

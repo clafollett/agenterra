@@ -79,7 +79,7 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
             endpoint: to_snake_case(&op.id),
             endpoint_cap: to_upper_camel_case(&op.id),
             endpoint_fs: to_snake_case(&op.id),
-            endpoint_raw: op.id.clone(),
+            endpoint_raw: op.path.clone(),
             properties_type: to_upper_camel_case(&format!("{}_properties", op.id)),
             response_type: to_upper_camel_case(&format!("{}_response", op.id)),
             envelope_properties: serde_json::json!({}), // TODO: Extract from op.responses if present

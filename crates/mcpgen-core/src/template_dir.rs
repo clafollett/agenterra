@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_template_dir_validation() {
         let temp_dir = tempdir().unwrap();
-        let template_dir = temp_dir.path().join("templates/rust-axum");
+        let template_dir = temp_dir.path().join("templates/rust_axum");
         fs::create_dir_all(&template_dir).unwrap();
 
         // Test with explicit directory

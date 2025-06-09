@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build & Test
 cargo build                                                   # Debug build
 cargo test                                                    # Run all tests
-cargo test -p mcpgen test_all_templates_with_openapi_specs   # Integration tests
+cargo test -p mcpgen integration_test   # Integration tests
 
 # Code Quality
 cargo fmt && cargo clippy && cargo test                      # Pre-commit check
@@ -126,7 +126,7 @@ Example: `GH-9_EndToEndIntegrationTest`
 2. **Reference locations**: Use `file.rs:123` format when mentioning code
 3. **Run tests early**: After changes, immediately run relevant tests
 4. **Check imports**: Verify external dependencies exist in Cargo.toml before using
-5. **Template testing**: Use `cargo test -p mcpgen test_all_templates_with_openapi_specs` to validate template changes
+5. **Template testing**: Use `cargo test -p mcpgen --test integration_test` to validate template changes
 
 ## Communication Style & Personality
 

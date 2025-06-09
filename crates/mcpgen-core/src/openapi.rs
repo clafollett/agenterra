@@ -66,6 +66,8 @@ pub struct OpenApiOperation {
     /// Unique string used to identify the operation. The id MUST be unique among all operations described in the API.
     #[serde(rename = "operationId")]
     pub id: String,
+    /// The path where this operation is defined (e.g., "/pet/findByStatus")
+    pub path: String,
     /// A list of tags for API documentation control. Tags can be used for logical grouping of operations.
     #[serde(rename = "tags")]
     pub tags: Option<Vec<String>>,
@@ -337,6 +339,7 @@ impl OpenApiContext {
 
                     operations.push(OpenApiOperation {
                         id: operation_id,
+                        path: path.clone(),
                         summary,
                         description,
                         external_docs,
