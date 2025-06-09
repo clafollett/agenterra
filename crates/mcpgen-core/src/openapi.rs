@@ -238,13 +238,43 @@ impl OpenApiContext {
     }
 
     /// Get the base path of the API
-    pub fn base_path(&self) -> Option<&str> {
-        self.json
-            .get("servers")?
-            .as_array()?
-            .first()?
-            .get("url")?
-            .as_str()
+    pub fn base_path(&self) -> Option<String> {
+        // Try OpenAPI 3.0+ servers format first
+        if let Some(servers) = self.json.get("servers").and_then(|s| s.as_array()) {
+            if let Some(server) = servers.first() {
+                if let Some(url) = server.get("url").and_then(|u| u.as_str()) {
+                    return Some(url.to_string());
+                }
+            }
+        }
+
+        // Fall back to Swagger 2.0 host + basePath format
+        if let (Some(host), base_path) = (
+            self.json.get("host").and_then(|h| h.as_str()),
+            self.json
+                .get("basePath")
+                .and_then(|bp| bp.as_str())
+                .unwrap_or(""),
+        ) {
+            // Determine protocol - Swagger 2.0 specs can specify schemes
+            let scheme = if let Some(schemes) = self.json.get("schemes").and_then(|s| s.as_array())
+            {
+                // Use the first scheme, prefer https if available
+                if schemes.iter().any(|s| s.as_str() == Some("https")) {
+                    "https"
+                } else if let Some(first_scheme) = schemes.first().and_then(|s| s.as_str()) {
+                    first_scheme
+                } else {
+                    "https" // Default to https
+                }
+            } else {
+                "https" // Default to https if no schemes specified
+            };
+
+            return Some(format!("{}://{}{}", scheme, host, base_path));
+        }
+
+        None
     }
 
     /// Parse all endpoints into structured contexts for template rendering
@@ -815,7 +845,10 @@ mod tests {
         let spec = OpenApiContext::from_file(&file_path).await?;
         assert_eq!(spec.title(), Some("Test API Async"));
         assert_eq!(spec.version(), Some("2.0.0"));
-        assert_eq!(spec.base_path(), Some("https://api.example.com/v2"));
+        assert_eq!(
+            spec.base_path(),
+            Some("https://api.example.com/v2".to_string())
+        );
 
         Ok(())
     }

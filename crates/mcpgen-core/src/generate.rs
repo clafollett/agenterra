@@ -9,8 +9,8 @@ use crate::{
 
 /// Main entry point for code generation
 pub async fn generate(config: &Config, template_opts: Option<TemplateOptions>) -> Result<()> {
-    // 1. Load OpenAPI spec
-    let spec = OpenApiContext::from_file(&config.openapi_spec).await?;
+    // 1. Load OpenAPI schema
+    let schema = OpenApiContext::from_file(&config.openapi_schema_path).await?;
 
     // 2. Initialize template manager with template_dir from config if available
     let template_kind = TemplateKind::from_str(&config.template_kind).unwrap_or_default();
@@ -19,7 +19,7 @@ pub async fn generate(config: &Config, template_opts: Option<TemplateOptions>) -
 
     // 3. Delegate to TemplateManager.generate
     template_manager
-        .generate(&spec, config, template_opts)
+        .generate(&schema, config, template_opts)
         .await?;
 
     Ok(())

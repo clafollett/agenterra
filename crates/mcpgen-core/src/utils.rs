@@ -4,7 +4,7 @@
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
     let mut prev_is_lowercase = false;
-    
+
     for (i, ch) in s.chars().enumerate() {
         if ch.is_uppercase() {
             // Add underscore before uppercase letter if:
@@ -25,7 +25,7 @@ pub fn to_snake_case(s: &str) -> String {
             prev_is_lowercase = false;
         }
     }
-    
+
     // Remove duplicate underscores and trim
     let mut final_result = String::new();
     let mut prev_underscore = false;
@@ -40,7 +40,7 @@ pub fn to_snake_case(s: &str) -> String {
             prev_underscore = false;
         }
     }
-    
+
     final_result.trim_matches('_').to_string()
 }
 
@@ -48,7 +48,7 @@ pub fn to_snake_case(s: &str) -> String {
 pub fn to_upper_camel_case(s: &str) -> String {
     // First convert to snake_case to normalize the input
     let snake = to_snake_case(s);
-    
+
     // Then split on underscores and capitalize each word
     snake
         .split('_')
@@ -69,7 +69,7 @@ pub fn to_lower_camel_case(s: &str) -> String {
     if upper_camel.is_empty() {
         return upper_camel;
     }
-    
+
     let mut chars = upper_camel.chars();
     match chars.next() {
         None => String::new(),
@@ -94,19 +94,37 @@ mod tests {
 
     #[test]
     fn test_to_upper_camel_case() {
-        assert_eq!(to_upper_camel_case("find_pets_by_status"), "FindPetsByStatus");
+        assert_eq!(
+            to_upper_camel_case("find_pets_by_status"),
+            "FindPetsByStatus"
+        );
         assert_eq!(to_upper_camel_case("findPetsByStatus"), "FindPetsByStatus");
-        assert_eq!(to_upper_camel_case("find-pets-by-status"), "FindPetsByStatus");
-        assert_eq!(to_upper_camel_case("FIND_PETS_BY_STATUS"), "FindPetsByStatus");
+        assert_eq!(
+            to_upper_camel_case("find-pets-by-status"),
+            "FindPetsByStatus"
+        );
+        assert_eq!(
+            to_upper_camel_case("FIND_PETS_BY_STATUS"),
+            "FindPetsByStatus"
+        );
         assert_eq!(to_upper_camel_case("http_response"), "HttpResponse");
     }
 
     #[test]
     fn test_to_lower_camel_case() {
-        assert_eq!(to_lower_camel_case("find_pets_by_status"), "findPetsByStatus");
+        assert_eq!(
+            to_lower_camel_case("find_pets_by_status"),
+            "findPetsByStatus"
+        );
         assert_eq!(to_lower_camel_case("FindPetsByStatus"), "findPetsByStatus");
-        assert_eq!(to_lower_camel_case("find-pets-by-status"), "findPetsByStatus");
-        assert_eq!(to_lower_camel_case("FIND_PETS_BY_STATUS"), "findPetsByStatus");
+        assert_eq!(
+            to_lower_camel_case("find-pets-by-status"),
+            "findPetsByStatus"
+        );
+        assert_eq!(
+            to_lower_camel_case("FIND_PETS_BY_STATUS"),
+            "findPetsByStatus"
+        );
         assert_eq!(to_lower_camel_case("http_response"), "httpResponse");
     }
 }

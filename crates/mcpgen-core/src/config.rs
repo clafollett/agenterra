@@ -35,8 +35,8 @@ pub struct Config {
     /// Project name
     pub project_name: String,
 
-    /// Path to the OpenAPI specification file
-    pub openapi_spec: String,
+    /// Path to the OpenAPI schema file
+    pub openapi_schema_path: String,
 
     /// Output directory for generated code
     pub output_dir: String,
@@ -69,12 +69,12 @@ impl Config {
     /// Create a new Config with default values
     pub fn new(
         project_name: impl Into<String>,
-        openapi_spec: impl Into<String>,
+        openapi_schema_path: impl Into<String>,
         output_dir: impl Into<String>,
     ) -> Self {
         Self {
             project_name: project_name.into(),
-            openapi_spec: openapi_spec.into(),
+            openapi_schema_path: openapi_schema_path.into(),
             output_dir: output_dir.into(),
             template_kind: default_template(),
             template_dir: None,
@@ -119,7 +119,7 @@ mod tests {
 
         let _loaded = Config::from_file(&file_path).await?;
         assert_eq!(config.project_name, "mcpgen-mcp-server");
-        assert_eq!(config.openapi_spec, "openapi.json");
+        assert_eq!(config.openapi_schema_path, "openapi.json");
         assert_eq!(config.output_dir, "output");
         assert_eq!(config.template_kind, default_template());
         assert_eq!(config.include_all, false);

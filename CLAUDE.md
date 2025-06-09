@@ -28,16 +28,16 @@ cargo test -p mcpgen test_all_templates_with_openapi_specs   # Integration tests
 cargo fmt && cargo clippy && cargo test                      # Pre-commit check
 
 # Run MCPGen
-cargo run -p mcpgen -- scaffold --spec <path-or-url> --output <dir>
+cargo run -p mcpgen -- scaffold --schema-path <path-or-url> --output <dir>
 ```
 
 ### Examples
 ```bash
 # Local file
-cargo run -p mcpgen -- scaffold --spec ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/test_output
+cargo run -p mcpgen -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/test_output
 
 # Remote URL
-cargo run -p mcpgen -- scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/test_output
+cargo run -p mcpgen -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/test_output
 ```
 
 ## High-Level Architecture

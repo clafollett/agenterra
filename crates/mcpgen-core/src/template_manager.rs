@@ -83,7 +83,7 @@ impl TemplateManager {
         // Load the template manifest - try YAML first, then TOML
         let yaml_manifest_path = template_path.join("manifest.yaml");
         let toml_manifest_path = template_path.join("manifest.toml");
-        
+
         let manifest = if yaml_manifest_path.exists() {
             let manifest_content = tokio::fs::read_to_string(&yaml_manifest_path)
                 .await
@@ -295,7 +295,10 @@ impl TemplateManager {
                 };
 
                 log::error!("Template rendering failed for '{}': {}", template_name, e);
-                log::error!("Available context keys: {:?}", context_map.keys().collect::<Vec<_>>());
+                log::error!(
+                    "Available context keys: {:?}",
+                    context_map.keys().collect::<Vec<_>>()
+                );
                 return Err(crate::error::Error::template(format!(
                     "Failed to render template '{}': {}\nTemplate source:\n{}",
                     template_name, e, template_source
@@ -353,8 +356,8 @@ impl TemplateManager {
         template_opts: Option<TemplateOptions>,
     ) -> Result<()> {
         // Build the base context
-        let (base_context, operations) = self.build_context(spec, &template_opts).await?;
-        
+        let (base_context, operations) = self.build_context(spec, &template_opts, config).await?;
+
         // Create output directory
         let output_dir = Path::new(&config.output_dir);
         tokio::fs::create_dir_all(output_dir).await?;
@@ -373,7 +376,7 @@ impl TemplateManager {
                                 tera_context.insert(k, v);
                             }
                         }
-                        
+
                         self.process_operation_file(
                             file,
                             &tera_context,
@@ -381,7 +384,8 @@ impl TemplateManager {
                             &operations,
                             &template_opts,
                             spec,
-                        ).await?;
+                        )
+                        .await?;
                     }
                     _ => {
                         return Err(crate::error::Error::template(format!(
@@ -394,7 +398,8 @@ impl TemplateManager {
                 // This is a single file template
                 log::debug!("Processing single file template: {}", file.source);
                 let dest_path = output_dir.join(&file.destination);
-                self.process_single_file(file, &base_context, &dest_path).await?;
+                self.process_single_file(file, &base_context, &dest_path)
+                    .await?;
             }
         }
 
@@ -407,13 +412,14 @@ impl TemplateManager {
     /// Build the complete template context from OpenAPI spec
     async fn build_context(
         &self,
-        spec: &OpenApiContext,
+        openapi_context: &OpenApiContext,
         template_opts: &Option<TemplateOptions>,
+        config: &crate::Config,
     ) -> Result<(serde_json::Value, Vec<OpenApiOperation>)> {
         let mut base_map = serde_json::Map::new();
 
         // Add project name from spec title
-        if let Some(title) = spec
+        if let Some(title) = openapi_context
             .json
             .get("info")
             .and_then(|info| info.get("title"))
@@ -426,7 +432,7 @@ impl TemplateManager {
         }
 
         // Add API version from spec
-        if let Some(api_version) = spec
+        if let Some(api_version) = openapi_context
             .json
             .get("info")
             .and_then(|info| info.get("version"))
@@ -447,7 +453,7 @@ impl TemplateManager {
         }
 
         // Add the full spec to the context if needed
-        if let Ok(spec_value) = serde_json::to_value(spec) {
+        if let Ok(spec_value) = serde_json::to_value(openapi_context) {
             base_map.insert("spec".to_string(), spec_value);
         }
 
@@ -455,7 +461,7 @@ impl TemplateManager {
         base_map.insert("spec_file_name".to_string(), json!("openapi.json"));
 
         // Extract operations from the OpenAPI spec
-        let operations = spec.parse_operations().await?;
+        let operations = openapi_context.parse_operations().await?;
 
         // Transform endpoints using language-specific builder
         let endpoints =
@@ -477,18 +483,34 @@ impl TemplateManager {
             }
         }
 
-        // Add base API URL from OpenAPI spec or provide a default
-        if let Some(base_url) = spec.base_path() {
-            // If it's a relative path, prepend a default host for testing
-            let full_url = if base_url.starts_with('/') {
-                format!("https://petstore3.swagger.io{}", base_url)
+        // Add base API URL from OpenAPI spec and user-provided base URL
+        if let Some(spec_url) = openapi_context.base_path() {
+            let final_url = if spec_url.starts_with("http://") || spec_url.starts_with("https://") {
+                // Spec contains a fully qualified URL, use it directly
+                spec_url
+            } else if spec_url.starts_with("/") {
+                // Spec contains a relative path, combine with user-provided base URL
+                if let Some(base_url) = &config.base_url {
+                    let base_str = base_url.to_string();
+                    let trimmed = base_str.trim_end_matches('/');
+                    format!("{}{}", trimmed, spec_url)
+                } else {
+                    return Err(crate::error::Error::template(format!(
+                        "OpenAPI spec contains a relative server URL '{}', but no --base-url was provided. Please provide a base URL (e.g., --base-url https://api.example.com)",
+                        spec_url
+                    )));
+                }
             } else {
-                base_url.to_string()
+                return Err(crate::error::Error::template(format!(
+                    "Invalid server URL format in OpenAPI spec: '{}'. URL must be either a fully qualified URL (https://api.example.com/v1) or a relative path (/api/v1)",
+                    spec_url
+                )));
             };
-            base_map.insert("base_api_url".to_string(), json!(full_url));
+            base_map.insert("base_api_url".to_string(), json!(final_url));
         } else {
-            // Default fallback URL
-            base_map.insert("base_api_url".to_string(), json!("https://petstore3.swagger.io/api/v3"));
+            return Err(crate::error::Error::template(
+                "No server URL found in OpenAPI spec. Please define at least one server in the 'servers' section (OpenAPI 3.0+) or 'host' field (Swagger 2.0) of your OpenAPI specification".to_string()
+            ));
         }
 
         // For debugging, log the context keys
@@ -498,62 +520,6 @@ impl TemplateManager {
         Ok((serde_json::Value::Object(base_map), operations))
     }
 
-    /// Process all template files with the given context
-    async fn process_template_files(
-        &self,
-        base_context: &serde_json::Value,
-        output_dir: &Path,
-        template_opts: &Option<TemplateOptions>,
-        spec: &OpenApiContext,
-        operations: Vec<OpenApiOperation>,
-    ) -> Result<()> {
-        // For each file in the template manifest, render it with the context
-        for file in &self.manifest.files {
-            let dest_path = output_dir.join(&file.destination);
-
-            // Create parent directories if they don't exist
-            if let Some(parent) = dest_path.parent() {
-                if !parent.exists() {
-                    tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("Failed to create directory {}: {}", parent.display(), e),
-                        )
-                    })?;
-                }
-            }
-
-            // Create file-specific context
-            let file_context = self.create_file_context(base_context, file)?;
-
-            // Convert file_context to Context
-            let mut tera_context = Context::new();
-            if let serde_json::Value::Object(obj) = file_context {
-                for (k, v) in obj {
-                    tera_context.insert(k, &v);
-                }
-            }
-
-            // Render the template
-            let rendered = self.tera.render(&file.source, &tera_context).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to render template {}: {}", file.source, e),
-                )
-            })?;
-
-            // Write the output file
-            tokio::fs::write(&dest_path, rendered).await.map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to write file {}: {}", dest_path.display(), e),
-                )
-            })?;
-        }
-
-        Ok(())
-    }
-
     /// Process a single template file
     async fn process_single_file(
         &self,
@@ -561,8 +527,12 @@ impl TemplateManager {
         base_context: &serde_json::Value,
         output_path: &Path,
     ) -> Result<()> {
-        log::debug!("Processing single file: {} -> {}", file.source, output_path.display());
-        
+        log::debug!(
+            "Processing single file: {} -> {}",
+            file.source,
+            output_path.display()
+        );
+
         // Create the output directory if it doesn't exist
         if let Some(parent) = output_path.parent() {
             if !parent.exists() {
@@ -578,8 +548,13 @@ impl TemplateManager {
 
         // Create the file context
         let file_context = self.create_file_context(base_context, file)?;
-        log::debug!("File context keys: {:?}", 
-            file_context.as_object().map(|obj| obj.keys().collect::<Vec<_>>()).unwrap_or_default());
+        log::debug!(
+            "File context keys: {:?}",
+            file_context
+                .as_object()
+                .map(|obj| obj.keys().collect::<Vec<_>>())
+                .unwrap_or_default()
+        );
 
         // Convert serde_json::Value to tera::Context
         let mut tera_context = Context::new();
@@ -590,14 +565,26 @@ impl TemplateManager {
         }
 
         // Log context contents for debugging
-        log::debug!("Tera context for {}: {:?}", file.source, 
-            tera_context.clone().into_json().as_object().map(|obj| obj.keys().collect::<Vec<_>>()).unwrap_or_default());
-        
+        log::debug!(
+            "Tera context for {}: {:?}",
+            file.source,
+            tera_context
+                .clone()
+                .into_json()
+                .as_object()
+                .map(|obj| obj.keys().collect::<Vec<_>>())
+                .unwrap_or_default()
+        );
+
         // Special debug for handlers_mod.rs.tera
         if file.source == "handlers_mod.rs.tera" {
             let context_json = tera_context.clone().into_json();
             if let Some(endpoints) = context_json.get("endpoints") {
-                log::debug!("Endpoints data structure: {}", serde_json::to_string_pretty(endpoints).unwrap_or_else(|_| "Failed to serialize".to_string()));
+                log::debug!(
+                    "Endpoints data structure: {}",
+                    serde_json::to_string_pretty(endpoints)
+                        .unwrap_or_else(|_| "Failed to serialize".to_string())
+                );
             }
             if let Some(base_api_url) = context_json.get("base_api_url") {
                 log::debug!("base_api_url value: {:?}", base_api_url);
@@ -613,18 +600,25 @@ impl TemplateManager {
             Err(e) => {
                 log::error!("Tera rendering error for {}: {}", file.source, e);
                 log::error!("Template source: {}", file.source);
-                log::error!("Available context keys: {:?}", 
-                    tera_context.clone().into_json().as_object().map(|obj| obj.keys().collect::<Vec<_>>()).unwrap_or_default());
-                
+                log::error!(
+                    "Available context keys: {:?}",
+                    tera_context
+                        .clone()
+                        .into_json()
+                        .as_object()
+                        .map(|obj| obj.keys().collect::<Vec<_>>())
+                        .unwrap_or_default()
+                );
+
                 // Check if template exists
                 if let Err(template_err) = self.tera.get_template(&file.source) {
                     log::error!("Template not found: {}", template_err);
                 }
-                
+
                 // Get more specific error information
                 log::error!("Tera error kind: {:?}", e.kind);
                 log::error!("Full error chain: {:#}", e);
-                
+
                 return Err(crate::error::Error::template(format!(
                     "Failed to render template '{}': {}",
                     file.source, e

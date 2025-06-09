@@ -24,14 +24,14 @@ impl EndpointContext {
         for op in operations {
             contexts.push(builder.build(&op)?);
         }
-        
+
         // Sort endpoints alphabetically by endpoint name for consistent output
         contexts.sort_by(|a, b| {
             let name_a = a.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
             let name_b = b.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
             name_a.cmp(name_b)
         });
-        
+
         Ok(contexts)
     }
 

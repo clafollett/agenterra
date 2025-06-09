@@ -31,13 +31,13 @@ pub enum Commands {
         /// Project name
         #[arg(long, default_value = "mcpgen_mcp_server")]
         project_name: String,
-        /// Path or URL to OpenAPI spec (YAML or JSON)
+        /// Path or URL to OpenAPI schema (YAML or JSON)
         ///
         /// Can be a local file path or an HTTP/HTTPS URL
-        /// Example: --spec path/to/spec.yaml
-        /// Example: --spec https://example.com/openapi.json
+        /// Example: --schema-path path/to/schema.yaml
+        /// Example: --schema-path https://example.com/openapi.json
         #[arg(long)]
-        spec: String,
+        schema_path: String,
         /// Template to use for code generation (e.g., rust_axum, python_fastapi)
         #[arg(long, default_value = "rust_axum")]
         template_kind: String,
@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     match &cli.command {
         Commands::Scaffold {
             project_name,
-            spec,
+            schema_path,
             template_kind,
             template_dir,
             output_dir,
@@ -81,9 +81,9 @@ async fn main() -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("Invalid template '{template_kind}': {e}"))?;
 
             // Resolve output directory - use project_name if not specified
-            let output_path = output_dir.clone().unwrap_or_else(|| {
-                PathBuf::from(project_name)
-            });
+            let output_path = output_dir
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(project_name));
 
             // Debug log template and paths
             println!(
@@ -130,54 +130,61 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
-            // Load the OpenAPI spec from either a file or URL
-            println!("Loading OpenAPI spec from: {}", spec);
+            // Load the OpenAPI schema from either a file or URL
+            println!("Loading OpenAPI schema from: {}", schema_path);
 
-            // Check if the spec is a URL or a file path
-            let spec_obj = if spec.starts_with("http://") || spec.starts_with("https://") {
+            // Check if the schema_path is a URL or a file path
+            let schema_obj = if schema_path.starts_with("http://")
+                || schema_path.starts_with("https://")
+            {
                 // It's a URL, use from_url
-                let response = reqwest::get(spec.as_str()).await.map_err(|e| {
-                    anyhow::anyhow!("Failed to fetch OpenAPI spec from {}: {}", spec, e)
+                let response = reqwest::get(schema_path.as_str()).await.map_err(|e| {
+                    anyhow::anyhow!("Failed to fetch OpenAPI schema from {}: {}", schema_path, e)
                 })?;
 
                 if !response.status().is_success() {
                     return Err(anyhow::anyhow!(
-                        "Failed to fetch OpenAPI spec from {}: HTTP {}",
-                        spec,
+                        "Failed to fetch OpenAPI schema from {}: HTTP {}",
+                        schema_path,
                         response.status()
                     ));
                 }
 
-                let content = response
-                    .text()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to read response from {}: {}", spec, e))?;
+                let content = response.text().await.map_err(|e| {
+                    anyhow::anyhow!("Failed to read response from {}: {}", schema_path, e)
+                })?;
 
-                // Parse the content as OpenAPI spec
+                // Parse the content as OpenAPI schema
                 // We need to save it to a temporary file since OpenApiContext::from_file expects a file path
                 let temp_dir = tempfile::tempdir()?;
-                let temp_file = temp_dir.path().join("openapi_spec.json");
+                let temp_file = temp_dir.path().join("openapi_schema.json");
                 tokio::fs::write(&temp_file, &content).await?;
 
                 mcpgen_core::openapi::OpenApiContext::from_file(&temp_file)
                     .await
                     .map_err(|e| {
-                        anyhow::anyhow!("Failed to parse OpenAPI spec from {}: {}", spec, e)
+                        anyhow::anyhow!(
+                            "Failed to parse OpenAPI schema from {}: {}",
+                            schema_path,
+                            e
+                        )
                     })?
             } else {
                 // It's a file path
-                mcpgen_core::openapi::OpenApiContext::from_file(&spec)
+                mcpgen_core::openapi::OpenApiContext::from_file(&schema_path)
                     .await
-                    .map_err(|e| anyhow::anyhow!("Failed to load OpenAPI spec: {}", e))?
+                    .map_err(|e| anyhow::anyhow!("Failed to load OpenAPI schema: {}", e))?
             };
 
             // Create config with template
             let config = mcpgen_core::Config {
                 project_name: project_name.clone(),
-                openapi_spec: spec.to_string(),
+                openapi_schema_path: schema_path.to_string(),
                 output_dir: output_path.to_string_lossy().to_string(),
                 template_kind: template_kind.to_string(),
-                template_dir: template_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
+                template_dir: template_dir
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string()),
                 include_all: true,              // Include all operations by default
                 include_operations: Vec::new(), // No specific operations to include
                 exclude_operations: Vec::new(), // No operations to exclude
@@ -193,63 +200,14 @@ async fn main() -> anyhow::Result<()> {
 
             // Generate the server using the template manager we already created
             template_manager
-                .generate(&spec_obj, &config, Some(template_opts))
+                .generate(&schema_obj, &config, Some(template_opts))
                 .await?;
 
-            println!("✅ Successfully generated server in: {}", output_path.display());
+            println!(
+                "✅ Successfully generated server in: {}",
+                output_path.display()
+            );
         }
     }
     Ok(())
-}
-
-/// Resolves the template directory path based on the provided template_dir and template_kind.
-///
-/// # Arguments
-/// * `template_dir` - Optional user-provided template directory (takes ownership)
-/// * `template_kind` - The type of template being used (built-in or custom)
-///
-/// # Returns
-/// Returns the resolved PathBuf to the template directory or an error if validation fails
-async fn resolve_template_dir(
-    template_dir: &Option<PathBuf>,
-    template_kind: &TemplateKind,
-) -> anyhow::Result<PathBuf> {
-    // If a template directory was provided, validate it exists
-    if let Some(template_dir) = template_dir {
-        println!(
-            "Using custom template directory: {}",
-            template_dir.display()
-        );
-        if !template_dir.exists() {
-            return Err(anyhow::anyhow!(
-                "Template directory not found: {}",
-                template_dir.display()
-            ));
-        }
-        return Ok(template_dir.clone());
-    }
-
-    // For custom templates without a specified directory, use default "./templates"
-    if *template_kind == TemplateKind::Custom {
-        return Ok(PathBuf::from("./templates"));
-    }
-
-    // For built-in templates, use workspace templates/<template>
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_root = Path::new(manifest_dir)
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| {
-            anyhow::anyhow!("Failed to determine workspace root from CARGO_MANIFEST_DIR")
-        })?;
-
-    let templates_dir = workspace_root.join("templates");
-    let built_in_dir = templates_dir.join(template_kind.as_str());
-
-    println!(
-        "DEBUG - Full template directory: {}",
-        built_in_dir.display()
-    );
-
-    Ok(built_in_dir)
 }

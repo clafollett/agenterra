@@ -178,7 +178,7 @@ mod tests {
         cmd.arg("scaffold")
             .arg("--project-name")
             .arg("petstore-mcp-server")
-            .arg("--spec")
+            .arg("--schema-path")
             .arg(OPENAPI_V3_URL.as_str())
             .arg("--template-kind")
             .arg(template)
@@ -189,7 +189,9 @@ mod tests {
             .arg("--template-dir")
             .arg(&template_dir)
             .arg("--port")
-            .arg("8080");
+            .arg("8080")
+            .arg("--base-url")
+            .arg("https://petstore3.swagger.io");
 
         println!("Running command: {:?}", cmd);
 
@@ -349,7 +351,7 @@ mod tests {
         // Build the command with required arguments
         let mut cmd = Command::new(binary_path);
         cmd.arg("scaffold")
-            .arg("--spec")
+            .arg("--schema-path")
             .arg(spec_path)
             .arg("--template-kind")
             .arg(template_name)
@@ -360,7 +362,9 @@ mod tests {
             .arg("--port")
             .arg("8080")
             .arg("--log-file")
-            .arg("log.txt");
+            .arg("log.txt")
+            .arg("--base-url")
+            .arg("https://petstore3.swagger.io");
 
         // Print the full command being executed for debugging
         println!("Executing command: {:?}", cmd.get_program());
