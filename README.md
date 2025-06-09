@@ -42,19 +42,19 @@ git clone https://github.com/clafollett/mcpgen.git
 cd mcpgen
 
 # Generate from a local file without install:
-cargo run -p mcpgen -- scaffold --spec ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/cargo_run_petstore_mcp_server_local_file
+cargo run -p mcpgen -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/cargo_run_petstore_mcp_server_local_file
 
 # Generate from a remote URL without install:
-cargo run -p mcpgen -- scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/cargo_run_petstore_mcp_server_remote_url
+cargo run -p mcpgen -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/cargo_run_petstore_mcp_server_remote_url
 
 # Or install the CLI
 cargo install --path crates/mcpgen-cli
 
 # Generate your MCP server from a local file
-mcpgen scaffold --spec ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
+mcpgen scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
 
 # Generate from a remote URL
-mcpgen scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
+mcpgen scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
 
 ```
 
@@ -68,10 +68,10 @@ mcpgen scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output
    chmod +x mcpgen
    
    # Generate your MCP server from a local file
-   ./mcpgen scaffold --spec ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
+   ./mcpgen scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
 
    # Generate from a remote URL
-   ./mcpgen scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
+   ./mcpgen scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
    ```
 
 ## 🔌 Integrating with MCP Clients
