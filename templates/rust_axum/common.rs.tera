@@ -9,9 +9,9 @@ use rmcp::model::*;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 
-/// Trait to associate a parameter type with its endpoint name.
+/// Trait to associate a parameter type with its endpoint path.
 pub trait Endpoint {
-    fn name() -> &'static str;
+    fn path() -> &'static str;
     fn get_params(&self) -> HashMap<String, String>;
 }
 
@@ -23,9 +23,28 @@ where
     R: Serialize + DeserializeOwned,
 {
     // Clone params to allow modification without affecting caller's original
-    let params = endpoint.get_params();
+    let mut params = endpoint.get_params();
     let client = reqwest::Client::new();
-    let url = format!("{}/{}", config.api_url.trim_end_matches('/'), <E as Endpoint>::name());
+    
+    // Build URL with path parameter substitution
+    let mut path = <E as Endpoint>::path().to_string();
+    let mut path_params_used = Vec::new();
+    
+    // Replace {paramName} placeholders in path with actual values
+    for (key, value) in &params {
+        let placeholder = format!("{% raw %}{{{}}}{% endraw %}", key);
+        if path.contains(&placeholder) {
+            path = path.replace(&placeholder, value);
+            path_params_used.push(key.clone());
+        }
+    }
+    
+    // Remove path parameters from query params since they're now in the URL
+    for key in &path_params_used {
+        params.remove(key);
+    }
+    
+    let url = format!("{}/{}", config.api_url.trim_end_matches('/'), path.trim_start_matches('/'));
 
     log::debug!("Sending request: URL={}, Query={:?}", url, params);
 

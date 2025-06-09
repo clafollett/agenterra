@@ -14,12 +14,10 @@ use crate::{
     error::Result,
     manifest::TemplateManifest,
     openapi::{OpenApiContext, OpenApiOperation},
-    template_kind::TemplateKind,
-    template_options::TemplateOptions,
     utils::to_snake_case,
 };
 
-use super::template_dir::TemplateDir;
+use super::{TemplateDir, TemplateKind, TemplateOptions};
 
 // External imports (alphabetized)
 use serde::Serialize;
@@ -242,11 +240,7 @@ impl TemplateManager {
         })?;
 
         // Define required variables per template type
-        let required_vars: &[&str] = match template_name {
-            // Add template-specific required variables here
-            // Example: "handlers/endpoint.rs" => &["endpoint", "parameters_type"],
-            _ => &[],
-        };
+        let required_vars: &[&str] = &[];
 
         Self::validate_context(template_name, context_map, required_vars)?;
 
@@ -881,10 +875,10 @@ impl TemplateManager {
                 // Use snake_case for the filename to match MCP conventions
                 let schema_filename = to_snake_case(&operation.id);
                 let schema_path = schemas_dir.join(format!("{}.json", schema_filename));
-                let mut schema_value = serde_json::to_value(&operation)?;
+                let mut schema_value = serde_json::to_value(operation)?;
 
                 // Dereference all $ref in the schema
-                self.dereference_schema_refs(&mut schema_value, spec)?;
+                Self::dereference_schema_refs(&mut schema_value, spec)?;
 
                 // Remove null values from the schema
                 schema_value
@@ -1033,7 +1027,6 @@ impl TemplateManager {
 
     /// Dereference all $ref in a JSON value by replacing them with actual schema definitions
     fn dereference_schema_refs(
-        &self,
         value: &mut serde_json::Value,
         spec: &OpenApiContext,
     ) -> Result<()> {
@@ -1052,7 +1045,7 @@ impl TemplateManager {
                                         // Replace the entire object with the dereferenced schema
                                         *value = schema_def.clone();
                                         // Continue dereferencing in the new value
-                                        self.dereference_schema_refs(value, spec)?;
+                                        Self::dereference_schema_refs(value, spec)?;
                                         return Ok(());
                                     }
                                 }
@@ -1063,13 +1056,13 @@ impl TemplateManager {
 
                 // Recursively process all values in the object
                 for (_, v) in map.iter_mut() {
-                    self.dereference_schema_refs(v, spec)?;
+                    Self::dereference_schema_refs(v, spec)?;
                 }
             }
             serde_json::Value::Array(arr) => {
                 // Recursively process all items in the array
                 for item in arr.iter_mut() {
-                    self.dereference_schema_refs(item, spec)?;
+                    Self::dereference_schema_refs(item, spec)?;
                 }
             }
             _ => {} // Other types don't need processing

@@ -3,8 +3,10 @@
 use std::{path::PathBuf, str::FromStr};
 
 use crate::{
-    config::Config, error::Result, openapi::OpenApiContext, template_kind::TemplateKind,
-    template_manager::TemplateManager, template_options::TemplateOptions,
+    config::Config,
+    error::Result,
+    openapi::OpenApiContext,
+    templates::{TemplateKind, TemplateManager, TemplateOptions},
 };
 
 /// Main entry point for code generation

@@ -8,11 +8,7 @@ use std::path::{Path, PathBuf};
 // External imports (alphabetized)
 use anyhow::Context;
 use clap::Parser;
-use mcpgen_core::{
-    TemplateOptions, template_kind::TemplateKind, template_manager::TemplateManager,
-};
-use reqwest;
-use tempfile;
+use mcpgen_core::{TemplateKind, TemplateManager, TemplateOptions};
 use tokio::fs;
 
 #[derive(Parser)]

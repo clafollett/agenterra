@@ -35,121 +35,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use tokio::fs;
 
-/// Info about a single OpenAPI parameter
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ParameterInfo {
-    /// Name of the parameter as defined in the OpenAPI spec
-    pub name: String,
-    /// Optional description of the parameter
-    pub description: Option<String>,
-    /// Optional example value for the parameter
-    pub example: Option<JsonValue>,
-    // Note: Language-specific type info (e.g., rust_type) is injected by the builder, not stored here.
-}
-
-/// Info about a single response property
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PropertyInfo {
-    /// Name of the property as defined in the OpenAPI schema
-    pub name: String,
-    /// Optional title metadata for the property
-    pub title: Option<String>,
-    /// Optional description of the property
-    pub description: Option<String>,
-    /// Optional example value for the property
-    pub example: Option<JsonValue>,
-}
-
-/// Parsed OpenAPI operation for template rendering
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OpenApiOperation {
-    /// Unique string used to identify the operation. The id MUST be unique among all operations described in the API.
-    #[serde(rename = "operationId")]
-    pub id: String,
-    /// The path where this operation is defined (e.g., "/pet/findByStatus")
-    pub path: String,
-    /// A list of tags for API documentation control. Tags can be used for logical grouping of operations.
-    #[serde(rename = "tags")]
-    pub tags: Option<Vec<String>>,
-    /// A short summary of what the operation does.
-    pub summary: Option<String>,
-    /// A verbose explanation of the operation behavior. CommonMark syntax MAY be used for rich text representation.
-    pub description: Option<String>,
-    /// Additional external documentation for this operation.
-    #[serde(rename = "externalDocs")]
-    pub external_docs: Option<serde_json::Value>,
-    /// A list of parameters that are applicable for this operation. If a parameter is already defined at the Path Item, the new definition will override it but can never remove it.
-    pub parameters: Option<Vec<OpenApiParameter>>,
-    /// The request body applicable for this operation.
-    #[serde(rename = "requestBody")]
-    pub request_body: Option<serde_json::Value>,
-    /// The list of possible responses as they are returned from executing this operation.
-    pub responses: std::collections::HashMap<String, OpenApiResponse>,
-    /// A map of possible out-of band callbacks related to the parent operation.
-    pub callbacks: Option<serde_json::Value>,
-    /// Declares this operation to be deprecated. Consumers SHOULD refrain from usage of the declared operation.
-    pub deprecated: Option<bool>,
-    /// A declaration of which security mechanisms can be used for this operation.
-    pub security: Option<Vec<serde_json::Value>>,
-    /// An alternative server array to service this operation.
-    pub servers: Option<Vec<serde_json::Value>>,
-    /// Specification extensions (fields starting with `x-`).
-    #[serde(flatten)]
-    pub vendor_extensions: std::collections::HashMap<String, serde_json::Value>,
-}
-
-/// Information about a single parameter in an OpenAPI operation.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OpenApiParameter {
-    /// The name of the parameter. Parameter names are case sensitive.
-    pub name: String,
-    /// The location of the parameter. Possible values: "query", "header", "path", or "cookie".
-    #[serde(rename = "in")]
-    pub in_: String,
-    /// A brief description of the parameter. This could contain examples of use. CommonMark syntax MAY be used for rich text representation.
-    pub description: Option<String>,
-    /// Determines whether this parameter is mandatory. If the parameter location is "path", this property is REQUIRED and its value MUST be true. Otherwise, the property MAY be included and its default value is false.
-    pub required: Option<bool>,
-    /// Specifies that a parameter is deprecated and SHOULD be transitioned out of usage.
-    pub deprecated: Option<bool>,
-    /// Sets the ability to pass empty-valued parameters. This is valid only for query parameters and allows sending a parameter with an empty value. Default value is false.
-    #[serde(rename = "allowEmptyValue")]
-    pub allow_empty_value: Option<bool>,
-    /// Describes how the parameter value will be serialized depending on the type of the parameter value. Default values (based on value of in): for query - form; for path - simple; for header - simple; for cookie - form.
-    pub style: Option<String>,
-    /// When this is true, parameter values of type array or object generate separate parameters for each value of the array or key-value pair of the map. Default value is false.
-    pub explode: Option<bool>,
-    /// Determines whether the parameter value SHOULD allow reserved characters, as defined by RFC3986, to appear unescaped in the parameter value. Default value is false.
-    #[serde(rename = "allowReserved")]
-    pub allow_reserved: Option<bool>,
-    /// The schema defining the type used for the parameter.
-    pub schema: Option<serde_json::Value>,
-    /// Example of the parameter's potential value. The example SHOULD match the specified schema and encoding properties if present.
-    pub example: Option<serde_json::Value>,
-    /// Examples of the parameter's potential value. Each example SHOULD contain a value in the correct format as specified in the parameter encoding.
-    pub examples: Option<std::collections::HashMap<String, serde_json::Value>>,
-    /// A map containing the representations for the parameter. The key is the media type and the value describes it.
-    pub content: Option<std::collections::HashMap<String, serde_json::Value>>,
-    /// Specification extensions (fields starting with `x-`).
-    #[serde(flatten)]
-    pub vendor_extensions: std::collections::HashMap<String, serde_json::Value>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OpenApiResponse {
-    /// A short description of the response. CommonMark syntax MAY be used for rich text representation.
-    pub description: Option<String>,
-    /// Maps a header name to its definition. The key is the name of the header, and the value describes it.
-    pub headers: Option<std::collections::HashMap<String, serde_json::Value>>,
-    /// A map containing descriptions of potential response payloads. The key is a media type, and the value describes it.
-    pub content: Option<std::collections::HashMap<String, serde_json::Value>>,
-    /// A map of operations links that can be followed from the response. The key is the link name, the value describes the link.
-    pub links: Option<std::collections::HashMap<String, serde_json::Value>>,
-    /// Specification extensions (fields starting with `x-`).
-    #[serde(flatten)]
-    pub vendor_extensions: std::collections::HashMap<String, serde_json::Value>,
-}
-
 /// Represents an OpenAPI specification
 #[derive(Debug, serde::Serialize)]
 #[serde(transparent)]
@@ -264,10 +149,8 @@ impl OpenApiContext {
                 // Use the first scheme, prefer https if available
                 if schemes.iter().any(|s| s.as_str() == Some("https")) {
                     "https"
-                } else if let Some(first_scheme) = schemes.first().and_then(|s| s.as_str()) {
-                    first_scheme
                 } else {
-                    "https" // Default to https
+                    schemes.first().and_then(|s| s.as_str()).unwrap_or("https")
                 }
             } else {
                 "https" // Default to https if no schemes specified
@@ -509,11 +392,11 @@ impl OpenApiContext {
     }
 
     /// Extract typed parameter info for a handler
-    pub fn extract_parameter_info(&self, path_item: &JsonValue) -> Vec<ParameterInfo> {
+    pub fn extract_parameter_info(&self, path_item: &JsonValue) -> Vec<OpenApiParameterInfo> {
         self.extract_parameters(path_item)
             .unwrap_or_default()
             .into_iter()
-            .map(|param| ParameterInfo {
+            .map(|param| OpenApiParameterInfo {
                 name: param.name,
                 description: param.description,
                 example: param.example,
@@ -523,7 +406,7 @@ impl OpenApiContext {
     }
 
     /// Extract typed property info from properties JSON
-    pub fn extract_property_info(properties_json: &JsonValue) -> Vec<PropertyInfo> {
+    pub fn extract_property_info(properties_json: &JsonValue) -> Vec<OpenApiPropertyInfo> {
         OpenApiContext::extract_row_properties(properties_json)
             .into_iter()
             .map(|prop| {
@@ -542,7 +425,7 @@ impl OpenApiContext {
                     .and_then(JsonValue::as_str)
                     .map(String::from);
                 let example = schema.and_then(|s| s.get("example")).cloned();
-                PropertyInfo {
+                OpenApiPropertyInfo {
                     name: name.clone(),
                     title,
                     description,
@@ -588,7 +471,7 @@ impl OpenApiContext {
         // Ensure it starts with a letter or underscore (valid Rust identifier)
         if !result.is_empty()
             && !result.chars().next().unwrap().is_alphabetic()
-            && result.chars().next().unwrap() != '_'
+            && !result.starts_with('_')
         {
             result = format!("m_{}", result);
         }
@@ -622,7 +505,7 @@ impl OpenApiContext {
                     })
                     .to_string();
                 // Trim edges and collapse inner whitespace
-                let mut trimmed = ws_re.replace_all(&line.trim(), " ").to_string();
+                let mut trimmed = ws_re.replace_all(line.trim(), " ").to_string();
                 // Remove spaces around hyphens
                 trimmed = trimmed
                     .replace(" - ", "-")
@@ -753,6 +636,121 @@ impl OpenApiContext {
         // Use the generic schema extraction method
         self.extract_schema_properties(schema)
     }
+}
+
+/// Parsed OpenAPI operation for template rendering
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OpenApiOperation {
+    /// Unique string used to identify the operation. The id MUST be unique among all operations described in the API.
+    #[serde(rename = "operationId")]
+    pub id: String,
+    /// The path where this operation is defined (e.g., "/pet/findByStatus")
+    pub path: String,
+    /// A list of tags for API documentation control. Tags can be used for logical grouping of operations.
+    #[serde(rename = "tags")]
+    pub tags: Option<Vec<String>>,
+    /// A short summary of what the operation does.
+    pub summary: Option<String>,
+    /// A verbose explanation of the operation behavior. CommonMark syntax MAY be used for rich text representation.
+    pub description: Option<String>,
+    /// Additional external documentation for this operation.
+    #[serde(rename = "externalDocs")]
+    pub external_docs: Option<serde_json::Value>,
+    /// A list of parameters that are applicable for this operation. If a parameter is already defined at the Path Item, the new definition will override it but can never remove it.
+    pub parameters: Option<Vec<OpenApiParameter>>,
+    /// The request body applicable for this operation.
+    #[serde(rename = "requestBody")]
+    pub request_body: Option<serde_json::Value>,
+    /// The list of possible responses as they are returned from executing this operation.
+    pub responses: std::collections::HashMap<String, OpenApiResponse>,
+    /// A map of possible out-of band callbacks related to the parent operation.
+    pub callbacks: Option<serde_json::Value>,
+    /// Declares this operation to be deprecated. Consumers SHOULD refrain from usage of the declared operation.
+    pub deprecated: Option<bool>,
+    /// A declaration of which security mechanisms can be used for this operation.
+    pub security: Option<Vec<serde_json::Value>>,
+    /// An alternative server array to service this operation.
+    pub servers: Option<Vec<serde_json::Value>>,
+    /// Specification extensions (fields starting with `x-`).
+    #[serde(flatten)]
+    pub vendor_extensions: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Info about a single OpenAPI parameter
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OpenApiParameterInfo {
+    /// Name of the parameter as defined in the OpenAPI spec
+    pub name: String,
+    /// Optional description of the parameter
+    pub description: Option<String>,
+    /// Optional example value for the parameter
+    pub example: Option<JsonValue>,
+    // Note: Language-specific type info (e.g., rust_type) is injected by the builder, not stored here.
+}
+
+/// Info about a single response property
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OpenApiPropertyInfo {
+    /// Name of the property as defined in the OpenAPI schema
+    pub name: String,
+    /// Optional title metadata for the property
+    pub title: Option<String>,
+    /// Optional description of the property
+    pub description: Option<String>,
+    /// Optional example value for the property
+    pub example: Option<JsonValue>,
+}
+
+/// Information about a single parameter in an OpenAPI operation.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OpenApiParameter {
+    /// The name of the parameter. Parameter names are case sensitive.
+    pub name: String,
+    /// The location of the parameter. Possible values: "query", "header", "path", or "cookie".
+    #[serde(rename = "in")]
+    pub in_: String,
+    /// A brief description of the parameter. This could contain examples of use. CommonMark syntax MAY be used for rich text representation.
+    pub description: Option<String>,
+    /// Determines whether this parameter is mandatory. If the parameter location is "path", this property is REQUIRED and its value MUST be true. Otherwise, the property MAY be included and its default value is false.
+    pub required: Option<bool>,
+    /// Specifies that a parameter is deprecated and SHOULD be transitioned out of usage.
+    pub deprecated: Option<bool>,
+    /// Sets the ability to pass empty-valued parameters. This is valid only for query parameters and allows sending a parameter with an empty value. Default value is false.
+    #[serde(rename = "allowEmptyValue")]
+    pub allow_empty_value: Option<bool>,
+    /// Describes how the parameter value will be serialized depending on the type of the parameter value. Default values (based on value of in): for query - form; for path - simple; for header - simple; for cookie - form.
+    pub style: Option<String>,
+    /// When this is true, parameter values of type array or object generate separate parameters for each value of the array or key-value pair of the map. Default value is false.
+    pub explode: Option<bool>,
+    /// Determines whether the parameter value SHOULD allow reserved characters, as defined by RFC3986, to appear unescaped in the parameter value. Default value is false.
+    #[serde(rename = "allowReserved")]
+    pub allow_reserved: Option<bool>,
+    /// The schema defining the type used for the parameter.
+    pub schema: Option<serde_json::Value>,
+    /// Example of the parameter's potential value. The example SHOULD match the specified schema and encoding properties if present.
+    pub example: Option<serde_json::Value>,
+    /// Examples of the parameter's potential value. Each example SHOULD contain a value in the correct format as specified in the parameter encoding.
+    pub examples: Option<std::collections::HashMap<String, serde_json::Value>>,
+    /// A map containing the representations for the parameter. The key is the media type and the value describes it.
+    pub content: Option<std::collections::HashMap<String, serde_json::Value>>,
+    /// Specification extensions (fields starting with `x-`).
+    #[serde(flatten)]
+    pub vendor_extensions: std::collections::HashMap<String, serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OpenApiResponse {
+    /// A short description of the response. CommonMark syntax MAY be used for rich text representation.
+    pub description: Option<String>,
+    /// Maps a header name to its definition. The key is the name of the header, and the value describes it.
+    pub headers: Option<std::collections::HashMap<String, serde_json::Value>>,
+    /// A map containing descriptions of potential response payloads. The key is a media type, and the value describes it.
+    pub content: Option<std::collections::HashMap<String, serde_json::Value>>,
+    /// A map of operations links that can be followed from the response. The key is the link name, the value describes the link.
+    pub links: Option<std::collections::HashMap<String, serde_json::Value>>,
+    /// Specification extensions (fields starting with `x-`).
+    #[serde(flatten)]
+    pub vendor_extensions: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[cfg(test)]

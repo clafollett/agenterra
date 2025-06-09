@@ -2,18 +2,13 @@
 
 use super::EndpointContextBuilder;
 use crate::openapi::OpenApiOperation;
+use crate::templates::{ParameterKind, TemplateParameterInfo};
 use crate::utils::{to_snake_case, to_upper_camel_case};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-/// Rust-specific parameter info (adds rust_type to OpenAPI parameter)
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RustParameterInfo {
-    pub name: String,
-    pub rust_type: String,
-    pub description: Option<String>,
-    pub example: Option<JsonValue>,
-}
+// Type alias for Rust-specific parameter info
+pub type RustParameterInfo = TemplateParameterInfo;
 
 /// Rust-specific property info (adds rust_type to OpenAPI property)
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,8 +29,8 @@ pub struct RustEndpointContext {
     pub endpoint_cap: String,
     /// Sanitized endpoint name for file system use
     pub endpoint_fs: String,
-    /// Raw endpoint path as defined in the OpenAPI spec
-    pub endpoint_raw: String,
+    /// Raw path as defined in the OpenAPI spec (e.g., "/pet/{petId}")
+    pub path: String,
     /// Name of the generated function for the endpoint
     pub fn_name: String,
     /// Name of the generated parameters struct (e.g., 'users_params')
@@ -51,7 +46,7 @@ pub struct RustEndpointContext {
     /// Names of properties to pass into handler functions
     pub properties_for_handler: Vec<String>,
     /// Typed list of parameters for the endpoint
-    pub parameters: Vec<RustParameterInfo>,
+    pub parameters: Vec<TemplateParameterInfo>,
     /// Summary of the endpoint
     pub summary: String,
     /// Description of the endpoint
@@ -79,7 +74,7 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
             endpoint: to_snake_case(&op.id),
             endpoint_cap: to_upper_camel_case(&op.id),
             endpoint_fs: to_snake_case(&op.id),
-            endpoint_raw: op.path.clone(),
+            path: op.path.clone(),
             properties_type: to_upper_camel_case(&format!("{}_properties", op.id)),
             response_type: to_upper_camel_case(&format!("{}_response", op.id)),
             envelope_properties: serde_json::json!({}), // TODO: Extract from op.responses if present
@@ -90,11 +85,18 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
                 .clone()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|p| RustParameterInfo {
+                .map(|p| TemplateParameterInfo {
                     name: p.name,
-                    rust_type: map_openapi_schema_to_rust_type(p.schema.as_ref()),
+                    target_type: map_openapi_schema_to_rust_type(p.schema.as_ref()),
                     description: p.description,
                     example: p.example,
+                    kind: match p.in_.as_str() {
+                        "path" => ParameterKind::Path,
+                        "query" => ParameterKind::Query,
+                        "header" => ParameterKind::Header,
+                        "cookie" => ParameterKind::Cookie,
+                        _ => ParameterKind::Query, // Safe default
+                    },
                 })
                 .collect(),
             summary: op.summary.clone().unwrap_or_default(),

@@ -49,6 +49,17 @@ MCPGen transforms OpenAPI specifications into MCP (Model Context Protocol) serve
 OpenAPI Spec → Parser → Template Builder → Code Generator → MCP Server
 ```
 
+### Base URL Resolution Rules
+When resolving the base API URL for generated servers:
+
+1. **User-supplied URL takes precedence**: If the user provides a `--base-url` parameter, validate it's a valid URL and use it
+2. **Fallback to OpenAPI schema**: If no user URL provided, extract from:
+   - OpenAPI 3.x: `servers[0].url` field
+   - Swagger 2.0: Construct from `host` + `basePath` fields
+3. **Error on missing URL**: If no base URL found anywhere, fail with clear error message recommending the user supply `--base-url`
+
+This design allows flexibility for different environments (dev/staging/prod) while maintaining compatibility with OpenAPI specifications.
+
 ### Key Components
 
 **`openapi.rs`** - OpenAPI Parser

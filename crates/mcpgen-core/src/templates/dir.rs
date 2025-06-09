@@ -3,7 +3,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::template_kind::TemplateKind;
+use super::TemplateKind;
 
 /// Represents a template directory with resolved paths and validation
 #[derive(Debug, Clone)]

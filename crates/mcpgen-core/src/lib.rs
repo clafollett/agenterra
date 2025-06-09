@@ -9,10 +9,7 @@ pub mod error;
 pub mod generate;
 pub mod manifest;
 pub mod openapi;
-pub mod template_dir;
-pub mod template_kind;
-pub mod template_manager;
-pub mod template_options;
+pub mod templates;
 pub mod utils;
 
 pub use crate::{
@@ -20,10 +17,7 @@ pub use crate::{
     error::{Error, Result},
     generate::generate,
     openapi::OpenApiContext,
-    template_dir::TemplateDir,
-    template_kind::TemplateKind,
-    template_manager::TemplateManager,
-    template_options::TemplateOptions,
+    templates::{TemplateDir, TemplateKind, TemplateManager, TemplateOptions},
 };
 
 /// Result type for MCP generation operations

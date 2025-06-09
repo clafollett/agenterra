@@ -39,9 +39,10 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Supported template kinds (languages/frameworks)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TemplateKind {
     /// Rust with Axum web framework
+    #[default]
     RustAxum,
     /// Python with FastAPI
     PythonFastAPI,
@@ -91,11 +92,6 @@ impl fmt::Display for TemplateKind {
     }
 }
 
-impl Default for TemplateKind {
-    fn default() -> Self {
-        TemplateKind::RustAxum
-    }
-}
 
 #[cfg(test)]
 mod tests {
