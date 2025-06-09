@@ -162,7 +162,7 @@ mod tests {
         cleanup_env_vars();
         let ctx = TestContext::new()?;
 
-        let template = "rust-axum";
+        let template = "rust_axum";
         let template_dir = ctx.workspace_root.join("templates").join(template);
         let output_dir = ctx.output_path(template, OPENAPI_V3_URL.as_str());
 
@@ -176,18 +176,20 @@ mod tests {
         // Run the scaffold command with a URL
         let mut cmd = ctx.build_command()?;
         cmd.arg("scaffold")
+            .arg("--project-name")
+            .arg("petstore-mcp-server")
             .arg("--spec")
             .arg(OPENAPI_V3_URL.as_str())
-            .arg("--template")
+            .arg("--template-kind")
             .arg(template)
-            .arg("--output")
+            .arg("--output-dir")
             .arg(&output_dir)
-            .arg("--port")
-            .arg("8080")
             .arg("--log-file")
             .arg("test.log")
             .arg("--template-dir")
-            .arg(&template_dir);
+            .arg(&template_dir)
+            .arg("--port")
+            .arg("8080");
 
         println!("Running command: {:?}", cmd);
 
@@ -349,11 +351,11 @@ mod tests {
         cmd.arg("scaffold")
             .arg("--spec")
             .arg(spec_path)
-            .arg("--template")
+            .arg("--template-kind")
             .arg(template_name)
             .arg("--template-dir")
             .arg(&template_dir) // Pass the specific template directory, not the parent
-            .arg("--output")
+            .arg("--output-dir")
             .arg(&output_dir)
             .arg("--port")
             .arg("8080")

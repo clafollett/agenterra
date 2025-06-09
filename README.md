@@ -16,8 +16,6 @@
 - **FinTech & Data Teams** 📊 - Build compliant financial data APIs with built-in validation
 - **Startups & Enterprises** 🚀 - Accelerate development of AI-powered applications
 
----
-
 ## ✨ Features
 
 - **⚡ Blazing Fast** - Built with Rust for maximum performance and safety
@@ -29,8 +27,6 @@
 - **🔌 MCP Protocol Support** - Full compatibility with Model Context Protocol
 - **📦 Docker & Binary** - Multiple deployment options for any environment
 
----
-
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -38,94 +34,45 @@
 - [Rust 1.86.0+](https://rustup.rs/)
 - [Docker](https://www.docker.com/) (optional, for containerized deployment)
 
-### Method 1: Using Docker (Recommended)
-
-```bash
-# Use a local OpenAPI spec file
-docker run -p 3000:3000 -v $(pwd):/app ghcr.io/clafollett/mcpgen:latest scaffold --spec /app/your-api.yaml
-
-# Or use a remote OpenAPI spec URL
-docker run -p 3000:3000 ghcr.io/clafollett/mcpgen:latest scaffold --spec https://example.com/openapi.json
-```
-
-### Method 2: From Pre-built Binary
-
-1. Download the latest release for your platform from [Releases](https://github.com/clafollett/mcpgen/releases)
-2. Make it executable and run:
-   ```bash
-   chmod +x mcpgen
-   ./mcpgen scaffold --spec your-api.yaml
-   ```
-
-### Method 3: Build from Source
+### Method 1: Build & Run from Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/clafollett/mcpgen.git
 cd mcpgen
 
-# Build and install
-cargo install --path .
+# Generate from a local file without install:
+cargo run -p mcpgen -- scaffold --spec ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/cargo_run_petstore_mcp_server_local_file
+
+# Generate from a remote URL without install:
+cargo run -p mcpgen -- scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/cargo_run_petstore_mcp_server_remote_url
+
+# Or install the CLI
+cargo install --path crates/mcpgen-cli
 
 # Generate your MCP server from a local file
-mcpgen scaffold --spec examples/petstore.yaml --output my-server
+mcpgen scaffold --spec ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
 
-# Or generate from a remote URL
-mcpgen scaffold --spec https://example.com/openapi.json --output my-server
+# Generate from a remote URL
+mcpgen scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
+
 ```
 
----
+> **Note:** MCPGen uses a Cargo workspace. You must use the CLI crate path (`crates/mcpgen-cli`) for `cargo install`. Top-level install will not work.
 
-## 🏗️ Generate Your First MCP Server
+### Method 2: From Pre-built Binary (Coming soon)
 
-1. **Prepare Your OpenAPI Spec**
+1. Download the latest release for your platform from [Releases](https://github.com/clafollett/mcpgen/releases)
+2. Make it executable and run:
    ```bash
-   # Option 1: Use a local file
-   curl -o petstore.yaml https://raw.githubusercontent.com/OAI/OpenAPI-Specification/main/examples/v3.0/petstore.yaml
+   chmod +x mcpgen
    
-   # Option 2: Use a remote URL directly
-   # (No download needed, MCPGen can fetch it directly)
-   ```
+   # Generate your MCP server from a local file
+   ./mcpgen scaffold --spec ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
 
-2. **Generate the Server**
-   
-   Using a local file:
-   ```bash
-   mcpgen scaffold --spec petstore.yaml --output my-server
+   # Generate from a remote URL
+   ./mcpgen scaffold --spec https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
    ```
-   
-   Or using a remote URL:
-   ```bash
-   mcpgen scaffold --spec https://raw.githubusercontent.com/OAI/OpenAPI-Specification/main/examples/v3.0/petstore.yaml --output my-server
-   ```
-   ```bash
-   mcpgen scaffold --spec petstore.yaml --output petstore-server
-   ```
-
-3. **Run the Server (STDIO Mode for MCP)**
-   ```bash
-   cd petstore-server
-   cargo run
-   ```
-
-4. **Test the API**
-   ```bash
-   # List all pets
-   curl http://localhost:3000/pets
-   
-   # Get pet by ID
-   curl http://localhost:3000/pets/1
-   ```
-
-5. **Access MCP Endpoint**
-   ```bash
-   # MCP endpoint for AI tool integration
-   curl -X POST http://localhost:3000/mcp \
-     -H "Content-Type: application/json" \
-     -d '{"method": "listPets", "params": {}}'
-   ```
-
----
 
 ## 🔌 Integrating with MCP Clients
 
@@ -139,8 +86,7 @@ Add this to your VS Code settings (File > Preferences > Settings > Open Settings
     "servers": {
       "petstore": {
         "command": "cargo",
-        "args": ["run", "--manifest-path=/path/to/petstore-server/Cargo.toml"],
-        "cwd": "/path/to/petstore-server"
+        "args": ["run", "--manifest-path", "/path/to/petstore-server/Cargo.toml"]
       }
     }
   }
@@ -156,8 +102,7 @@ Add this to your Cursor settings (File > Preferences > Settings > Extensions > M
   "mcpServers": {
     "petstore": {
       "command": "cargo",
-      "args": ["run", "--manifest-path=/path/to/petstore-server/Cargo.toml"],
-      "cwd": "/path/to/petstore-server"
+      "args": ["run", "--manifest-path", "/path/to/petstore-server/Cargo.toml"]
     }
   }
 }
@@ -203,8 +148,6 @@ Then update your MCP client configuration to use the Docker container:
   }
 }
 ```
-
----
 
 ## ⚡ Best Practices
 
@@ -374,7 +317,7 @@ MCPGen can be configured through multiple methods (in order of precedence):
 
 1. **Command-line arguments**
    ```bash
-   mcpgen generate --input spec.yaml --output my_server --template rust-axum
+   mcpgen generate --input spec.yaml --output my_server --template rust_axum
    ```
 
 2. **Configuration file** (`mcpgen.toml` in project root)
@@ -382,7 +325,7 @@ MCPGen can be configured through multiple methods (in order of precedence):
    [generate]
    input = "openapi.yaml"
    output = "my_server"
-   template = "rust-axum"
+   template = "rust_axum"
    ```
 
 3. **Environment variables**
@@ -397,7 +340,7 @@ MCPGen can be configured through multiple methods (in order of precedence):
 MCPGen uses [Tera](https://tera.netlify.app/) templates for code generation. You can use built-in templates or create your own.
 
 ### Built-in Templates
-- `rust-axum`: Generate a server using the [Axum](https://github.com/tokio-rs/axum) web framework
+- `rust_axum`: Generate a server using the [Axum](https://github.com/tokio-rs/axum) web framework
 
 ### Custom Templates
 Create a `templates` directory in your project root and add your template files. MCPGen will use these instead of the built-in templates.

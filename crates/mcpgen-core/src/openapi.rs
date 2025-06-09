@@ -160,16 +160,16 @@ impl OpenApiContext {
     /// Create a new OpenAPISpec from a file or URL (supports both YAML and JSON)
     pub async fn from_file_or_url<P: AsRef<str>>(location: P) -> crate::Result<Self> {
         let location = location.as_ref();
-        
+
         // Check if the input looks like a URL
         if location.starts_with("http://") || location.starts_with("https://") {
             return Self::from_url(location).await;
         }
-        
+
         // Otherwise treat as a file path
         Self::from_file(location).await
     }
-    
+
     /// Create a new OpenAPISpec from a file (supports both YAML and JSON)
     pub async fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
         let path = path.as_ref();
@@ -182,13 +182,13 @@ impl OpenApiContext {
             ))
         })
     }
-    
+
     /// Create a new OpenAPISpec from a URL (supports both YAML and JSON)
     pub async fn from_url(url: &str) -> crate::Result<Self> {
         let response = reqwest::get(url).await.map_err(|e| {
             crate::Error::openapi(format!("Failed to fetch OpenAPI spec from {}: {}", url, e))
         })?;
-        
+
         if !response.status().is_success() {
             return Err(crate::Error::openapi(format!(
                 "Failed to fetch OpenAPI spec from {}: HTTP {}",
@@ -196,22 +196,16 @@ impl OpenApiContext {
                 response.status()
             )));
         }
-        
+
         let content = response.text().await.map_err(|e| {
-            crate::Error::openapi(format!(
-                "Failed to read response from {}: {}",
-                url, e
-            ))
+            crate::Error::openapi(format!("Failed to read response from {}: {}", url, e))
         })?;
-        
+
         Self::parse_content(&content).map_err(|e| {
-            crate::Error::openapi(format!(
-                "Failed to parse OpenAPI spec from {}: {}",
-                url, e
-            ))
+            crate::Error::openapi(format!("Failed to parse OpenAPI spec from {}: {}", url, e))
         })
     }
-    
+
     /// Parse content as either JSON or YAML
     fn parse_content(content: &str) -> Result<Self, String> {
         // Try to parse as JSON first
@@ -271,9 +265,13 @@ impl OpenApiContext {
                         .and_then(JsonValue::as_str)
                         .map(String::from)
                         .unwrap_or_else(|| {
-                            format!("{}_{}", method, path.trim_start_matches('/').replace('/', "_"))
+                            format!(
+                                "{}_{}",
+                                method,
+                                path.trim_start_matches('/').replace('/', "_")
+                            )
                         });
-                    
+
                     let summary = method_item
                         .get("summary")
                         .and_then(JsonValue::as_str)
@@ -306,7 +304,7 @@ impl OpenApiContext {
                                 .collect()
                         });
                     let vendor_extensions = self.extract_vendor_extensions(method_item);
-                    
+
                     operations.push(OpenApiOperation {
                         id: operation_id,
                         summary,
@@ -631,7 +629,10 @@ impl OpenApiContext {
         if schema_obj.get("properties").is_some()
             || schema_obj.get("additionalProperties").is_some()
         {
-            let props = schema_obj.get("properties").cloned().unwrap_or(JsonValue::Null);
+            let props = schema_obj
+                .get("properties")
+                .cloned()
+                .unwrap_or(JsonValue::Null);
             return Ok((props, None));
         }
 

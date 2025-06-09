@@ -240,7 +240,7 @@ pub fn assert_file_contains<P: AsRef<Path>>(path: P, contents: &[&str]) -> anyho
 /// Creates a basic template directory structure for testing
 pub fn create_test_template_dir(dir: &Path) -> anyhow::Result<()> {
     // Create template directory
-    let template_dir = dir.join("custom-rust-axum");
+    let template_dir = dir.join("custom_rust_axum");
     fs::create_dir_all(&template_dir)?;
 
     // Create template manifest

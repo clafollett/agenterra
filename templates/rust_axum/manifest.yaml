@@ -1,5 +1,5 @@
-# Template manifest for rust-axum server
-name: rust-axum
+# Template manifest for rust_axum server
+name: rust_axum
 description: A Rust server using the Axum web framework
 version: "0.1.0"
 language: rust
@@ -17,6 +17,10 @@ files:
     destination: src/handlers/{endpoint}.rs
   - source: handlers_mod.rs.tera
     destination: src/handlers/mod.rs
+  - source: server.rs.tera
+    destination: src/server.rs
+  - source: signal.rs.tera
+    destination: src/signal.rs
   - source: main.rs.tera
     destination: src/main.rs
 

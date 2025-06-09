@@ -45,7 +45,7 @@ mcpgen generate [OPTIONS] --input <INPUT> --output <OUTPUT>
 |--------|-------------|---------|
 | `-i`, `--input <FILE>` | Path to OpenAPI spec file | *required* |
 | `-o`, `--output <DIR>` | Output directory | *required* |
-| `-t`, `--template <NAME>` | Template name | `rust-axum` |
+| `-t`, `--template <NAME>` | Template name | `rust_axum` |
 | `--force` | Overwrite existing files | `false` |
 | `--skip-validate` | Skip OpenAPI validation | `false` |
 
@@ -57,7 +57,7 @@ Create a `mcpgen.toml` or `.mcpgen.toml` file in your project root:
 [generate]
 input = "openapi.yaml"
 output = "generated"
-template = "rust-axum"
+template = "rust_axum"
 force = false
 skip_validate = false
 
@@ -88,7 +88,7 @@ export MCPGEN_INPUT=openapi.yaml
 export MCPGEN_OUTPUT=generated
 
 # Template options
-export MCPGEN_TEMPLATE=rust-axum
+export MCPGEN_TEMPLATE=rust_axum
 export MCPGEN_TEMPLATE_OPTIONS_ALL_OPERATIONS=true
 
 # Server options
@@ -129,7 +129,7 @@ output = "generated"
 [generate]
 input = "api/openapi.yaml"
 output = "generated"
-template = "rust-axum"
+template = "rust_axum"
 force = true
 skip_validate = false
 
@@ -160,7 +160,7 @@ format = "json"
 # .env file
 MCPGEN_INPUT=api/openapi.yaml
 MCPGEN_OUTPUT=generated
-MCPGEN_TEMPLATE=rust-axum
+MCPGEN_TEMPLATE=rust_axum
 MCPGEN_SERVER_PORT=3000
 MCPGEN_LOGGING_LEVEL=debug
 ```

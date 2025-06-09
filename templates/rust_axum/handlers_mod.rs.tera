@@ -1,6 +1,5 @@
 //! Do not edit by hand.
 //! Auto-generated handler stubs for MCP endpoints.
-
 // MCP auto-generated: Endpoint handler modules
 {%- for ep in endpoints %}
 pub mod {{ ep.endpoint }};
@@ -13,8 +12,17 @@ use crate::config::Config;
 use log::debug;
 use rmcp::{ServerHandler, Error, model::*, service::*, tool};
 
+pub const BASE_API_URL: &str = "{{ base_api_url }}";
+
 #[derive(Clone, Debug, Default)]
 pub struct McpServer;
+
+impl McpServer {
+    /// Create a new MCP server instance
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 #[tool(tool_box)]
 impl McpServer {

@@ -32,7 +32,7 @@ mcpgen scaffold --spec <SPEC> --output <OUTPUT> [OPTIONS]
 |--------|-------------|---------|
 | `--spec <LOCATION>` | Path or URL to OpenAPI spec (YAML or JSON). Can be a local file path or an HTTP/HTTPS URL. | *required* |
 | `--output <DIR>` | Output directory for generated code | *required* |
-| `-t`, `--template <NAME>` | Template to use (e.g., rust-axum, python-fastapi). Default is Rust with Axum framework. | `rust-axum` |
+| `-t`, `--template <NAME>` | Template to use (e.g., rust_axum, python_fastapi). Default is Rust with Axum framework. | `rust_axum` |
 | `--template-dir <DIR>` | Custom template directory (only used with --template=custom) | |
 | `--policy-plugins <PLUGINS>` | Comma-separated list of policy plugins | |
 | `--port <PORT>` | Server port | `3000` |

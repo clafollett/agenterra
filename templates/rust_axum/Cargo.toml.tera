@@ -19,20 +19,20 @@ clap = { version = "4", features = ["derive"] }
 dotenvy = { version = "0.15.7", features = ["cli"] }
 futures = "0.3.31"
 log = "0.4"
+regex = "1.11.1"
+reqwest = { version = "0.12.19", default-features = false, features = [
+    "json",
+    "stream",
+    "rustls-tls",
+] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main", features = [
     "macros",
     "server",
     "transport-sse-server",
     "transport-io",
-    "auth",
+    "auth"
 ] }
-regex = "1.11.1"
-reqwest = { version = "0.11", default-features = false, features = [
-    "json",
-    "stream",
-    "rustls-tls",
-] }
-schemars = "0.8"
+schemars = "0.8.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"

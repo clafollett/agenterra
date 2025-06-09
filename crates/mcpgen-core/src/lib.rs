@@ -3,46 +3,28 @@
 //! This library provides the core functionality for generating MCP (Model-Controller-Presenter)
 //! server code from OpenAPI specifications.
 
-// Internal imports (std, crate)
-use std::str::FromStr;
-
-// Module declarations (alphabetized)
 pub mod builders;
 pub mod config;
 pub mod error;
+pub mod generate;
 pub mod manifest;
 pub mod openapi;
-pub mod template;
+pub mod template_dir;
+pub mod template_kind;
 pub mod template_manager;
 pub mod template_options;
 pub mod utils;
 
-// Internal crate imports (alphabetized)
-use openapi::OpenApiContext;
-use template::Template;
-use template_manager::TemplateManager;
-
-// Re-exports (alphabetized)
-pub use config::Config;
-pub use error::{Error, Result};
-pub use template_options::TemplateOptions;
+pub use crate::{
+    config::Config,
+    error::{Error, Result},
+    generate::generate,
+    openapi::OpenApiContext,
+    template_dir::TemplateDir,
+    template_kind::TemplateKind,
+    template_manager::TemplateManager,
+    template_options::TemplateOptions,
+};
 
 /// Result type for MCP generation operations
 pub type MCPResult<T> = std::result::Result<T, Error>;
-
-/// Main entry point for code generation
-pub async fn generate(config: &Config, template_opts: Option<TemplateOptions>) -> Result<()> {
-    // 1. Load OpenAPI spec
-    let spec = OpenApiContext::from_file(&config.openapi_spec).await?;
-
-    // 2. Initialize template manager
-    let template_kind = Template::from_str(&config.template).unwrap_or_default();
-    let template_manager = TemplateManager::new(template_kind, None).await?;
-
-    // 3. Delegate to TemplateManager.generate
-    template_manager
-        .generate(&spec, config, template_opts)
-        .await?;
-
-    Ok(())
-}

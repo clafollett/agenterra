@@ -11,7 +11,7 @@
 //!
 //! // Create a new config programmatically
 //! let mut config = Config::new("openapi.yaml", "output");
-//! config.template = "rust-axum".to_string();
+//! config.template = "rust_axum".to_string();
 //! config.include_all = true;
 //!
 //! // Or load from a config file
@@ -27,10 +27,14 @@ use std::path::Path;
 // External imports (alphabetized)
 use serde::{Deserialize, Serialize};
 use tokio::fs;
+use url::Url;
 
 /// Configuration for MCP server generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Project name
+    pub project_name: String,
+
     /// Path to the OpenAPI specification file
     pub openapi_spec: String,
 
@@ -39,7 +43,11 @@ pub struct Config {
 
     /// Template to use for code generation
     #[serde(default = "default_template")]
-    pub template: String,
+    pub template_kind: String,
+
+    /// Optional path to template directory
+    #[serde(default)]
+    pub template_dir: Option<String>,
 
     /// Whether to include all operations by default
     #[serde(default)]
@@ -52,18 +60,28 @@ pub struct Config {
     /// List of operations to exclude
     #[serde(default)]
     pub exclude_operations: Vec<String>,
+
+    /// Base URL of the OpenAPI specification (Optional)
+    pub base_url: Option<Url>,
 }
 
 impl Config {
     /// Create a new Config with default values
-    pub fn new(openapi_spec: impl Into<String>, output_dir: impl Into<String>) -> Self {
+    pub fn new(
+        project_name: impl Into<String>,
+        openapi_spec: impl Into<String>,
+        output_dir: impl Into<String>,
+    ) -> Self {
         Self {
+            project_name: project_name.into(),
             openapi_spec: openapi_spec.into(),
             output_dir: output_dir.into(),
-            template: default_template(),
+            template_kind: default_template(),
+            template_dir: None,
             include_all: false,
             include_operations: Vec::new(),
             exclude_operations: Vec::new(),
+            base_url: None,
         }
     }
 
@@ -83,7 +101,7 @@ impl Config {
 }
 
 fn default_template() -> String {
-    "rust-axum".to_string()
+    "rust_axum".to_string()
 }
 
 #[cfg(test)]
@@ -96,13 +114,18 @@ mod tests {
         let dir = tempdir()?;
         let file_path = dir.path().join("config.yaml");
 
-        let config = Config::new("openapi.json", "output");
+        let config = Config::new("mcpgen-mcp-server", "openapi.json", "output");
         config.save(&file_path).await?;
 
-        let loaded = Config::from_file(&file_path).await?;
-        assert_eq!(config.openapi_spec, loaded.openapi_spec);
-        assert_eq!(config.output_dir, loaded.output_dir);
-        assert_eq!(config.template, loaded.template);
+        let _loaded = Config::from_file(&file_path).await?;
+        assert_eq!(config.project_name, "mcpgen-mcp-server");
+        assert_eq!(config.openapi_spec, "openapi.json");
+        assert_eq!(config.output_dir, "output");
+        assert_eq!(config.template_kind, default_template());
+        assert_eq!(config.include_all, false);
+        assert_eq!(config.include_operations, Vec::<String>::new());
+        assert_eq!(config.exclude_operations, Vec::<String>::new());
+        assert_eq!(config.base_url, None);
 
         Ok(())
     }

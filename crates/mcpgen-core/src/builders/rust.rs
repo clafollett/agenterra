@@ -101,11 +101,11 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
             description: op.description.clone().unwrap_or_default(),
             tags: op.tags.clone().unwrap_or_default(),
             properties_schema: serde_json::Map::new(), // TODO: Extract from op.responses
-            response_schema: serde_json::json!({}), // TODO: Extract from op.responses
-            spec_file_name: None, // TODO: Set if available
-            valid_fields: vec![], // TODO: Populate with valid fields
+            response_schema: serde_json::json!({}),    // TODO: Extract from op.responses
+            spec_file_name: None,                      // TODO: Set if available
+            valid_fields: vec![],                      // TODO: Populate with valid fields
         };
-        
+
         // Convert to JSON
         Ok(serde_json::to_value(&context)?)
     }
