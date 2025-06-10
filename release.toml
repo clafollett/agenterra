@@ -1,7 +1,6 @@
 # Semantic Release Configuration for Agenterra
 # Uses cargo-release for automated semantic versioning
 
-[workspace]
 # Synchronize workspace crate versions
 consolidate-commits = true
 shared-version = true
