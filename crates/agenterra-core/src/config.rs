@@ -122,7 +122,7 @@ mod tests {
         assert_eq!(config.openapi_schema_path, "openapi.json");
         assert_eq!(config.output_dir, "output");
         assert_eq!(config.template_kind, default_template());
-        assert_eq!(config.include_all, false);
+        assert!(!config.include_all);
         assert_eq!(config.include_operations, Vec::<String>::new());
         assert_eq!(config.exclude_operations, Vec::<String>::new());
         assert_eq!(config.base_url, None);
