@@ -100,4 +100,8 @@ jobs:
       run: cargo install cargo-release
 
     - name: Validate release configuration
-      run: cargo release --dry-run --quiet
+      run: |
+        # Validate that all files referenced in release.toml exist
+        cargo release config
+        # Run a dry-run patch release to validate configuration
+        cargo release patch --dry-run --quiet
