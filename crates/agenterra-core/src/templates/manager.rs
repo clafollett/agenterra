@@ -197,11 +197,7 @@ impl TemplateManager {
             Ok(templates)
         })
         .await
-        .map_err(|e| {
-            io::Error::other(
-                format!("Failed to join blocking task: {}", e),
-            )
-        })?
+        .map_err(|e| io::Error::other(format!("Failed to join blocking task: {}", e)))?
     }
 
     /// Generate a handler file from a template
@@ -531,9 +527,7 @@ impl TemplateManager {
             if !parent.exists() {
                 log::debug!("Creating parent directory: {}", parent.display());
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                    io::Error::other(
-                        format!("Failed to create output directory: {}", e),
-                    )
+                    io::Error::other(format!("Failed to create output directory: {}", e))
                 })?;
             }
         }
@@ -641,11 +635,9 @@ impl TemplateManager {
     ) -> Result<()> {
         // Create schemas directory
         let schemas_dir = output_path.join("schemas");
-        tokio::fs::create_dir_all(&schemas_dir).await.map_err(|e| {
-            io::Error::other(
-                format!("Failed to create schemas directory: {}", e),
-            )
-        })?;
+        tokio::fs::create_dir_all(&schemas_dir)
+            .await
+            .map_err(|e| io::Error::other(format!("Failed to create schemas directory: {}", e)))?;
 
         for operation in operations {
             // Language-specific fields like fn_name must be injected by a builder; OpenApiOperation is language-agnostic.
@@ -887,13 +879,11 @@ impl TemplateManager {
                 tokio::fs::write(&schema_path, schema_json)
                     .await
                     .map_err(|e| {
-                        io::Error::other(
-                            format!(
-                                "Failed to write schema file {}: {}",
-                                schema_path.display(),
-                                e
-                            ),
-                        )
+                        io::Error::other(format!(
+                            "Failed to write schema file {}: {}",
+                            schema_path.display(),
+                            e
+                        ))
                     })?;
 
                 // Generate the output path with sanitized operation_id
@@ -912,18 +902,18 @@ impl TemplateManager {
 
                 // Render the template
                 let rendered = self.tera.render(&file.source, &context).map_err(|e| {
-                    io::Error::other(
-                        format!("Failed to render template {}: {}", file.source, e),
-                    )
+                    io::Error::other(format!("Failed to render template {}: {}", file.source, e))
                 })?;
 
                 // Write the file
                 tokio::fs::write(&output_path, rendered)
                     .await
                     .map_err(|e| {
-                        io::Error::other(
-                            format!("Failed to write file {}: {}", output_path.display(), e),
-                        )
+                        io::Error::other(format!(
+                            "Failed to write file {}: {}",
+                            output_path.display(),
+                            e
+                        ))
                     })?;
             }
         }
@@ -971,24 +961,20 @@ impl TemplateManager {
                     .output()
                     .await
                     .map_err(|e| {
-                        io::Error::other(
-                            format!(
-                                "Failed to execute post-generation hook '{}': {}",
-                                command, e
-                            ),
-                        )
+                        io::Error::other(format!(
+                            "Failed to execute post-generation hook '{}': {}",
+                            command, e
+                        ))
                     })?;
 
                 if !output.status.success() {
-                    return Err(io::Error::other(
-                        format!(
-                            "Post-generation hook '{}' failed with status {}\n{}{}",
-                            command,
-                            output.status,
-                            String::from_utf8_lossy(&output.stderr),
-                            String::from_utf8_lossy(&output.stdout)
-                        ),
-                    )
+                    return Err(io::Error::other(format!(
+                        "Post-generation hook '{}' failed with status {}\n{}{}",
+                        command,
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr),
+                        String::from_utf8_lossy(&output.stdout)
+                    ))
                     .into());
                 }
             }
