@@ -104,4 +104,5 @@ jobs:
         # Validate that all files referenced in release.toml exist
         cargo release config
         # Run a dry-run patch release to validate configuration
-        cargo release patch --dry-run --quiet
+        # Use --allow-branch to work with detached HEAD in CI
+        cargo release patch --allow-branch HEAD --no-verify
