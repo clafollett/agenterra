@@ -105,4 +105,5 @@ jobs:
         cargo release config
         # Run a dry-run patch release to validate configuration
         # Use --allow-branch to work with detached HEAD in CI
-        cargo release patch --allow-branch HEAD --no-verify
+        # Use --no-push to prevent pushing during dry-run validation
+        cargo release patch --allow-branch HEAD --no-verify --no-push
