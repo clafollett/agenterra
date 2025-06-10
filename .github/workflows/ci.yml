@@ -80,3 +80,24 @@ jobs:
 
     - name: Run security audit
       run: cargo audit
+
+  release-validation:
+    name: Release Configuration
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout sources
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install stable toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-release
+      run: cargo install cargo-release
+
+    - name: Validate release configuration
+      run: cargo release --dry-run --quiet
