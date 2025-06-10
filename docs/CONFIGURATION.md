@@ -1,6 +1,6 @@
-# MCPGen Configuration ⚙️
+# Agenterra Configuration ⚙️
 
-This guide explains how to configure MCPGen using different methods.
+This guide explains how to configure Agenterra using different methods.
 
 ## Table of Contents
 - [Configuration Methods](#configuration-methods)
@@ -12,10 +12,10 @@ This guide explains how to configure MCPGen using different methods.
 
 ## Configuration Methods
 
-MCPGen can be configured using the following methods (in order of precedence):
+Agenterra can be configured using the following methods (in order of precedence):
 
 1. **Command-Line Arguments** (highest priority)
-2. **Configuration File** (`mcpgen.toml` or `.mcpgen.toml` in project root)
+2. **Configuration File** (`agenterra.toml` or `.agenterra.toml` in project root)
 3. **Environment Variables**
 4. **Default Values** (lowest priority)
 
@@ -24,12 +24,12 @@ MCPGen can be configured using the following methods (in order of precedence):
 ### Global Options
 
 ```bash
-mcpgen [OPTIONS] <SUBCOMMAND>
+agenterra [OPTIONS] <SUBCOMMAND>
 ```
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-c`, `--config <FILE>` | Path to config file | `mcpgen.toml` or `.mcpgen.toml` |
+| `-c`, `--config <FILE>` | Path to config file | `agenterra.toml` or `.agenterra.toml` |
 | `-v`, `--verbose` | Enable verbose output | `false` |
 | `-q`, `--quiet` | Suppress non-essential output | `false` |
 | `-h`, `--help` | Print help | |
@@ -38,7 +38,7 @@ mcpgen [OPTIONS] <SUBCOMMAND>
 ### Generate Command
 
 ```bash
-mcpgen generate [OPTIONS] --input <INPUT> --output <OUTPUT>
+agenterra generate [OPTIONS] --input <INPUT> --output <OUTPUT>
 ```
 
 | Option | Description | Default |
@@ -51,7 +51,7 @@ mcpgen generate [OPTIONS] --input <INPUT> --output <OUTPUT>
 
 ## Configuration File
 
-Create a `mcpgen.toml` or `.mcpgen.toml` file in your project root:
+Create a `agenterra.toml` or `.agenterra.toml` file in your project root:
 
 ```toml
 [generate]
@@ -80,20 +80,20 @@ use_uuid = true
 
 ## Environment Variables
 
-All configuration options can be set via environment variables with the `MCPGEN_` prefix:
+All configuration options can be set via environment variables with the `AGENTERRA_` prefix:
 
 ```bash
 # Basic options
-export MCPGEN_INPUT=openapi.yaml
-export MCPGEN_OUTPUT=generated
+export AGENTERRA_INPUT=openapi.yaml
+export AGENTERRA_OUTPUT=generated
 
 # Template options
-export MCPGEN_TEMPLATE=rust_axum
-export MCPGEN_TEMPLATE_OPTIONS_ALL_OPERATIONS=true
+export AGENTERRA_TEMPLATE=rust_axum
+export AGENTERRA_TEMPLATE_OPTIONS_ALL_OPERATIONS=true
 
 # Server options
-export MCPGEN_SERVER_PORT=8080
-export MCPGEN_SERVER_LOG_LEVEL=debug
+export AGENTERRA_SERVER_PORT=8080
+export AGENTERRA_SERVER_LOG_LEVEL=debug
 ```
 
 ## Template Configuration
@@ -158,18 +158,18 @@ format = "json"
 
 ```bash
 # .env file
-MCPGEN_INPUT=api/openapi.yaml
-MCPGEN_OUTPUT=generated
-MCPGEN_TEMPLATE=rust_axum
-MCPGEN_SERVER_PORT=3000
-MCPGEN_LOGGING_LEVEL=debug
+AGENTERRA_INPUT=api/openapi.yaml
+AGENTERRA_OUTPUT=generated
+AGENTERRA_TEMPLATE=rust_axum
+AGENTERRA_SERVER_PORT=3000
+AGENTERRA_LOGGING_LEVEL=debug
 ```
 
 ## Configuration Precedence
 
 1. Command-line arguments
 2. Environment variables
-3. Configuration file (`mcpgen.toml` or `.mcpgen.toml`)
+3. Configuration file (`agenterra.toml` or `.agenterra.toml`)
 4. Default values
 
 ## Next Steps

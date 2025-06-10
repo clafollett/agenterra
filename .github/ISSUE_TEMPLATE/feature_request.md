@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature or enhancement for the Ascent theme
+about: Suggest a new feature or enhancement
 title: '[FEAT] '
 labels: enhancement, feature
 assignees: ''

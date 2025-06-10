@@ -7,8 +7,8 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug MCPGen - scaffold - OpenAPI v3",
-            "program": "${workspaceFolder}/target/debug/mcpgen",
+            "name": "Debug Agenterra - scaffold - OpenAPI v3",
+            "program": "${workspaceFolder}/target/debug/agenterra",
             "args": [
                 "scaffold",
                 "--project-name",
@@ -20,7 +20,7 @@
                 "--template-dir",
                 "${workspaceFolder}/templates/rust_axum",
                 "--output",
-                "${workspaceFolder}/.mcpgen/petstore_mcp_server"
+                "${workspaceFolder}/.agenterra/petstore_mcp_server"
             ],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "rust: cargo build"

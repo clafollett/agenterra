@@ -1,15 +1,15 @@
-# 🚀 MCPGen: Model Context Protocol Generator
+# 🚀 Agenterra: Model Context Protocol Generator
 
 **Generate production-ready MCP (Model Context Protocol) servers from OpenAPI specs with minimal configuration.**
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/clafollett/mcpgen?style=for-the-badge)](https://github.com/clafollett/mcpgen/releases)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/clafollett/agenterra?style=for-the-badge)](https://github.com/clafollett/agenterra/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.86.0%2B-orange?logo=rust&style=for-the-badge)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-85ea2d?logo=openapi-initiative&style=for-the-badge)](https://www.openapis.org/)
 
 ---
 
-**MCPGen** transforms your OpenAPI specifications into fully-functional MCP servers with type-safe Rust code, ready for integration with AI tools and workflows. Perfect for:
+**Agenterra** transforms your OpenAPI specifications into fully-functional MCP servers with type-safe Rust code, ready for integration with AI tools and workflows. Perfect for:
 
 - **AI/ML Engineers** 🤖 - Quickly expose APIs for LLM tool use
 - **API Developers** 🛠️ - Generate production-ready MCP servers from existing OpenAPI specs
@@ -38,40 +38,40 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/clafollett/mcpgen.git
-cd mcpgen
+git clone https://github.com/clafollett/agenterra.git
+cd agenterra
 
 # Generate from a local file without install:
-cargo run -p mcpgen -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/cargo_run_petstore_mcp_server_local_file
+cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/cargo_run_petstore_mcp_server_local_file
 
 # Generate from a remote URL without install:
-cargo run -p mcpgen -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/cargo_run_petstore_mcp_server_remote_url
+cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/cargo_run_petstore_mcp_server_remote_url
 
-# Or install the CLI
-cargo install --path crates/mcpgen-cli
+# Or install the CLI (also provides 'agnt' as a short alias)
+cargo install --path crates/agenterra-cli
 
 # Generate your MCP server from a local file
-mcpgen scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
+agenterra scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/installed_petstore_mcp_server_local_file
 
 # Generate from a remote URL
-mcpgen scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
+agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/installed_petstore_mcp_server_remote_url
 
 ```
 
-> **Note:** MCPGen uses a Cargo workspace. You must use the CLI crate path (`crates/mcpgen-cli`) for `cargo install`. Top-level install will not work.
+> **Note:** Agenterra uses a Cargo workspace. You must use the CLI crate path (`crates/agenterra-cli`) for `cargo install`. Top-level install will not work.
 
 ### Method 2: From Pre-built Binary (Coming soon)
 
-1. Download the latest release for your platform from [Releases](https://github.com/clafollett/mcpgen/releases)
+1. Download the latest release for your platform from [Releases](https://github.com/clafollett/agenterra/releases)
 2. Make it executable and run:
    ```bash
-   chmod +x mcpgen
+   chmod +x agenterra
    
    # Generate your MCP server from a local file
-   ./mcpgen scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/installed_petstore_mcp_server_local_file
+   ./agenterra scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/installed_petstore_mcp_server_local_file
 
    # Generate from a remote URL
-   ./mcpgen scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/installed_petstore_mcp_server_remote_url
+   ./agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/installed_petstore_mcp_server_remote_url
    ```
 
 ## 🔌 Integrating with MCP Clients
@@ -151,7 +151,7 @@ Then update your MCP client configuration to use the Docker container:
 
 ## ⚡ Best Practices
 
-MCPGen is designed to scaffold a well-structured MCP servers from OpenAPI specs. This is a great starting point, not necessarily a `Best Practice`. Wrapping an OpenAPI spec under an MCP facade is convenient, but not always the “proper” way to build MCPs. For robust, agent-friendly tools, consider how your server can best expose business logic, aggregate data, and provide clear, useful tool contracts.
+Agenterra is designed to scaffold a well-structured MCP servers from OpenAPI specs. This is a great starting point, not necessarily a `Best Practice`. Wrapping an OpenAPI spec under an MCP facade is convenient, but not always the “proper” way to build MCPs. For robust, agent-friendly tools, consider how your server can best expose business logic, aggregate data, and provide clear, useful tool contracts.
 
 **Considerations:**
 - Treat the generated code as a foundation to extend and customize.
@@ -160,7 +160,7 @@ MCPGen is designed to scaffold a well-structured MCP servers from OpenAPI specs.
 
 ---
 
-## 🤔 Why MCPGen?
+## 🤔 Why Agenterra?
 
 Postman now offers robust support for the Model Context Protocol (MCP), including:
 - MCP client and server features
@@ -168,7 +168,7 @@ Postman now offers robust support for the Model Context Protocol (MCP), includin
 - A catalog of hosted, discoverable MCP endpoints
 - Visual agent-building and cloud collaboration
 
-**When should you use MCPGen?**
+**When should you use Agenterra?**
 - **Offline, air-gapped, or regulated environments** where cloud-based tools aren’t an option
 - **Rust-first, codegen-centric workflows:** Generate type-safe, production-grade Rust MCP servers from OpenAPI specs, ready for CI/CD and self-hosting
 - **Full template control:** Tweak every line of generated code, use custom templates, and integrate with your own infra
@@ -181,13 +181,13 @@ Postman now offers robust support for the Model Context Protocol (MCP), includin
 
 **Summary:**
 - Use Postman for visual, collaborative, and cloud-first agent development
-- Use MCPGen for local, reproducible, code-first MCP server generation with maximum control and zero cloud dependencies
+- Use Agenterra for local, reproducible, code-first MCP server generation with maximum control and zero cloud dependencies
 
 ---
 
 ## 🏛️ Architecture
 
-MCPGen is built for extensibility, automation, and code quality. Here’s how the core pieces fit together:
+Agenterra is built for extensibility, automation, and code quality. Here’s how the core pieces fit together:
 
 **Core Modules:**
 - `openapi`: Loads and validates OpenAPI specs (YAML/JSON, local or URL)
@@ -220,7 +220,7 @@ Generated Rust MCP Server (Axum, etc.)
 
 ## 🤝 Contributing
 
-We welcome contributions from the community! To keep MCPGen high-quality and maintainable, please follow these guidelines:
+We welcome contributions from the community! To keep Agenterra high-quality and maintainable, please follow these guidelines:
 
 - **Fork & Clone**: Fork the repo and clone your fork locally.
 - **Branch Naming**: Use the convention `GH-<issue-number>_<ProperCaseSummary>` (e.g., `GH-9_EndToEndIntegrationTest`).
@@ -231,7 +231,7 @@ We welcome contributions from the community! To keep MCPGen high-quality and mai
   - Update documentation for any user-facing or API changes.
 - **Testing**:
   - Add or update unit and integration tests for all new features or bugfixes.
-  - Run: `cargo test -p mcpgen --test integration_test`
+  - Run: `cargo test -p agenterra --test integration_test`
 - **Docs**:
   - Update relevant docs and add examples for new features.
   - Document any new patterns or conventions.
@@ -244,16 +244,16 @@ For more details, see [CONTRIBUTING.md](CONTRIBUTING.md) if available.
 
 ## 🛠️ Developer Workflow
 
-Here’s how to work productively with MCPGen as a contributor or advanced user:
+Here’s how to work productively with Agenterra as a contributor or advanced user:
 
 ### 🧪 Running Tests
 - **Unit & Integration Tests:**
   - Run all tests: `cargo test`
   - Run integration tests (all templates with OpenAPI specs):
     ```bash
-    cargo test -p mcpgen --test integration_test
+    cargo test -p agenterra --test integration_test
     ```
-- **Test Location:** See [`crates/mcpgen-cli/tests/integration_test.rs`](crates/mcpgen-cli/tests/integration_test.rs) for integration coverage.
+- **Test Location:** See [`crates/agenterra-cli/tests/integration_test.rs`](crates/agenterra-cli/tests/integration_test.rs) for integration coverage.
 - **Test-First Principle:** Add failing tests before implementing new features or bugfixes.
 
 ### 🏗️ Building
@@ -263,7 +263,7 @@ Here’s how to work productively with MCPGen as a contributor or advanced user:
   ```
 - **Docker build:**
   ```bash
-  docker build -t mcpgen .
+  docker build -t agenterra .
   ```
 
 ### 🧩 Adding Templates or Plugins
@@ -280,14 +280,14 @@ Here’s how to work productively with MCPGen as a contributor or advanced user:
 
 ## 🎬 Demo
 
-Want to see MCPGen in action? Check back soon for:
+Want to see Agenterra in action? Check back soon for:
 - **Loom/asciinema walkthroughs** showing:
   - Scaffolding an MCP server from an OpenAPI spec (local & URL)
   - Running the generated server (locally or via Docker)
   - Integrating with AI agents via the MCP protocol
 - **Community demos**: Submit your own demo links via PR!
 
-👉 _Have a killer workflow or agent integration? [Open a PR](https://github.com/clafollett/mcpgen/pulls) to add your demo here!_
+👉 _Have a killer workflow or agent integration? [Open a PR](https://github.com/clafollett/agenterra/pulls) to add your demo here!_
 
 ---
 
@@ -313,14 +313,14 @@ petstore-server/
 
 ## Configuration ⚙️
 
-MCPGen can be configured through multiple methods (in order of precedence):
+Agenterra can be configured through multiple methods (in order of precedence):
 
 1. **Command-line arguments**
    ```bash
-   mcpgen generate --input spec.yaml --output my_server --template rust_axum
+   agenterra generate --input spec.yaml --output my_server --template rust_axum
    ```
 
-2. **Configuration file** (`mcpgen.toml` in project root)
+2. **Configuration file** (`agenterra.toml` in project root)
    ```toml
    [generate]
    input = "openapi.yaml"
@@ -330,20 +330,20 @@ MCPGen can be configured through multiple methods (in order of precedence):
 
 3. **Environment variables**
    ```bash
-   export MCPGEN_INPUT=openapi.yaml
-   export MCPGEN_OUTPUT=my_server
-   mcpgen generate
+   export AGENTERRA_INPUT=openapi.yaml
+   export AGENTERRA_OUTPUT=my_server
+   agenterra generate
    ```
 
 ## Templates 🎨
 
-MCPGen uses [Tera](https://tera.netlify.app/) templates for code generation. You can use built-in templates or create your own.
+Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation. You can use built-in templates or create your own.
 
 ### Built-in Templates
 - `rust_axum`: Generate a server using the [Axum](https://github.com/tokio-rs/axum) web framework
 
 ### Custom Templates
-Create a `templates` directory in your project root and add your template files. MCPGen will use these instead of the built-in templates.
+Create a `templates` directory in your project root and add your template files. Agenterra will use these instead of the built-in templates.
 
 ## Examples 📚
 
@@ -353,7 +353,7 @@ Create a `templates` directory in your project root and add your template files.
 curl -o petstore.yaml https://raw.githubusercontent.com/OAI/OpenAPI-Specification/main/examples/v3.0/petstore.yaml
 
 # Generate the server
-mcpgen generate --input petstore.yaml --output petstore-server
+agenterra generate --input petstore.yaml --output petstore-server
 
 # Build and run
 cd petstore-server

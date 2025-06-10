@@ -1,6 +1,6 @@
 # Test Fixtures
 
-This directory contains test fixtures for the `mcpgen` project, including canonical OpenAPI Petstore specs for integration, codegen, and reproducibility.
+This directory contains test fixtures for the `Agenterra` project, including canonical OpenAPI Petstore specs for integration, codegen, and reproducibility.
 
 ---
 

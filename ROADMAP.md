@@ -1,4 +1,4 @@
-# MCPGen Roadmap 🗺️
+# Agenterra Roadmap 🗺️
 
 ## Current Status 📊
 

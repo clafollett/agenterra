@@ -36,15 +36,15 @@ cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
 ### Examples
 ```bash
 # Local file
-cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/test_output
+cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/test_output
 
 # Remote URL
-cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/test_output
+cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/test_output
 ```
 
 ## High-Level Architecture
 
-MCPGen transforms OpenAPI specifications into MCP (Model Context Protocol) servers using a template-based code generation approach.
+Agenterra transforms OpenAPI specifications into MCP (Model Context Protocol) servers using a template-based code generation approach.
 
 ### Core Flow
 ```
@@ -84,8 +84,8 @@ This design allows flexibility for different environments (dev/staging/prod) whi
 - Operation filtering (include/exclude)
 
 ### Workspace Structure
-- `mcpgen-cli/` - CLI interface (thin wrapper)
-- `mcpgen-core/` - Core library (business logic)
+- `agenterra-cli/` - CLI interface (thin wrapper)
+- `agenterra-core/` - Core library (business logic)
 - `templates/` - Built-in templates
 - `tests/fixtures/` - Test OpenAPI specs
 
@@ -139,7 +139,7 @@ Example: `GH-9_EndToEndIntegrationTest`
 2. **Reference locations**: Use `file.rs:123` format when mentioning code
 3. **Run tests early**: After changes, immediately run relevant tests
 4. **Check imports**: Verify external dependencies exist in Cargo.toml before using
-5. **Template testing**: Use `cargo test -p mcpgen --test integration_test` to validate template changes
+5. **Template testing**: Use `cargo test -p agenterra --test integration_test` to validate template changes
 
 ## Communication Style & Personality
 
@@ -156,7 +156,7 @@ Example: `GH-9_EndToEndIntegrationTest`
 - Nudge Cal if distracted, losing focus, or overthinking  
 - Push MVP, smallest next step, deadlines if stuck  
 - Mentor at senior/pro level—skip basics, teach with real-world code  
-- Use live OSS/projects (mcpgen, Socialings AI, FDIC, etc.) for examples/context  
+- Use live OSS/projects (agenterra, Socialings AI, FDIC, etc.) for examples/context  
 - Encourage healthy breaks, humor, high vibes; roast gently if too serious  
 - If code, always include concise comments and explain key logic  
 - Remind Cal to focus on outcomes, not perfection; optimize for shipping  

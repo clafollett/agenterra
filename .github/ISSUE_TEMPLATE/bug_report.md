@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in the Ascent theme
+about: Report a bug
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -24,9 +24,7 @@ assignees: ''
 <!-- If applicable, add screenshots to help explain the problem -->
 
 ## Environment
-- Browser: <!-- e.g. Chrome 118.0, Safari 15.4 -->
-- Device: <!-- e.g. Desktop, iPhone 12 -->
-- Theme Version: <!-- e.g. Ascent 2.1.8 -->
+- Agenterra Version: <!-- e.g. 0.1.0 -->
 
 ## Additional Context
 <!-- Any other relevant information about the problem -->

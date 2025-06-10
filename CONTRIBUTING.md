@@ -1,6 +1,6 @@
-# Contributing to MCPGen 🚀
+# Contributing to Agenterra 🚀
 
-First off, thank you for considering contributing to MCPGen! We're excited to have you join our community.
+First off, thank you for considering contributing to Agenterra! We're excited to have you join our community.
 
 ## Code of Conduct 🤝
 
@@ -15,7 +15,7 @@ This project and everyone participating in it is governed by our Code of Conduct
    - Steps to reproduce
    - Expected behavior
    - Actual behavior
-   - MCPGen version
+   - Agenterra version
    - OpenAPI spec (if relevant)
    - Error messages
    - Environment details
@@ -33,7 +33,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 1. **Fork & Clone**
    ```bash
-   git clone https://github.com/YOUR-USERNAME/mcpgen.git
+   git clone https://github.com/YOUR-USERNAME/agenterra.git
    ```
 
 2. **Create a Branch**
@@ -108,10 +108,10 @@ This project and everyone participating in it is governed by our Code of Conduct
 ## Project Structure 📁
 
 ```
-mcpgen/
+agenterra/
 ├── crates/
-│   ├── mcpgen-core/      # Core library
-│   └── mcpgen-cli/       # CLI interface
+│   ├── agenterra-core/      # Core library
+│   └── agenterra-cli/       # CLI interface
 ├── docs/                 # Documentation
 ├── examples/            # Example projects
 └── templates/           # Default templates

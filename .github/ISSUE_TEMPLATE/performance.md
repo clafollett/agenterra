@@ -1,6 +1,6 @@
 ---
 name: Performance Improvement
-about: Suggest performance optimizations for the theme
+about: Suggest performance optimizations for the Agenterra CLI
 title: '[PERF] '
 labels: performance
 assignees: ''
@@ -10,7 +10,7 @@ assignees: ''
 <!-- Describe the current performance issue or bottleneck -->
 
 ## Affected Components
-<!-- Which parts of the theme are affected? -->
+<!-- Which parts of the Agenterra CLI are affected? -->
 
 ## Current Measurements
 <!-- If available, provide metrics showing the current performance (load time, Lighthouse scores, etc.) -->

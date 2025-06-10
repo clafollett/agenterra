@@ -1,6 +1,8 @@
-# MCPGen CLI Reference 📝
+# Agenterra CLI Reference 📝
 
-This document provides a comprehensive reference for the MCPGen command-line interface.
+This document provides a comprehensive reference for the Agenterra command-line interface.
+
+> **📌 Note:** The `agnt` command is provided as a short alias for `agenterra`.
 
 ## Table of Contents
 - [Global Options](#global-options)
@@ -23,7 +25,7 @@ This document provides a comprehensive reference for the MCPGen command-line int
 Scaffold a new MCP server from an OpenAPI specification.
 
 ```bash
-mcpgen scaffold --spec <SPEC> --output <OUTPUT> [OPTIONS]
+agenterra scaffold --spec <SPEC> --output <OUTPUT> [OPTIONS]
 ```
 
 #### Options
@@ -42,19 +44,19 @@ mcpgen scaffold --spec <SPEC> --output <OUTPUT> [OPTIONS]
 
 ```bash
 # Basic usage with a local file
-mcpgen scaffold --spec api.yaml --output generated
+agenterra scaffold --spec api.yaml --output generated
 
 # Use a remote OpenAPI spec from a URL
-mcpgen scaffold --spec https://example.com/openapi.json --output generated
+agenterra scaffold --spec https://example.com/openapi.json --output generated
 
 # Specify a different template with a URL spec
-mcpgen scaffold --spec https://example.com/openapi.yaml --output generated --template python-fastapi
+agenterra scaffold --spec https://example.com/openapi.yaml --output generated --template python-fastapi
 
 # Use a custom template directory with a local spec
-mcpgen scaffold --spec api.yaml --output generated --template custom --template-dir ./my-templates
+agenterra scaffold --spec api.yaml --output generated --template custom --template-dir ./my-templates
 
 # Configure server port and log file
-mcpgen scaffold --spec api.yaml --output generated --port 8080 --log-file my-server
+agenterra scaffold --spec api.yaml --output generated --port 8080 --log-file my-server
 ```
 
 ## Exit Codes
@@ -72,9 +74,9 @@ mcpgen scaffold --spec api.yaml --output generated --port 8080 --log-file my-ser
 
 | Variable | Description |
 |----------|-------------|
-| `MCPGEN_TEMPLATE` | Default template to use |
-| `MCPGEN_TEMPLATE_DIR` | Default template directory |
-| `MCPGEN_LOG_LEVEL` | Log level (debug, info, warn, error) |
+| `AGENTERRA_TEMPLATE` | Default template to use |
+| `AGENTERRA_TEMPLATE_DIR` | Default template directory |
+| `AGENTERRA_LOG_LEVEL` | Log level (debug, info, warn, error) |
 
 Note: Command-line arguments take precedence over environment variables.
 | 1    | General error |
