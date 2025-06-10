@@ -1,4 +1,4 @@
-//! Error handling for the MCPGen code generation library.
+//! Error handling for the Agenterra code generation library.
 //!
 //! This module defines the main error type `Error` used throughout the library,
 //! along with a convenient `Result` type alias. It uses `thiserror` for easy
@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```
-//! use mcpgen_core::error::{Error, Result};
+//! use agenterra_core::error::{Error, Result};
 //!
 //! fn might_fail() -> Result<()> {
 //!     // Operations that might fail...
@@ -17,10 +17,10 @@
 
 use thiserror::Error;
 
-/// Result type for MCP generation operations
+/// Result type for Agenterra generation operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Main error type for MCP generation operations
+/// Main error type for Agenterra generation operations
 #[derive(Debug, Error)]
 pub enum Error {
     /// I/O error

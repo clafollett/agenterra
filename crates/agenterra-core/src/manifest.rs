@@ -1,4 +1,4 @@
-//! Manifest file format for MCPGen templates.
+//! Manifest file format for Agenterra templates.
 //!
 //! This module defines the structure of the `template.yaml` file that describes
 //! how to generate code from templates.

@@ -1,4 +1,4 @@
-//! Code generation functionality for MCPGen
+//! Code generation functionality for Agenterra
 
 use std::{path::PathBuf, str::FromStr};
 

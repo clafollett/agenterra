@@ -1,11 +1,11 @@
-//! End-to-end integration tests for MCPGen CLI
+//! End-to-end integration tests for Agenterra CLI
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // Test configuration
-const SCAFFOLD_DIR: &str = ".mcpgen";
+const SCAFFOLD_DIR: &str = ".agenterra";
 
 /// Test context containing paths and configuration
 struct TestContext {
@@ -68,7 +68,7 @@ impl TestContext {
     }
 
     fn build_command(&self) -> Result<Command> {
-        let binary_path = self.workspace_root.join("target/debug/mcpgen");
+        let binary_path = self.workspace_root.join("target/debug/agenterra");
         Ok(Command::new(binary_path))
     }
 }
@@ -122,10 +122,10 @@ mod tests {
     // Helper function to clean up environment variables after test
     fn cleanup_env_vars() {
         let env_vars = [
-            "MCPGEN_ALL_OPERATIONS",
-            "MCPGEN_SERVER_PORT",
-            "MCPGEN_LOG_FILE",
-            "MCPGEN_TEMPLATE_CONTEXT",
+            "AGENTERRA_ALL_OPERATIONS",
+            "AGENTERRA_SERVER_PORT",
+            "AGENTERRA_LOG_FILE",
+            "AGENTERRA_TEMPLATE_CONTEXT",
         ];
 
         // Use unsafe block for remove_var as it modifies process state
@@ -166,14 +166,14 @@ mod tests {
         println!("Output directory: {}", output_dir.display());
 
         // Build the CLI binary first to ensure we're testing with latest code
-        println!("  Building mcpgen CLI in debug mode...");
+        println!("  Building agenterra CLI in debug mode...");
         let build_status = Command::new("cargo")
             .args(["build"])
             .status()
-            .context("Failed to execute cargo build for mcpgen CLI")?;
+            .context("Failed to execute cargo build for agenterra CLI")?;
 
         if !build_status.success() {
-            bail!("Failed to build mcpgen CLI (status: {})", build_status);
+            bail!("Failed to build agenterra CLI (status: {})", build_status);
         }
 
         // Run the scaffold command

@@ -1,4 +1,4 @@
-//! Test utilities for MCPGen integration tests
+//! Test utilities for Agenterra integration tests
 
 // Internal imports (std, crate)
 use std::fs;
@@ -23,7 +23,7 @@ openapi: 3.0.0
 info:
   title: Test API
   version: 1.0.0
-  description: Test API for MCPGen integration tests
+  description: Test API for Agenterra integration tests
   contact:
     name: API Support
     url: https://example.com/support
@@ -279,7 +279,7 @@ pub fn create_test_template_dir(dir: &Path) -> anyhow::Result<()> {
 const TEMPLATE_MANIFEST: &str = r#"
 name: test-template
 description: Test template for integration tests
-author: MCPGen Tests
+author: Agenterra Tests
 version: 0.1.0
 files:
   - source: main.rs.tera

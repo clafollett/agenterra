@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/mcpgen-core",
-    "crates/mcpgen-cli",
+    "crates/agenterra-core",
+    "crates/agenterra-cli",
 ]
 resolver = "2"

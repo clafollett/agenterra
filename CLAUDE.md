@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Repository:** https://github.com/clafollett/agenterra
+
 ## Project Standards & Conventions
 
 ### Prime Directives
@@ -22,22 +24,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build & Test
 cargo build                                                   # Debug build
 cargo test                                                    # Run all tests
-cargo test -p mcpgen integration_test   # Integration tests
+cargo test -p agenterra integration_test   # Integration tests
 
 # Code Quality
 cargo fmt && cargo clippy && cargo test                      # Pre-commit check
 
-# Run MCPGen
-cargo run -p mcpgen -- scaffold --schema-path <path-or-url> --output <dir>
+# Run Agenterra
+cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
 ```
 
 ### Examples
 ```bash
 # Local file
-cargo run -p mcpgen -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/test_output
+cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .mcpgen/test_output
 
 # Remote URL
-cargo run -p mcpgen -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/test_output
+cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .mcpgen/test_output
 ```
 
 ## High-Level Architecture

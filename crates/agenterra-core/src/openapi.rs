@@ -6,8 +6,8 @@
 //! # Examples
 //!
 //! ```no_run
-//! use mcpgen_core::openapi::OpenApiContext;
-//! use mcpgen_core::error::Result;
+//! use agenterra_core::openapi::OpenApiContext;
+//! use agenterra_core::error::Result;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<()> {

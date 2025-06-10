@@ -1,6 +1,6 @@
-//! MCPGen Core Library
+//! Agenterra Core Library
 //!
-//! This library provides the core functionality for generating MCP (Model-Controller-Presenter)
+//! This library provides the core functionality for generating AI agent
 //! server code from OpenAPI specifications.
 
 pub mod builders;
@@ -20,5 +20,5 @@ pub use crate::{
     templates::{TemplateDir, TemplateKind, TemplateManager, TemplateOptions},
 };
 
-/// Result type for MCP generation operations
-pub type MCPResult<T> = std::result::Result<T, Error>;
+/// Result type for Agenterra generation operations
+pub type AgenterraResult<T> = std::result::Result<T, Error>;

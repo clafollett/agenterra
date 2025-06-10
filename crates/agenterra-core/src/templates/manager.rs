@@ -463,7 +463,7 @@ impl TemplateManager {
         base_map.insert("endpoints".to_string(), json!(endpoints));
 
         // Add server configuration variables needed by templates
-        base_map.insert("log_file".to_string(), json!("mcpgen"));
+        base_map.insert("log_file".to_string(), json!("agenterra"));
         base_map.insert("server_port".to_string(), json!(8080));
 
         // Add any template options to the context if provided
@@ -1026,10 +1026,7 @@ impl TemplateManager {
     }
 
     /// Dereference all $ref in a JSON value by replacing them with actual schema definitions
-    fn dereference_schema_refs(
-        value: &mut serde_json::Value,
-        spec: &OpenApiContext,
-    ) -> Result<()> {
+    fn dereference_schema_refs(value: &mut serde_json::Value, spec: &OpenApiContext) -> Result<()> {
         match value {
             serde_json::Value::Object(map) => {
                 // Check if this object contains a $ref

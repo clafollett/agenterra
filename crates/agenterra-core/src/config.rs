@@ -1,4 +1,4 @@
-//! Configuration management for MCPGen code generation.
+//! Configuration management for Agenterra code generation.
 //!
 //! This module defines the `Config` struct and related functionality for managing
 //! code generation settings. The configuration can be loaded from a YAML file,
@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use mcpgen_core::config::Config;
+//! use agenterra_core::config::Config;
 //!
 //! // Create a new config programmatically
 //! let mut config = Config::new("my-project", "openapi.yaml", "output");
@@ -17,7 +17,7 @@
 //! // Or load from a config file
 //! # #[cfg(feature = "yaml")]
 //! # {
-//! # let config = Config::from_file("mcpgen.yaml").unwrap();
+//! # let config = Config::from_file("agenterra.yaml").unwrap();
 //! # }
 //! ```
 
@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 use url::Url;
 
-/// Configuration for MCP server generation
+/// Configuration for Agenterra server generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Project name
@@ -114,11 +114,11 @@ mod tests {
         let dir = tempdir()?;
         let file_path = dir.path().join("config.yaml");
 
-        let config = Config::new("mcpgen-mcp-server", "openapi.json", "output");
+        let config = Config::new("agenterra-server", "openapi.json", "output");
         config.save(&file_path).await?;
 
         let _loaded = Config::from_file(&file_path).await?;
-        assert_eq!(config.project_name, "mcpgen-mcp-server");
+        assert_eq!(config.project_name, "agenterra-server");
         assert_eq!(config.openapi_schema_path, "openapi.json");
         assert_eq!(config.output_dir, "output");
         assert_eq!(config.template_kind, default_template());

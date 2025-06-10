@@ -1,4 +1,4 @@
-//! Configuration options for template-based code generation in MCPGen.
+//! Configuration options for template-based code generation in AgentERRA.
 //!
 //! This module provides the [`TemplateOptions`] struct which controls how code is generated
 //! from templates. It allows fine-grained control over:
@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```rust
-//! use mcpgen_core::template_options::TemplateOptions;
+//! use agenterra_core::TemplateOptions;
 //!
 //! let options = TemplateOptions {
 //!     all_operations: true,

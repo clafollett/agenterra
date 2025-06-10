@@ -1,4 +1,4 @@
-//! Rust-specific endpoint context builder for MCPGen codegen.
+//! Rust-specific endpoint context builder for Agenterra codegen.
 
 use super::EndpointContextBuilder;
 use crate::openapi::OpenApiOperation;

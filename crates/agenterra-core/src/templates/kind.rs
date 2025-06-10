@@ -1,4 +1,4 @@
-//! Template type definitions and discovery for MCPGen.
+//! Template type definitions and discovery for AgentERRA.
 //!
 //! This module defines the supported template types and provides functionality
 //! for discovering template directories in the filesystem. It supports both
@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```
-//! use mcpgen_core::template_kind::TemplateKind;
+//! use agenterra_core::TemplateKind;
 //! use std::str::FromStr;
 //!
 //! // Parse a template from a string
@@ -28,10 +28,10 @@
 //! # Template Discovery
 //!
 //! The module searches for templates in the following locations:
-//! 1. Directory specified by `MCPGEN_TEMPLATE_DIR` environment variable
+//! 1. Directory specified by `AGENTERRA_TEMPLATE_DIR` environment variable
 //! 2. `templates/` directory in the project root (for development)
-//! 3. `~/.mcpgen/templates/` in the user's home directory
-//! 4. `/usr/local/share/mcpgen/templates/` for system-wide installation
+//! 3. `~/.agenterra/templates/` in the user's home directory
+//! 4. `/usr/local/share/agenterra/templates/` for system-wide installation
 //! 5. `./templates/` in the current working directory
 
 // Internal imports (std, crate)
@@ -91,7 +91,6 @@ impl fmt::Display for TemplateKind {
         write!(f, "{}", self.as_str())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -73,7 +73,7 @@ impl TemplateDir {
     /// Find the base template directory by checking standard locations
     fn find_template_base_dir() -> Option<PathBuf> {
         // 1. Check environment variable
-        if let Ok(dir) = std::env::var("MCPGEN_TEMPLATE_DIR") {
+        if let Ok(dir) = std::env::var("AGENTERRA_TEMPLATE_DIR") {
             let path = PathBuf::from(dir);
             if path.exists() {
                 return Some(path);
@@ -107,9 +107,9 @@ impl TemplateDir {
 
         // 5. Check in the user's home directory
         if let Some(home_dir) = dirs::home_dir() {
-            let templates_dir = home_dir.join(".mcpgen").join("templates");
+            let templates_dir = home_dir.join(".agenterra").join("templates");
             if templates_dir.exists() {
-                return Some(home_dir.join(".mcpgen"));
+                return Some(home_dir.join(".agenterra"));
             }
         }
 

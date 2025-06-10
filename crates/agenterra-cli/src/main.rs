@@ -1,4 +1,4 @@
-//! mcpgen CLI entrypoint
+//! agenterra CLI entrypoint
 //! Parses command-line arguments and dispatches to the core generator.
 
 // Internal imports (std, crate)
@@ -6,13 +6,13 @@ use reqwest::Url;
 use std::path::{Path, PathBuf};
 
 // External imports (alphabetized)
+use agenterra_core::{TemplateKind, TemplateManager, TemplateOptions};
 use anyhow::Context;
 use clap::Parser;
-use mcpgen_core::{TemplateKind, TemplateManager, TemplateOptions};
 use tokio::fs;
 
 #[derive(Parser)]
-#[command(name = "mcpgen")]
+#[command(name = "agenterra")]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -25,7 +25,7 @@ pub enum Commands {
     /// Scaffold a new MCP server from an OpenAPI spec
     Scaffold {
         /// Project name
-        #[arg(long, default_value = "mcpgen_mcp_server")]
+        #[arg(long, default_value = "agenterra_mcp_server")]
         project_name: String,
         /// Path or URL to OpenAPI schema (YAML or JSON)
         ///
@@ -156,7 +156,7 @@ async fn main() -> anyhow::Result<()> {
                 let temp_file = temp_dir.path().join("openapi_schema.json");
                 tokio::fs::write(&temp_file, &content).await?;
 
-                mcpgen_core::openapi::OpenApiContext::from_file(&temp_file)
+                agenterra_core::openapi::OpenApiContext::from_file(&temp_file)
                     .await
                     .map_err(|e| {
                         anyhow::anyhow!(
@@ -167,13 +167,13 @@ async fn main() -> anyhow::Result<()> {
                     })?
             } else {
                 // It's a file path
-                mcpgen_core::openapi::OpenApiContext::from_file(&schema_path)
+                agenterra_core::openapi::OpenApiContext::from_file(&schema_path)
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to load OpenAPI schema: {}", e))?
             };
 
             // Create config with template
-            let config = mcpgen_core::Config {
+            let config = agenterra_core::Config {
                 project_name: project_name.clone(),
                 openapi_schema_path: schema_path.to_string(),
                 output_dir: output_path.to_string_lossy().to_string(),
