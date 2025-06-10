@@ -198,8 +198,7 @@ impl TemplateManager {
         })
         .await
         .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Failed to join blocking task: {}", e),
             )
         })?
@@ -532,8 +531,7 @@ impl TemplateManager {
             if !parent.exists() {
                 log::debug!("Creating parent directory: {}", parent.display());
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
+                    io::Error::other(
                         format!("Failed to create output directory: {}", e),
                     )
                 })?;
@@ -644,8 +642,7 @@ impl TemplateManager {
         // Create schemas directory
         let schemas_dir = output_path.join("schemas");
         tokio::fs::create_dir_all(&schemas_dir).await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Failed to create schemas directory: {}", e),
             )
         })?;
@@ -890,8 +887,7 @@ impl TemplateManager {
                 tokio::fs::write(&schema_path, schema_json)
                     .await
                     .map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
+                        io::Error::other(
                             format!(
                                 "Failed to write schema file {}: {}",
                                 schema_path.display(),
@@ -916,8 +912,7 @@ impl TemplateManager {
 
                 // Render the template
                 let rendered = self.tera.render(&file.source, &context).map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
+                    io::Error::other(
                         format!("Failed to render template {}: {}", file.source, e),
                     )
                 })?;
@@ -926,8 +921,7 @@ impl TemplateManager {
                 tokio::fs::write(&output_path, rendered)
                     .await
                     .map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
+                        io::Error::other(
                             format!("Failed to write file {}: {}", output_path.display(), e),
                         )
                     })?;
@@ -977,8 +971,7 @@ impl TemplateManager {
                     .output()
                     .await
                     .map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
+                        io::Error::other(
                             format!(
                                 "Failed to execute post-generation hook '{}': {}",
                                 command, e
@@ -987,8 +980,7 @@ impl TemplateManager {
                     })?;
 
                 if !output.status.success() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
+                    return Err(io::Error::other(
                         format!(
                             "Post-generation hook '{}' failed with status {}\n{}{}",
                             command,
