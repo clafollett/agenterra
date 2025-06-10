@@ -103,12 +103,16 @@ jobs:
         echo "[target.aarch64-unknown-linux-gnu]" >> ~/.cargo/config.toml
         echo "linker = \"aarch64-linux-gnu-gcc\"" >> ~/.cargo/config.toml
 
-    - name: Build binary
-      run: cargo build --release --target ${{ matrix.target }} --bin agenterra
+    - name: Build binaries
+      run: |
+        cargo build --release --target ${{ matrix.target }} --bin agenterra
+        cargo build --release --target ${{ matrix.target }} --bin agnt
 
-    - name: Strip binary (Unix)
+    - name: Strip binaries (Unix)
       if: matrix.os != 'windows-latest'
-      run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+      run: |
+        strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+        strip target/${{ matrix.target }}/release/agnt
 
     - name: Create archive (Unix)
       if: matrix.os != 'windows-latest'
