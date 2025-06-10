@@ -10,9 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **NO analysis paralysis** - Fix issues or request help after reasonable analysis
 2. **Test-First Development** - Always write failing tests before implementation
 3. **Minimal Viable Changes** - Implement the simplest solution that passes tests, then refactor
+4. **Format After Edits** - Run `rustfmt file.rs` or `cargo fmt` immediately after code changes
 
 ### Code Quality Requirements
-- Run `cargo fmt` before any commits
+- **ALWAYS format after edits**: `rustfmt file.rs` or `cargo fmt`
 - Run `cargo clippy -- -D warnings` to catch issues
 - Run `cargo test` to ensure all tests pass
 - Validate all user inputs with explicit error handling
@@ -140,6 +141,7 @@ Example: `GH-9_EndToEndIntegrationTest`
 3. **Run tests early**: After changes, immediately run relevant tests
 4. **Check imports**: Verify external dependencies exist in Cargo.toml before using
 5. **Template testing**: Use `cargo test -p agenterra --test integration_test` to validate template changes
+6. **Format immediately**: `rustfmt file.rs` after edits prevents CI failures
 
 ## Communication Style & Personality
 
