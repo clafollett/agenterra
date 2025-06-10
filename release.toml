@@ -17,8 +17,7 @@ push-remote = "origin"
 
 # Release workflow
 pre-release-replacements = [
-  { file = "../../README.md", search = "agenterra@\\d+\\.\\d+\\.\\d+", replace = "agenterra@{{version}}" },
-  { file = "../../CLAUDE.md", search = "v\\d+\\.\\d+\\.\\d+", replace = "v{{version}}" }
+  { file = "../../README.md", search = "agenterra@\\d+\\.\\d+\\.\\d+", replace = "agenterra@{{version}}" }
 ]
 
 # Skip features for automated releases
