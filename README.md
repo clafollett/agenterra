@@ -61,7 +61,17 @@ agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.jso
 
 > **Note:** Agenterra uses a Cargo workspace. You must use the CLI crate path (`crates/agenterra-cli`) for `cargo install`. Top-level install will not work.
 
-### Method 2: From Pre-built Binary (Coming soon)
+### Method 2: Install from Git
+
+```bash
+# Install latest version
+cargo install --git https://github.com/clafollett/agenterra.git
+
+# Install specific version (v0.1.0)
+cargo install --git https://github.com/clafollett/agenterra.git --tag v0.1.0
+```
+
+### Method 3: From Pre-built Binary (Coming soon)
 
 1. Download the latest release for your platform from [Releases](https://github.com/clafollett/agenterra/releases)
 2. Make it executable and run:
