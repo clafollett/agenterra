@@ -30,6 +30,12 @@ cargo test -p agenterra integration_test   # Integration tests
 # Code Quality
 cargo fmt && cargo clippy && cargo test                      # Pre-commit check
 
+# Semantic Releases
+./scripts/release.sh patch                                    # Bug fixes (0.1.0 → 0.1.1)
+./scripts/release.sh minor                                    # New features (0.1.0 → 0.2.0)
+./scripts/release.sh major                                    # Breaking changes (0.1.0 → 1.0.0)
+./scripts/release.sh alpha                                    # Pre-release (0.1.0 → 0.2.0-alpha.1)
+
 # Run Agenterra
 cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
 ```
@@ -142,6 +148,38 @@ Example: `GH-9_EndToEndIntegrationTest`
 4. **Check imports**: Verify external dependencies exist in Cargo.toml before using
 5. **Template testing**: Use `cargo test -p agenterra --test integration_test` to validate template changes
 6. **Format immediately**: `rustfmt file.rs` after edits prevents CI failures
+
+## Semantic Release Workflow
+
+### Conventional Commits
+Use conventional commit messages to trigger automatic releases:
+- `fix:` - Bug fixes (patch version: 0.1.0 → 0.1.1)
+- `feat:` - New features (minor version: 0.1.0 → 0.2.0)  
+- `BREAKING CHANGE:` - Breaking changes (major version: 0.1.0 → 1.0.0)
+
+### Release Commands
+```bash
+# Local releases (requires main branch, clean working directory)
+./scripts/release.sh patch      # Bug fixes
+./scripts/release.sh minor      # New features  
+./scripts/release.sh major      # Breaking changes
+./scripts/release.sh alpha      # Pre-release testing
+
+# GitHub Actions (manual trigger)
+# Go to Actions → Release → Run workflow → Select release type
+```
+
+### Release Process
+1. **Commit with conventional messages** during development
+2. **Run release script** when ready to publish
+3. **cargo-release** handles version bumps, tags, and pushes
+4. **GitHub Actions** builds cross-platform binaries automatically
+5. **Binaries published** to GitHub Releases with checksums
+
+### Targets Built
+- Linux x64 + ARM64
+- macOS Intel + ARM64 (M-series)
+- Windows support via WSL (signal-hook compatibility)
 
 ## Communication Style & Personality
 

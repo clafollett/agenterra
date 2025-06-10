@@ -4,13 +4,100 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - alpha
+          - beta
+          - rc
+        default: 'patch'
+      custom_version:
+        description: 'Custom version (overrides release_type, e.g., 1.2.3)'
+        required: false
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  semantic-release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+    - name: Checkout sources
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-release
+      run: cargo install cargo-release
+
+    - name: Configure git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Determine version
+      id: version
+      run: |
+        if [ -n "${{ github.event.inputs.custom_version }}" ]; then
+          echo "VERSION=${{ github.event.inputs.custom_version }}" >> $GITHUB_OUTPUT
+          echo "RELEASE_TYPE=custom" >> $GITHUB_OUTPUT
+        else
+          echo "RELEASE_TYPE=${{ github.event.inputs.release_type }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run cargo-release (custom version)
+      if: steps.version.outputs.RELEASE_TYPE == 'custom'
+      id: release_custom
+      run: |
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        cargo release --workspace --execute --no-confirm "$VERSION"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Run cargo-release (semantic)
+      if: steps.version.outputs.RELEASE_TYPE != 'custom'
+      id: release_semantic
+      run: |
+        RELEASE_TYPE="${{ steps.version.outputs.RELEASE_TYPE }}"
+        cargo release --workspace --execute --no-confirm "$RELEASE_TYPE"
+        
+        # Get the new version from Cargo.toml
+        VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "agenterra-cli") | .version')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Set release output
+      id: release
+      run: |
+        if [ "${{ steps.version.outputs.RELEASE_TYPE }}" == "custom" ]; then
+          echo "version=${{ steps.release_custom.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ steps.release_custom.outputs.tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${{ steps.release_semantic.outputs.version }}" >> $GITHUB_OUTPUT  
+          echo "tag=${{ steps.release_semantic.outputs.tag }}" >> $GITHUB_OUTPUT
+        fi
+
   create-release:
     name: Create Release
+    needs: [semantic-release]
+    if: always() && (needs.semantic-release.result == 'success' || github.event_name == 'push')
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -21,16 +108,25 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Extract version from tag
+    - name: Extract version from tag or semantic release
       id: version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "VERSION=${{ needs.semantic-release.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "TAG=${{ needs.semantic-release.outputs.tag }}" >> $GITHUB_OUTPUT
+        else
+          # Push event with tag
+          TAG_VERSION=${GITHUB_REF#refs/tags/}
+          echo "VERSION=${TAG_VERSION#v}" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG_VERSION" >> $GITHUB_OUTPUT
+        fi
 
     - name: Generate changelog
       id: changelog
       run: |
         # Simple changelog generation - can be enhanced later
         echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
-        echo "## Changes in ${{ steps.version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+        echo "## Changes in ${{ steps.version.outputs.TAG }}" >> $GITHUB_OUTPUT
         echo "" >> $GITHUB_OUTPUT
         echo "### Features and Improvements" >> $GITHUB_OUTPUT
         git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD~1)..HEAD >> $GITHUB_OUTPUT || echo "- Initial release" >> $GITHUB_OUTPUT
@@ -43,15 +139,16 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.version.outputs.VERSION }}
-        release_name: Agenterra ${{ steps.version.outputs.VERSION }}
+        tag_name: ${{ steps.version.outputs.TAG }}
+        release_name: Agenterra ${{ steps.version.outputs.TAG }}
         body: ${{ steps.changelog.outputs.CHANGELOG }}
         draft: false
-        prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+        prerelease: ${{ contains(steps.version.outputs.TAG, '-') }}
 
   build:
     name: Build binaries
     needs: create-release
+    if: always() && (needs.create-release.result == 'success')
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -72,10 +169,6 @@ jobs:
             target: aarch64-apple-darwin
             binary_name: agenterra
             asset_name: agenterra-macos-aarch64.tar.gz
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary_name: agenterra.exe
-            asset_name: agenterra-windows-x86_64.zip
 
     steps:
     - name: Checkout sources
@@ -108,25 +201,17 @@ jobs:
         cargo build --release --target ${{ matrix.target }} --bin agenterra
         cargo build --release --target ${{ matrix.target }} --bin agnt
 
-    - name: Strip binaries (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Strip binaries
       run: |
         strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
         strip target/${{ matrix.target }}/release/agnt
 
-    - name: Create archive (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Create archive
       run: |
         cd target/${{ matrix.target }}/release
         tar czf ../../../${{ matrix.asset_name }} ${{ matrix.binary_name }} agnt
         cd -
 
-    - name: Create archive (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        cd target/${{ matrix.target }}/release
-        7z a ../../../${{ matrix.asset_name }} ${{ matrix.binary_name }} agnt.exe
-        cd -
 
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
@@ -148,7 +233,7 @@ jobs:
       
     - name: Generate checksums
       run: |
-        for file in *.tar.gz *.zip; do
+        for file in *.tar.gz; do
           if [ -f "$file" ]; then
             sha256sum "$file" >> checksums.txt
           fi

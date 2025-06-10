@@ -4,3 +4,15 @@ members = [
     "crates/agenterra-cli",
 ]
 resolver = "2"
+
+[workspace.metadata.release]
+consolidate-commits = false
+shared-version = true
+tag-message = "v{{version}}"
+tag-prefix = "v"
+pre-release-commit-message = "chore: release v{{version}}"
+pre-release-replacements = [
+    { file = "README.md", search = "agenterra@\\d+\\.\\d+\\.\\d+", replace = "agenterra@{{version}}" },
+    { file = "CLAUDE.md", search = "v\\d+\\.\\d+\\.\\d+", replace = "v{{version}}" },
+]
+publish = false
