@@ -21,7 +21,7 @@ if ! command -v cargo-release &> /dev/null; then
     cargo install cargo-release
 fi
 
-Validate current state
+# Validate current state
 echo -e "${YELLOW}🔍 Validating repository state...${NC}"
 if [[ -n $(git status --porcelain) ]]; then
     echo -e "${RED}❌ Working directory is not clean. Please commit or stash changes.${NC}"
