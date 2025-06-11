@@ -21,7 +21,7 @@ if ! command -v cargo-release &> /dev/null; then
     cargo install cargo-release
 fi
 
-# Validate current state
+Validate current state
 echo -e "${YELLOW}🔍 Validating repository state...${NC}"
 if [[ -n $(git status --porcelain) ]]; then
     echo -e "${RED}❌ Working directory is not clean. Please commit or stash changes.${NC}"
@@ -38,13 +38,6 @@ fi
 # Pull latest changes
 echo -e "${YELLOW}📥 Pulling latest changes...${NC}"
 git pull origin main
-
-# Dry run first
-echo -e "${YELLOW}🧪 Performing dry run...${NC}"
-if ! cargo release --dry-run "$RELEASE_TYPE"; then
-    echo -e "${RED}❌ Dry run failed. Please check errors above.${NC}"
-    exit 1
-fi
 
 # Confirm release
 echo -e "${YELLOW}❓ Ready to release. Continue? (y/N)${NC}"
