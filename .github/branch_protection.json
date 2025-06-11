@@ -1,0 +1,21 @@
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "Test Suite (ubuntu-latest, stable)",
+      "Test Suite (macos-latest, stable)", 
+      "Linting",
+      "Security Audit",
+      "Release Configuration"
+    ]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": false
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}

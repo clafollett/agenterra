@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. **Test-First Development** - Always write failing tests before implementation
 3. **Minimal Viable Changes** - Implement the simplest solution that passes tests, then refactor
 4. **Format After Edits** - Run `rustfmt file.rs` or `cargo fmt` immediately after code changes
+5. **NEVER PUSH TO MAIN** - All changes must go through PR workflow, no direct pushes to main branch
 
 ### Code Quality Requirements
 - **ALWAYS format after edits**: `rustfmt file.rs` or `cargo fmt`
@@ -123,17 +124,103 @@ use serde::{Deserialize, Serialize};
 - Mock external services
 - Location: same module as code under test
 
-## Project Workflow
+## CI/CD Workflow
+
+### Branch Protection Rules
+The `main` branch is protected with the following requirements:
+- **No direct pushes** - All changes must come via pull requests
+- **Required status checks** - All CI jobs must pass:
+  - Test Suite (ubuntu-latest, stable)
+  - Test Suite (macos-latest, stable)  
+  - Linting
+  - Security Audit
+  - Release Configuration
+- **Required reviews** - At least 1 approving review required
+- **Dismiss stale reviews** - New commits dismiss previous approvals
+
+### Development Workflow
+1. **Create feature branch** from main: `GH-<issue>_<ProperCaseSummary>`
+2. **Make changes** following coding standards
+3. **Run local checks**: `cargo fmt && cargo clippy && cargo test`
+4. **Push branch** and create pull request
+5. **Wait for CI** - All checks must pass
+6. **Request review** from maintainer
+7. **Squash merge** to main after approval
+8. **Delete feature branch** after merge
+
+### CI Pipeline (.github/workflows/ci.yml)
+Runs on every push to main and pull requests:
+
+**Test Suite** (Matrix: ubuntu-latest, macos-latest)
+- Checkout sources
+- Install Rust toolchain (stable)
+- Cache dependencies
+- Run `cargo check --all-targets --all-features`
+- Run `cargo test --all-features --workspace`  
+- Run integration tests: `cargo test -p agenterra --test integration_test`
+
+**Linting**
+- Checkout sources
+- Install Rust toolchain with rustfmt, clippy
+- Cache dependencies
+- Run `cargo fmt --all -- --check`
+- Run `cargo clippy --all-targets --all-features -- -D warnings`
+
+**Security Audit**
+- Checkout sources
+- Install Rust toolchain
+- Cache dependencies
+- Install and run `cargo audit`
+
+**Release Configuration**
+- Checkout sources with full history
+- Install Rust toolchain
+- Cache dependencies
+- Install cargo-release
+- Validate release.toml configuration
+- Run dry-run release validation: `cargo release patch --allow-branch main --allow-branch HEAD --no-verify --no-push`
+
+### Release Pipeline (.github/workflows/release.yml)
+Triggered by version tags (v*.*.*) or manual workflow dispatch:
+
+**Semantic Release**
+- Checkout sources with full history
+- Install Rust toolchain and cargo-release
+- Configure git for GitHub Actions bot
+- Determine version (custom or semantic: patch/minor/major/alpha)
+- Run cargo-release with workspace synchronization
+- Output new version and tag for downstream jobs
+
+**Create Release**
+- Extract version from tag or semantic release
+- Generate changelog from git commits
+- Create GitHub Release with generated changelog
+- Mark as prerelease if version contains '-'
+
+**Build Binaries** (Matrix: 5 targets)
+- x86_64-unknown-linux-gnu (Linux x64)
+- aarch64-unknown-linux-gnu (Linux ARM64)
+- x86_64-apple-darwin (macOS Intel)
+- aarch64-apple-darwin (macOS ARM64)
+- Cross-compilation setup for ARM64 targets
+- Build both `agenterra` and `agnt` binaries
+- Strip binaries for smaller size
+- Create platform-specific archives (tar.gz)
+- Generate SHA256 checksums
+- Upload binary assets to GitHub Release
+
+### Project Workflow
 
 ### Branching
 Format: `GH-<issue>_<ProperCaseSummary>`
 Example: `GH-9_EndToEndIntegrationTest`
 
 ### PR Requirements
-- All tests must pass
+- All CI status checks must pass
+- At least 1 approving review required
 - Code coverage maintained
-- Documentation updated
-- Examples for new features
+- Documentation updated for user-facing changes
+- Examples added for new features
 
 ### MCP-Specific Rules
 - Validate all API parameters
