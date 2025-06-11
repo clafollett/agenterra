@@ -1,6 +1,6 @@
 [package]
 name = "agenterra-core"
-version = "0.1.0"
+version = "0.0.9"
 edition = "2024"
 description = "Core library for generating MCP servers from OpenAPI specs with Agenterra"
 license = "MIT"

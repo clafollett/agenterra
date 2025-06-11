@@ -1,6 +1,6 @@
 [package]
 name = "agenterra"
-version = "0.1.0"
+version = "0.0.9"
 edition = "2024"
 description = "CLI for generating MCP servers from OpenAPI specs with Agenterra"
 license = "MIT OR Apache-2.0"

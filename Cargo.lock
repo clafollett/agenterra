@@ -19,7 +19,7 @@ checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 
 [[package]]
 name = "agenterra"
-version = "0.1.0"
+version = "0.0.9"
 dependencies = [
  "agenterra-core",
  "anyhow",
@@ -38,7 +38,7 @@ dependencies = [
 
 [[package]]
 name = "agenterra-core"
-version = "0.1.0"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "clap",
