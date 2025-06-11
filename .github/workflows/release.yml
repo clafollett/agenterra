@@ -1,4 +1,5 @@
 name: Release
+run-name: "🚀 Release ${{ github.ref_name || github.event.inputs.custom_version || github.event.inputs.release_type }} 🤖"
 
 on:
   push:
