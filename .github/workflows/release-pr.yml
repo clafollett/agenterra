@@ -1,4 +1,5 @@
-name: Release PR Update
+name: Release-plz PR Update
+run-name: "🚀 Release-plz PR Update (main)"
 
 on:
   push:
