@@ -17,7 +17,7 @@ env:
 jobs:
   release-plz-release:
     name: Release-plz release
-    if: ${{ startsWith(github.ref, 'refs/heads/') }}  # Run only on branch pushes
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
