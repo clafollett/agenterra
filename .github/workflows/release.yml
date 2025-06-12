@@ -14,35 +14,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release-plz-pr:
-    name: Release-plz PR
-    # Skip bot commits to prevent loops
-    if: >
-      github.ref == 'refs/heads/main' &&
-      github.actor != 'release-plz[bot]'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: release-plz-pr
-      cancel-in-progress: true  # Cancel previous runs on new pushes
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run release-plz (PR)
-        uses: release-plz/action@v0.5.107
-        with:
-          command: release-pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   release:
     name: Publish & Release
     if: startsWith(github.ref, 'refs/tags/')
