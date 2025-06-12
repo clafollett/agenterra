@@ -23,9 +23,5 @@ tempfile = "3.10"
 name = "agenterra"
 path = "src/main.rs"
 
-[[bin]]
-name = "agnt"
-path = "src/main.rs"
-
 [dev-dependencies]
 lazy_static = "1.4.0"

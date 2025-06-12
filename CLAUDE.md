@@ -201,7 +201,7 @@ Triggered by version tags (v*.*.*) or manual workflow dispatch:
 - x86_64-apple-darwin (macOS Intel)
 - aarch64-apple-darwin (macOS ARM64)
 - Cross-compilation setup for ARM64 targets
-- Build both `agenterra` and `agnt` binaries
+- Build the `agenterra` binary
 - Strip binaries for smaller size
 - Create platform-specific archives (tar.gz)
 - Generate SHA256 checksums

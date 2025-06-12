@@ -48,7 +48,7 @@ cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petsto
 # Generate from a remote URL without install:
 cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/cargo_run_petstore_mcp_server_remote_url
 
-# Or install the CLI (also provides 'agnt' as a short alias)
+# Or install the CLI
 cargo install --path crates/agenterra-cli
 
 # Generate your MCP server from a local file
