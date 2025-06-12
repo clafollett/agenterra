@@ -1,3 +1,4 @@
 # CLAUDE.md
 
-Reference the [Claude documentation](./docs/AGENT_INSTRUCTIONS.md) full Agent instruction. All agents must use the same instructions.
+Reference the [Workspace LLM Agent Instructions](./docs/AGENT_INSTRUCTIONS.md) 
+All agents must use the same instructions.

@@ -5,58 +5,93 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Repository:** https://github.com/clafollett/agenterra
 **Version:** Read the badge in the workspace README.md
 
-## Project Standards & Conventions
+## Prime Directives
 
-### Prime Directives
 1. **NEVER PUSH TO MAIN** - All changes must go through PR workflow, no direct pushes to main branch
 2. **Test-First Development (TDD)**
-- Always write failing tests before implementation
-- Implement then implement the simplest solution to pass tests
-- Refactor after tests pass for most elegant solution
-- Test after refactoring to ensure no regressions
-3. **NO analysis paralysis** - Use the tests to guide development, avoid overthinking
-4. **Minimal Viable Changes** - Implement the simplest solution that passes tests, then refactor
+   - Write failing tests before implementation
+   - Implement simplest solution to pass tests
+   - Refactor to make code idiomatic
+   - Cover: happy path, errors, edge cases
+   - Mock external services
+   - Keep tests in the same module as the code under test
+3. **NO analysis paralysis** - Use tests to guide development, avoid overthinking
 
-### Code Quality Requirements
-- Run `rustfmt file.rs` or `cargo fmt` immediately after code changes
+## CI/CD Workflow (HIGH PRIORITY)
+
+### Conventional Commits
+Use semantic commit messages with GitHub issue linking:
+
+**Format:** `<type>: <description> (#<issue_number>)`
+
+**Types:**
+- `feat:` - New features (minor version: 0.1.0 → 0.2.0)
+- `fix:` - Bug fixes (patch version: 0.1.0 → 0.1.1)
+- `chore:` - Maintenance tasks (no version bump)
+- `docs:` - Documentation updates (no version bump)
+- `refactor:` - Code refactoring (no version bump)
+- `test:` - Adding/updating tests (no version bump)
+- `ci:` - CI/CD pipeline changes (no version bump)
+- `perf:` - Performance improvements (patch version)
+- `style:` - Code formatting/style changes (no version bump)
+- `build:` - Build system changes (no version bump)
+
+**Breaking Changes:** Add `BREAKING CHANGE:` in commit body for major version bumps (0.1.0 → 1.0.0)
+
+**Examples:**
+- `feat: add OpenAPI 3.1 support (#15)`
+- `fix: resolve template rendering error (#23)`
+- `chore: update dependencies (#8)`
+
+### Development Workflow
+1. **Create branch:** `GH-<issue>_<ProperCaseSummary>`
+2. **Make changes** following coding standards
+3. **Run local checks:** `cargo fmt && cargo clippy && cargo test`
+4. **Push branch** and create pull request
+5. **Wait for CI** - All checks must pass
+6. **Request review** from maintainer
+7. **Squash merge** to main after approval
+8. **Delete feature branch** after merge
+
+### Branch Protection Rules
+- **No direct pushes** - All changes via pull requests
+- **Required status checks** - Test Suite (ubuntu/macos), Linting, Security Audit
+- **Required reviews** - At least 1 approving review
+
+### Release Process (Automated)
+1. **Commit with conventional messages** during development
+2. **Push to any branch** → `release-plz` creates/updates Release PR automatically
+3. **Merge Release PR into `main`** → tag created, release job runs
+4. **GitHub Actions** builds cross-platform binaries automatically
+5. **Binaries published** to GitHub Releases with checksums
+
+## Code Quality Requirements
+
+- Run `cargo fmt` immediately after code changes
 - Run `cargo clippy -- -D warnings` to catch issues
-- Run `cargo test` to ensure all tests pass before committing changes to GitHub
+- Run `cargo test` before committing to GitHub
 - Validate all user inputs with explicit error handling
 - Log all errors and warnings with clear messages
 - Use idiomatic Rust patterns and best practices
 
-## Common Development Commands
+## Quick Development Commands
 
-### Quick Reference
 ```bash
+# Pre-commit check
+cargo fmt && cargo clippy && cargo test
+
 # Build & Test
-cargo build                                                   # Debug build
-cargo test                                                    # Run all tests
-cargo test -p agenterra integration_test   # Integration tests
-
-# Code Quality
-cargo fmt && cargo clippy && cargo test                      # Pre-commit check
-
-# Releases
-# Releases are automated via GitHub Actions using release-plz
-# Push to main → Creates Release PR → Merge Release PR → Automated release
+cargo build                                   # Debug build
+cargo test                                    # Run all tests
+cargo test -p agenterra integration_test     # Integration tests
 
 # Run Agenterra
 cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
 ```
 
-### Examples
-```bash
-# Local file
-cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/test_output
+## Architecture Overview
 
-# Remote URL
-cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/test_output
-```
-
-## High-Level Architecture
-
-Agenterra transforms OpenAPI specifications into MCP (Model Context Protocol) servers using a template-based code generation approach.
+Agenterra transforms OpenAPI specifications into MCP (Model Context Protocol) servers using template-based code generation.
 
 ### Core Flow
 ```
@@ -64,36 +99,15 @@ OpenAPI Spec → Parser → Template Builder → Code Generator → MCP Server
 ```
 
 ### Base URL Resolution Rules
-When resolving the base API URL for generated servers:
-
-1. **User-supplied URL takes precedence**: If the user provides a `--base-url` parameter, validate it's a valid URL and use it
-2. **Fallback to OpenAPI schema**: If no user URL provided, extract from:
-   - OpenAPI 3.x: `servers[0].url` field
-   - Swagger 2.0: Construct from `host` + `basePath` fields
-3. **Error on missing URL**: If no base URL found anywhere, fail with clear error message recommending the user supply `--base-url`
-
-This design allows flexibility for different environments (dev/staging/prod) while maintaining compatibility with OpenAPI specifications.
+1. **User-supplied URL takes precedence** via `--base-url` parameter
+2. **Fallback to OpenAPI schema:** OpenAPI 3.x `servers[0].url` or Swagger 2.0 `host` + `basePath`
+3. **Error on missing URL** with clear message recommending `--base-url`
 
 ### Key Components
-
-**`openapi.rs`** - OpenAPI Parser
-- Loads specs from files or URLs
-- Extracts operations, parameters, schemas
-- Validates OpenAPI 3.0+ specifications
-
-**`template_manager.rs`** - Template Engine
-- Discovers templates in multiple locations
-- Uses Tera for rendering
-- Supports manifest-driven generation
-
-**`builders/`** - Context Builders
-- Trait-based extensibility
-- Transforms OpenAPI to language-specific contexts
-- Currently: Rust/Axum implementation
-
-**`config.rs`** - Configuration
-- Project settings and template selection
-- Operation filtering (include/exclude)
+- **`openapi.rs`** - OpenAPI Parser (loads specs, extracts operations, validates OpenAPI 3.0+)
+- **`template_manager.rs`** - Template Engine (discovers templates, uses Tera rendering)
+- **`builders/`** - Context Builders (trait-based extensibility, transforms OpenAPI to language contexts)
+- **`config.rs`** - Configuration (project settings, template selection, operation filtering)
 
 ### Workspace Structure
 - `agenterra-cli/` - CLI interface (thin wrapper)
@@ -121,147 +135,11 @@ use serde::{Deserialize, Serialize};
 - `CamelCase` - types, structs, enums
 - `SCREAMING_SNAKE_CASE` - constants
 
-### Testing Requirements
-- Write failing test first
-- Cover: happy path, errors, edge cases
-- Mock external services
-- Location: same module as code under test
 
-## CI/CD Workflow
+## Claude-Specific Tips
 
-### Branch Protection Rules
-The `main` branch is protected with the following requirements:
-- **No direct pushes** - All changes must come via pull requests
-- **Required status checks** - All CI jobs must pass:
-  - Test Suite (ubuntu-latest, stable)
-  - Test Suite (macos-latest, stable)  
-  - Linting
-  - Security Audit
-  - Release Configuration
-- **Required reviews** - At least 1 approving review required
-- **Dismiss stale reviews** - New commits dismiss previous approvals
-
-### Development Workflow
-1. **Create feature branch** from main: `GH-<issue>_<ProperCaseSummary>`
-2. **Make changes** following coding standards
-3. **Run local checks**: `cargo fmt && cargo clippy && cargo test`
-4. **Push branch** and create pull request
-5. **Wait for CI** - All checks must pass
-6. **Request review** from maintainer
-7. **Squash merge** to main after approval
-8. **Delete feature branch** after merge
-
-### CI Pipeline (.github/workflows/ci.yml)
-Runs on every push to main and pull requests:
-
-**Test Suite** (Matrix: ubuntu-latest, macos-latest)
-- Checkout sources
-- Install Rust toolchain (stable)
-- Cache dependencies
-- Run `cargo check --all-targets --all-features`
-- Run `cargo test --all-features --workspace`  
-- Run integration tests: `cargo test -p agenterra --test integration_test`
-
-**Linting**
-- Checkout sources
-- Install Rust toolchain with rustfmt, clippy
-- Cache dependencies
-- Run `cargo fmt --all -- --check`
-- Run `cargo clippy --all-targets --all-features -- -D warnings`
-
-**Security Audit**
-- Checkout sources
-- Install Rust toolchain
-- Cache dependencies
-- Install and run `cargo audit`
-
-**Release Configuration**
-- Checkout sources with full history
-- Install Rust toolchain
-- Cache dependencies
-- Install cargo-release
-- Validate release.toml configuration
-- Run dry-run release validation: `cargo release patch --allow-branch main --allow-branch HEAD --no-verify --no-push`
-
-### Release Pipeline (.github/workflows/release.yml)
-Triggered by version tags (v*.*.*) or manual workflow dispatch:
-
-**Semantic Release**
-- Checkout sources with full history
-- Install Rust toolchain and cargo-release
-- Configure git for GitHub Actions bot
-- Determine version (custom or semantic: patch/minor/major/alpha)
-- Run cargo-release with workspace synchronization
-- Output new version and tag for downstream jobs
-
-**Create Release**
-- Extract version from tag or semantic release
-- Generate changelog from git commits
-- Create GitHub Release with generated changelog
-- Mark as prerelease if version contains '-'
-
-**Build Binaries** (Matrix: 5 targets)
-- x86_64-unknown-linux-gnu (Linux x64)
-- aarch64-unknown-linux-gnu (Linux ARM64)
-- x86_64-apple-darwin (macOS Intel)
-- aarch64-apple-darwin (macOS ARM64)
-- Cross-compilation setup for ARM64 targets
-- Build the `agenterra` binary
-- Strip binaries for smaller size
-- Create platform-specific archives (tar.gz)
-- Generate SHA256 checksums
-- Upload binary assets to GitHub Release
-
-### Project Workflow
-
-### Branching
-Format: `GH-<issue>_<ProperCaseSummary>`
-Example: `GH-9_EndToEndIntegrationTest`
-
-### PR Requirements
-- All CI status checks must pass
-- At least 1 approving review required
-- Code coverage maintained
-- Documentation updated for user-facing changes
-- Examples added for new features
-
-### MCP-Specific Rules
-- Validate all API parameters
-- Use consistent error formats
-- Standard response: `{ meta, data }`
-- Error codes: 400 (client), 502 (upstream)
-
-## Quick Tips for Claude Code
-
-1. **Use parallel search**: When exploring code, use multiple `Grep`/`Glob` calls in one message
-2. **Reference locations**: Use `file.rs:123` format when mentioning code
-3. **Run tests early**: After changes, immediately run relevant tests
-4. **Check imports**: Verify external dependencies exist in Cargo.toml before using
-5. **Template testing**: Use `cargo test -p agenterra --test integration_test` to validate template changes
-6. **Format immediately**: `rustfmt file.rs` after edits prevents CI failures
-
-## Semantic Release Workflow
-
-### Conventional Commits
-Use conventional commit messages to trigger automatic releases:
-- `fix:` - Bug fixes (patch version: 0.1.0 → 0.1.1)
-- `feat:` - New features (minor version: 0.1.0 → 0.2.0)  
-- `BREAKING CHANGE:` - Breaking changes (major version: 0.1.0 → 1.0.0)
-
-### Release Process (Automated)
-1. **Commit with conventional messages** during development:
-   - `fix:` - Bug fixes (patch version: 0.1.0 → 0.1.1)
-   - `feat:` - New features (minor version: 0.1.0 → 0.2.0)  
-   - `BREAKING CHANGE:` - Breaking changes (major version: 0.1.0 → 1.0.0)
-2. **Push to any branch** → `release-plz` creates/updates the Release PR automatically
-3. **Merge the Release PR into `main`** → tag is created and the release job runs (automated version bumps & GitHub Release)
-4. **GitHub Actions** builds cross-platform binaries automatically
-5. **Binaries published** to GitHub Releases with checksums
-
-### Targets Built
-- Linux x64 + ARM64
-- macOS Intel + ARM64 (M-series)
-- Windows support via WSL (signal-hook compatibility)
+1. **Use parallel search** - Multiple `Grep`/`Glob` calls in one message for efficiency
+2. **Reference locations precisely** - Use `file.rs:123` format when mentioning code
 
 ## Communication Style & Personality
 
