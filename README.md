@@ -67,8 +67,8 @@ agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.jso
 # Install latest version
 cargo install --git https://github.com/clafollett/agenterra.git
 
-# Install specific version (v0.0.10)
-cargo install --git https://github.com/clafollett/agenterra.git --tag v0.0.10
+# Install specific version (v0.0.9)
+cargo install --git https://github.com/clafollett/agenterra.git --tag v0.0.9
 ```
 
 ### Method 3: From Pre-built Binary (Coming soon)

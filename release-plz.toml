@@ -1,0 +1,22 @@
+[workspace]
+custom_files = [
+    { path = "crates/agenterra-cli/Cargo.toml", pattern = "version = \"{{version}}\"" },
+    { path = "crates/agenterra-core/Cargo.toml", pattern = "version = \"{{version}}\"" },
+    { path = "CLAUDE.md", pattern = "\\*\\*Version:\\*\\* v{{version}}" },
+    { path = "README.md", pattern = "\\*\\*Version:\\*\\* v{{version}}" },
+]
+
+changelog_update = true
+git_release_enable = true
+features_always_increment_minor = false
+publish = false
+
+# Per-package overrides (optional)
+[[package]]
+name = "agenterra-cli"
+
+[[package]]
+name = "agenterra-core"
+
+[[package]]
+name = "agenterra"

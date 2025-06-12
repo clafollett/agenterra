@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 **Repository:** https://github.com/clafollett/agenterra
-**Version:** v0.0.10
+**Version:** v0.0.9
 
 ## Project Standards & Conventions
 
@@ -32,11 +32,9 @@ cargo test -p agenterra integration_test   # Integration tests
 # Code Quality
 cargo fmt && cargo clippy && cargo test                      # Pre-commit check
 
-# Semantic Releases
-./scripts/release.sh patch                                    # Bug fixes (0.1.0 → 0.1.1)
-./scripts/release.sh minor                                    # New features (0.1.0 → 0.2.0)
-./scripts/release.sh major                                    # Breaking changes (0.1.0 → 1.0.0)
-./scripts/release.sh alpha                                    # Pre-release (0.1.0 → 0.2.0-alpha.1)
+# Releases
+# Releases are automated via GitHub Actions using release-plz
+# Push to main → Creates Release PR → Merge Release PR → Automated release
 
 # Run Agenterra
 cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
@@ -245,22 +243,13 @@ Use conventional commit messages to trigger automatic releases:
 - `feat:` - New features (minor version: 0.1.0 → 0.2.0)  
 - `BREAKING CHANGE:` - Breaking changes (major version: 0.1.0 → 1.0.0)
 
-### Release Commands
-```bash
-# Local releases (requires main branch, clean working directory)
-./scripts/release.sh patch      # Bug fixes
-./scripts/release.sh minor      # New features  
-./scripts/release.sh major      # Breaking changes
-./scripts/release.sh alpha      # Pre-release testing
-
-# GitHub Actions (manual trigger)
-# Go to Actions → Release → Run workflow → Select release type
-```
-
-### Release Process
-1. **Commit with conventional messages** during development
-2. **Run release script** when ready to publish
-3. **cargo-release** handles version bumps, tags, and pushes
+### Release Process (Automated)
+1. **Commit with conventional messages** during development:
+   - `fix:` - Bug fixes (patch version: 0.1.0 → 0.1.1)
+   - `feat:` - New features (minor version: 0.1.0 → 0.2.0)  
+   - `BREAKING CHANGE:` - Breaking changes (major version: 0.1.0 → 1.0.0)
+2. **Push to main** → `release-plz` creates/updates Release PR automatically
+3. **Merge Release PR** → Automated release with version bumps and tags
 4. **GitHub Actions** builds cross-platform binaries automatically
 5. **Binaries published** to GitHub Releases with checksums
 
