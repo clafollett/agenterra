@@ -17,7 +17,10 @@ env:
 jobs:
   release-plz-pr:
     name: Release-plz PR
-    if: github.ref == 'refs/heads/main'  # Only on main branch
+    # Skip bot commits to prevent loops
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.actor != 'release-plz[bot]'
     runs-on: ubuntu-latest
     concurrency:
       group: release-plz-pr
