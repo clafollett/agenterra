@@ -59,10 +59,12 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Publish crates
-        run: |
-          cd crates/agenterra-cli
-          cargo publish --no-verify  # --no-verify since we built in PR
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
 
   build:
     name: Build ${{ matrix.target }}
