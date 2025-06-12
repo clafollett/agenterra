@@ -248,8 +248,8 @@ Use conventional commit messages to trigger automatic releases:
    - `fix:` - Bug fixes (patch version: 0.1.0 → 0.1.1)
    - `feat:` - New features (minor version: 0.1.0 → 0.2.0)  
    - `BREAKING CHANGE:` - Breaking changes (major version: 0.1.0 → 1.0.0)
-2. **Push to main** → `release-plz` creates/updates Release PR automatically
-3. **Merge Release PR** → Automated release with version bumps and tags
+2. **Push to any branch** → `release-plz` creates/updates the Release PR automatically
+3. **Merge the Release PR into `main`** → tag is created and the release job runs (automated version bumps & GitHub Release)
 4. **GitHub Actions** builds cross-platform binaries automatically
 5. **Binaries published** to GitHub Releases with checksums
 
