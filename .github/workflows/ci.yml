@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-24.04, macos-latest]
         rust: [stable]
 
     steps:
@@ -35,8 +35,19 @@ jobs:
     - name: Run cargo check
       run: cargo check --all-targets --all-features
 
+    - name: Install musl tools (Linux)
+      if: matrix.os == 'ubuntu-24.04'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools musl-dev
+        rustup target add x86_64-unknown-linux-musl
+
     - name: Build release binary
       run: cargo build --release --bin agenterra
+
+    - name: Build musl release binary (Linux)
+      if: matrix.os == 'ubuntu-24.04'
+      run: cargo build --release --target x86_64-unknown-linux-musl --bin agenterra
 
     - name: Run tests
       run: cargo test --all-features --workspace
