@@ -3,8 +3,7 @@ run-name: ${{ startsWith(github.ref,'refs/tags/') && format('ğŸš€ Release {0} ğŸ
 
 on:
   push:
-    branches: [main]  # Only run on main branch pushes
-    tags: ["v*.*.*"]   # And tag pushes
+    tags: ["v*.*.*"]   # Run only on tag pushes
 
 permissions:
   contents: write     # commit changelog & Cargo.toml bumps
@@ -47,7 +46,6 @@ jobs:
   release:
     name: Publish & Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [release-plz-pr]  # Ensure Release PR was created first
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
