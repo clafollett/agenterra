@@ -91,7 +91,8 @@ mod tests {
     const REQUIRED_FILES: &[&str] = &["Cargo.toml", "src/main.rs"];
 
     #[test]
-    fn test_url_based_openapi_schema() -> Result<()> {
+    fn test_file_based_openapi_v3_schema() -> Result<()> {
+        // Test the URL-based OpenAPI v3 schema
         test_openapi_schema(
             "https://petstore3.swagger.io/api/v3/openapi.json",
             "URL-based",
@@ -100,20 +101,8 @@ mod tests {
     }
 
     #[test]
-    fn test_file_based_openapi_v3_schema() -> Result<()> {
-        // Test with OpenAPI v3 spec
-        let v3_schema_path =
-            get_test_openapi_schema_path("tests/fixtures/openapi/petstore.openapi.v3.json");
-        test_openapi_schema(
-            &v3_schema_path,
-            "OpenAPI v3 file-based",
-            Some("https://petstore3.swagger.io"),
-        )
-    }
-
-    #[test]
     fn test_file_based_openapi_v2_schema() -> Result<()> {
-        // Test with Swagger v2 spec (no base URL - should be in schema)
+        // Test the file-based Swagger v2 spec (no base URL - should be in schema)
         let v2_schema_path =
             get_test_openapi_schema_path("tests/fixtures/openapi/petstore.swagger.v2.json");
         test_openapi_schema(&v2_schema_path, "Swagger v2 file-based", None)

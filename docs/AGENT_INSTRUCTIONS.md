@@ -80,10 +80,14 @@ Use semantic commit messages with GitHub issue linking:
 # Pre-commit check
 cargo fmt && cargo clippy && cargo test
 
-# Build & Test
-cargo build                                   # Debug build
-cargo test                                    # Run all tests
-cargo test -p agenterra integration_test     # Integration tests
+# Builds
+cargo build             # Debug build
+cargo build --release   # Release build
+
+# Tests
+cargo test --all-features --workspace --lib     # Unit tests
+cargo test --all-features --workspace --doc     # Doc tests
+cargo test -p agenterra --test integration_test # Integration tests
 
 # Run Agenterra
 cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
