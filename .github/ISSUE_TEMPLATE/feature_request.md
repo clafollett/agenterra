@@ -16,7 +16,7 @@ assignees: ''
 <!-- Describe how you envision this feature working -->
 
 ## Expected Benefits
-<!-- How would this feature improve the theme or user experience -->
+<!-- How would this feature improve the project or user experience -->
 
 ## Design Considerations
 <!-- Any mockups, design requirements, or UI/UX considerations -->
