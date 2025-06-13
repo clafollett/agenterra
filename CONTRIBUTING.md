@@ -38,10 +38,13 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 2. **Create a Branch**
    ```bash
-   git checkout -b GH-<issue-number>_<ProperCaseSummary>
+   git checkout -b <type>/issue-<number>/<description>
    ```
    
-   Example: `GH-15_AddOpenAPI31Support`
+   Examples:
+   - `docs/issue-57/update-readme`
+   - `feature/issue-42/add-login`
+   - `fix/issue-123/login-error`
 
 3. **Make Changes**
    - Follow our coding style
@@ -60,7 +63,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 6. **Push & Create PR**
    ```bash
-   git push origin feature/your-feature-name
+   git push origin <type>/issue-<number>/<description>
    ```
 
 ## Development Setup 🛠️

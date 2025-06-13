@@ -206,7 +206,7 @@ Generated Rust MCP Server (Axum, etc.)
 We welcome contributions from the community! To keep Agenterra high-quality and maintainable, please follow these guidelines:
 
 - **Fork & Clone**: Fork the repo and clone your fork locally.
-- **Branch Naming**: Use the convention `GH-<issue-number>_<ProperCaseSummary>` (e.g., `GH-9_EndToEndIntegrationTest`).
+- **Branch Naming**: Use the convention `<type>/issue-<number>/<description>` (e.g., `docs/issue-57/update-readme`).
 - **Pull Requests**:
   - All PRs require review.
   - All tests must pass (`cargo test` and integration tests).
