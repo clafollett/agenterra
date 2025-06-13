@@ -2,13 +2,13 @@
 changelog_update = true
 git_release_enable = true
 features_always_increment_minor = false
-publish = false
 
-# Per-package overrides (optional)
 [[package]]
 name = "agenterra"
-release = false
+release = true
+publish = false
 
 [[package]]
 name = "agenterra-core"
-release = false
+release = true
+publish = false
