@@ -120,12 +120,16 @@ impl OpenApiContext {
     /// # Examples
     /// ```
     /// use agenterra_core::openapi::OpenApiContext;
-    /// use serde_json::json;
     ///
-    /// # let spec_json = json!({"openapi": "3.0.0", "info": {"title": "Test", "version": "1.0"}});
-    /// # let spec = OpenApiContext { json: spec_json };
+    /// # #[tokio::main]
+    /// # async fn main() -> agenterra_core::Result<()> {
+    /// // Load spec from file and access raw JSON
+    /// let spec = OpenApiContext::from_file("../../tests/fixtures/openapi/petstore.openapi.v3.json").await?;
     /// let raw_json = spec.as_json();
-    /// assert_eq!(raw_json["openapi"], "3.0.0");
+    /// assert_eq!(raw_json["openapi"], "3.0.4");
+    /// assert_eq!(raw_json["info"]["title"], "Swagger Petstore - OpenAPI 3.0");
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn as_json(&self) -> &JsonValue {
         &self.json
