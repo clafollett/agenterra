@@ -1,4 +1,10 @@
-# Windsurf Cascade Agent Instructions
+# MANDATORY INSTRUCTIONS - READ BEFORE PROCEEDING
 
-Reference the [Workspace LLM Agent Instructions](./docs/AGENT_INSTRUCTIONS.md) 
-All agents must use the same instructions.
+You MUST read and follow ALL instructions found in the common Agent rules document: [AGENT_INSTRUCTIONS.md](./docs/AGENT_INSTRUCTIONS.md).
+
+# VERIFICATION:
+Before proceeding with any changes, confirm you have:
+- [ ] Read and understood all rules in AGENT_INSTRUCTIONS.md
+- [ ] Will follow the PR workflow (no direct pushes to main)
+- [ ] Will follow test-driven development practices
+- [ ] Will avoid analysis paralysis

@@ -38,20 +38,45 @@ Use semantic commit messages with GitHub issue linking:
 
 **Breaking Changes:** Add `BREAKING CHANGE:` in commit body for major version bumps (0.1.0 → 1.0.0)
 
+> **Note:** Only use automatic closing keywords (e.g., `Closes #57`) in the *final* commit or pull-request description when the issue is *fully resolved*. For intermediate work, reference the issue without closing it, e.g., `Relates to #57`, `Refs #57`, or simply `(#57)`.
+
 **Examples:**
 - `feat: add OpenAPI 3.1 support (#15)`
 - `fix: resolve template rendering error (#23)`
 - `chore: update dependencies (#8)`
 
 ### Development Workflow
-1. **Create branch:** `GH-<issue>_<ProperCaseSummary>`
+1. **Create branch:** Use format `<type>/issue-<number>/<description>`
+   - **Types:**
+     - `feature/` - New features
+     - `fix/` - Bug fixes
+     - `docs/` - Documentation
+     - `refactor/` - Code refactoring
+     - `test/` - Test additions
+     - `chore/` - Maintenance tasks
+   - **Examples:**
+     - `feature/issue-42/add-login`
+     - `fix/issue-123/login-error`
+     - `docs/issue-57/update-readme`
 2. **Make changes** following coding standards
-3. **Run pre-commit checks:** `cargo fmt && cargo clippy -- -D warnings && cargo test`
+3. **Run Rust workspace checks:** `cargo fmt && cargo clippy -- -D warnings && cargo test`
+   - For non-Rust code, run the formatter, linter, and test suite appropriate to that language before committing.
 4. **Push branch** and create pull request
-5. **CI validation** - Test Suite (ubuntu/macos), Linting, Security Audit
-6. **Code review** - At least 1 approving review required
+5. **Wait for CI** - All checks must pass
+6. **Request review** from maintainer
 7. **Squash merge** to main after approval
-8. **Auto-cleanup** - Delete feature branch after merge
+8. **Delete feature branch** after merge
+
+### Branch Protection Rules
+- **No direct pushes** - All changes via pull requests
+- **Required status checks (blocking):**
+  - `Test Suite (ubuntu-latest, stable)`
+  - `Test Suite (macos-latest, stable)`
+  - `Linting`
+  - `Security Audit`
+  
+  All other checks must pass but are non-blocking.
+- **Required reviews** - At least 1 approving review
 
 ### Release Process (Automated)
 1. **Commit with conventional messages** during development
@@ -60,58 +85,32 @@ Use semantic commit messages with GitHub issue linking:
 4. **GitHub Actions** builds cross-platform binaries automatically
 5. **Binaries published** to GitHub Releases with checksums
 
-## Code Quality & Development Commands
+## Code Quality Requirements
 
-### Quality Standards
-- **Idiomatic Rust** - Follow standard patterns and best practices
-- **Error handling** - Validate all inputs with explicit error handling
-- **Logging** - Clear, helpful error messages and warnings
-- **Documentation** - All public APIs documented with `///` comments
-- **Testing** - Comprehensive unit, integration, and doc tests
+- Run `cargo fmt` immediately after code changes
+- Run `cargo clippy -- -D warnings` to catch issues
+- Run `cargo test` before committing to GitHub
+- Validate all user inputs with explicit error handling
+- Log all errors and warnings with clear messages
+- Use idiomatic Rust patterns and best practices
 
-### Essential Commands
+## Quick Development Commands
+
 ```bash
-# Pre-commit check (run before every commit)
+# Pre-commit check
 cargo fmt && cargo clippy -- -D warnings && cargo test
 
-# Building
-cargo build --release
+# Builds
+cargo build             # Debug build
+cargo build --release   # Release build
 
-# Testing
-cargo test --workspace                          # All tests
+# Tests
+cargo test --all-features --workspace --lib     # Unit tests
+cargo test --all-features --workspace --doc     # Doc tests
 cargo test -p agenterra --test integration_test # Integration tests
 
-# Running Agenterra
+# Run Agenterra
 cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
-```
-
-## Documentation Standards
-
-### Code Comments
-- **Public APIs:** Always use `///` with clear descriptions
-- **Modules:** Add `//!` module-level docs explaining purpose
-- **Complex logic:** Inline `//` comments for tricky implementations
-- **Examples:** Include code examples in docstrings when helpful
-
-### Comment Style
-```rust
-//! Module for handling OpenAPI specifications
-//!
-//! This module provides functionality to parse, validate, and transform
-//! OpenAPI specs into internal representations for code generation.
-
-/// Parses an OpenAPI specification from a file or URL
-///
-/// # Arguments
-/// * `schema_path` - File path or URL to the OpenAPI spec
-///
-/// # Examples
-/// ```
-/// let spec = parse_openapi("./api.json")?;
-/// ```
-pub fn parse_openapi(schema_path: &str) -> Result<OpenApiSpec> {
-    // Implementation logic here
-}
 ```
 
 ## Architecture Overview

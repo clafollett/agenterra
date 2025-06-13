@@ -119,7 +119,7 @@ jobs:
               repo: context.repo.repo,
               tag: process.env.GITHUB_REF.replace('refs/tags/', '')
             });
-            return release.upload_url;
+            return release.upload_url.replace('{?name,label}', '');
 
       - name: Upload release assets
         uses: actions/upload-release-asset@v1

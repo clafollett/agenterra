@@ -1,0 +1,11 @@
+{
+  "name": "release-plz branches",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["release-plz-*"]
+    }
+  },
+  "rules": []
+}
