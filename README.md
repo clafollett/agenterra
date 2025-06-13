@@ -26,14 +26,13 @@
 - **🔍 Built-in Validation** - Automatic OpenAPI schema validation
 - **🚀 Production Ready** - Includes logging, error handling, and configuration out of the box
 - **🔌 MCP Protocol Support** - Full compatibility with Model Context Protocol
-- **📦 Docker & Binary** - Multiple deployment options for any environment
+- **📦 Binary Distribution** - Easy installation and deployment
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - [Rust 1.86.0+](https://rustup.rs/)
-- [Docker](https://www.docker.com/) (optional, for containerized deployment)
 
 ### Method 1: Build & Run from Source
 
@@ -43,19 +42,19 @@ git clone https://github.com/clafollett/agenterra.git
 cd agenterra
 
 # Generate from a local file without install:
-cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/cargo_run_petstore_mcp_server_local_file
+cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/cargo_run_petstore_mcp_server_local_file
 
 # Generate from a remote URL without install:
-cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/cargo_run_petstore_mcp_server_remote_url
+cargo run -p agenterra -- scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/cargo_run_petstore_mcp_server_remote_url
 
 # Or install the CLI
 cargo install --path crates/agenterra-cli
 
 # Generate your MCP server from a local file
-agenterra scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/installed_petstore_mcp_server_local_file
+agenterra scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/installed_petstore_mcp_server_local_file
 
 # Generate from a remote URL
-agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/installed_petstore_mcp_server_remote_url
+agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/installed_petstore_mcp_server_remote_url
 
 ```
 
@@ -65,10 +64,10 @@ agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.jso
 
 ```bash
 # Install latest version
-cargo install --git https://github.com/clafollett/agenterra.git
+cargo install --git https://github.com/clafollett/agenterra.git agenterra
 
 # Install specific version. Example: v0.1.0
-cargo install --git https://github.com/clafollett/agenterra.git --tag v<VERSION>
+cargo install --git https://github.com/clafollett/agenterra.git --tag v<VERSION> agenterra
 ```
 
 ### Method 3: From Pre-built Binary (Coming soon)
@@ -79,10 +78,10 @@ cargo install --git https://github.com/clafollett/agenterra.git --tag v<VERSION>
    chmod +x agenterra
    
    # Generate your MCP server from a local file
-   ./agenterra scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output .agenterra/installed_petstore_mcp_server_local_file
+   ./agenterra scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/installed_petstore_mcp_server_local_file
 
    # Generate from a remote URL
-   ./agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output .agenterra/installed_petstore_mcp_server_remote_url
+   ./agenterra scaffold --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/installed_petstore_mcp_server_remote_url
    ```
 
 ## 🔌 Integrating with MCP Clients
@@ -132,33 +131,6 @@ npm install -g @modelcontextprotocol/inspector
 modelcontextprotocol-inspector cargo run --manifest-path=/path/to/petstore-server/Cargo.toml
 ```
 
-### 🐳 Docker Integration
-
-For production use, build and run with Docker:
-
-```bash
-# Build the image
-cd petstore-server
-docker build -t petstore-mcp .
-
-# Run the container
-docker run -i --rm petstore-mcp
-```
-
-Then update your MCP client configuration to use the Docker container:
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "petstore": {
-        "command": "docker",
-        "args": ["run", "-i", "--rm", "petstore-mcp"]
-      }
-    }
-  }
-}
-```
 
 ## ⚡ Best Practices
 
@@ -183,7 +155,7 @@ Postman now offers robust support for the Model Context Protocol (MCP), includin
 - **Offline, air-gapped, or regulated environments** where cloud-based tools aren’t an option
 - **Rust-first, codegen-centric workflows:** Generate type-safe, production-grade Rust MCP servers from OpenAPI specs, ready for CI/CD and self-hosting
 - **Full template control:** Tweak every line of generated code, use custom templates, and integrate with your own infra
-- **CLI-first automation:** Perfect for embedding in build scripts, Docker, and serverless workflows
+- **CLI-first automation:** Perfect for embedding in build scripts and automated workflows
 
 **When should you use Postman?**
 - Visual design, rapid prototyping, and cloud collaboration
@@ -242,7 +214,7 @@ We welcome contributions from the community! To keep Agenterra high-quality and 
   - Update documentation for any user-facing or API changes.
 - **Testing**:
   - Add or update unit and integration tests for all new features or bugfixes.
-  - Run: `cargo test -p agenterra --test integration_test`
+  - Run: `cargo test -p agenterra-cli --test integration_test`
 - **Docs**:
   - Update relevant docs and add examples for new features.
   - Document any new patterns or conventions.
@@ -262,7 +234,7 @@ Here’s how to work productively with Agenterra as a contributor or advanced us
   - Run all tests: `cargo test`
   - Run integration tests (all templates with OpenAPI specs):
     ```bash
-    cargo test -p agenterra --test integration_test
+    cargo test -p agenterra-cli --test integration_test
     ```
 - **Test Location:** See [`crates/agenterra-cli/tests/integration_test.rs`](crates/agenterra-cli/tests/integration_test.rs) for integration coverage.
 - **Test-First Principle:** Add failing tests before implementing new features or bugfixes.
@@ -272,37 +244,14 @@ Here’s how to work productively with Agenterra as a contributor or advanced us
   ```bash
   cargo build --release
   ```
-- **Docker build:**
-  ```bash
-  docker build -t agenterra .
-  ```
 
-### 🧩 Adding Templates or Plugins
-- See [`docs/TEMPLATES.md`](docs/TEMPLATES.md) for template structure, manifest, variables, and hooks.
-- Add new templates under the `templates/` directory (do not modify existing templates without explicit approval).
-
-### ⚡ Local Development Tips
-- Use branch naming convention: `GH-<issue-number>_<ProperCaseSummary>`
-- Run `cargo fmt` and `cargo clippy` before pushing
-- Update documentation and examples with every user-facing change
-- All code must be idiomatic Rust and pass CI checks
+### 🧩 Custom Templates
+- See [`docs/TEMPLATES.md`](docs/TEMPLATES.md) for template development
+- Add templates under `templates/` directory
 
 ---
 
-## 🎬 Demo
-
-Want to see Agenterra in action? Check back soon for:
-- **Loom/asciinema walkthroughs** showing:
-  - Scaffolding an MCP server from an OpenAPI spec (local & URL)
-  - Running the generated server (locally or via Docker)
-  - Integrating with AI agents via the MCP protocol
-- **Community demos**: Submit your own demo links via PR!
-
-👉 _Have a killer workflow or agent integration? [Open a PR](https://github.com/clafollett/agenterra/pulls) to add your demo here!_
-
----
-
-## 🏗️ Project Structure
+## 🏗️ Generated Project Structure
 
 ```
 petstore-server/
@@ -322,67 +271,54 @@ petstore-server/
 └── README.md           # Project documentation
 ```
 
-## Configuration ⚙️
+---
 
-Agenterra can be configured through multiple methods (in order of precedence):
+## 📚 Examples & Configuration
 
-1. **Command-line arguments**
-   ```bash
-   agenterra generate --input spec.yaml --output my_server --template rust_axum
-   ```
-
-2. **Configuration file** (`agenterra.toml` in project root)
-   ```toml
-   [generate]
-   input = "openapi.yaml"
-   output = "my_server"
-   template = "rust_axum"
-   ```
-
-3. **Environment variables**
-   ```bash
-   export AGENTERRA_INPUT=openapi.yaml
-   export AGENTERRA_OUTPUT=my_server
-   agenterra generate
-   ```
-
-## Templates 🎨
-
-Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation. You can use built-in templates or create your own.
-
-### Built-in Templates
-- `rust_axum`: Generate a server using the [Axum](https://github.com/tokio-rs/axum) web framework
-
-### Custom Templates
-Create a `templates` directory in your project root and add your template files. Agenterra will use these instead of the built-in templates.
-
-## Examples 📚
-
-### Generate a server from Petstore API
+### Basic Example: Petstore API
 ```bash
 # Download the Petstore OpenAPI spec
-curl -o petstore.yaml https://raw.githubusercontent.com/OAI/OpenAPI-Specification/main/examples/v3.0/petstore.yaml
+curl -o petstore.json https://petstore3.swagger.io/api/v3/openapi.json
 
 # Generate the server
-agenterra generate --input petstore.yaml --output petstore-server
+agenterra scaffold --schema-path petstore.json --output-dir petstore-server
 
 # Build and run
 cd petstore-server
 cargo run
 ```
 
-## Contributing 🤝
+### Configuration Options
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+Agenterra can be configured through:
+
+1. **Command-line arguments** (recommended)
+   ```bash
+   agenterra scaffold --schema-path your_api_openapi_spec.json --output-dir my_server
+   ```
+
+2. **Configuration file** (`agenterra.toml` in project root)
+   ```toml
+   [scaffold]
+   schema_path = "your_api_openapi_spec.json"
+   output_dir = "my_server"
+   ```
+
+### Templates
+
+Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation.
+
+- **Built-in**: `rust_axum` (Axum web framework)
+- **Custom**: Create `templates/` directory for your own templates
+- **Details**: See [`docs/TEMPLATES.md`](docs/TEMPLATES.md)
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT License - see [LICENSE](LICENSE) for details.
 
+## 🔗 Related Projects
 
-## Related Projects 🔗
-
-- [RMCP](https://github.com/windsurf-eng/rmcp) - Rust MCP implementation
 - [MCP Protocol](https://github.com/windsurf-eng/mcp) - Model Context Protocol specification
+- [RMCP](https://github.com/windsurf-eng/rmcp) - Rust MCP implementation  
 - [Axum](https://github.com/tokio-rs/axum) - Web framework for Rust
 - [Tera](https://tera.netlify.app/) - Template engine for Rust

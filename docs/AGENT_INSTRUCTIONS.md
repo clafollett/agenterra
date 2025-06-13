@@ -46,17 +46,12 @@ Use semantic commit messages with GitHub issue linking:
 ### Development Workflow
 1. **Create branch:** `GH-<issue>_<ProperCaseSummary>`
 2. **Make changes** following coding standards
-3. **Run local checks:** `cargo fmt && cargo clippy && cargo test`
+3. **Run pre-commit checks:** `cargo fmt && cargo clippy -- -D warnings && cargo test`
 4. **Push branch** and create pull request
-5. **Wait for CI** - All checks must pass
-6. **Request review** from maintainer
+5. **CI validation** - Test Suite (ubuntu/macos), Linting, Security Audit
+6. **Code review** - At least 1 approving review required
 7. **Squash merge** to main after approval
-8. **Delete feature branch** after merge
-
-### Branch Protection Rules
-- **No direct pushes** - All changes via pull requests
-- **Required status checks** - Test Suite (ubuntu/macos), Linting, Security Audit
-- **Required reviews** - At least 1 approving review
+8. **Auto-cleanup** - Delete feature branch after merge
 
 ### Release Process (Automated)
 1. **Commit with conventional messages** during development
@@ -65,32 +60,58 @@ Use semantic commit messages with GitHub issue linking:
 4. **GitHub Actions** builds cross-platform binaries automatically
 5. **Binaries published** to GitHub Releases with checksums
 
-## Code Quality Requirements
+## Code Quality & Development Commands
 
-- Run `cargo fmt` immediately after code changes
-- Run `cargo clippy -- -D warnings` to catch issues
-- Run `cargo test` before committing to GitHub
-- Validate all user inputs with explicit error handling
-- Log all errors and warnings with clear messages
-- Use idiomatic Rust patterns and best practices
+### Quality Standards
+- **Idiomatic Rust** - Follow standard patterns and best practices
+- **Error handling** - Validate all inputs with explicit error handling
+- **Logging** - Clear, helpful error messages and warnings
+- **Documentation** - All public APIs documented with `///` comments
+- **Testing** - Comprehensive unit, integration, and doc tests
 
-## Quick Development Commands
-
+### Essential Commands
 ```bash
-# Pre-commit check
-cargo fmt && cargo clippy && cargo test
+# Pre-commit check (run before every commit)
+cargo fmt && cargo clippy -- -D warnings && cargo test
 
-# Builds
-cargo build             # Debug build
-cargo build --release   # Release build
+# Building
+cargo build --release
 
-# Tests
-cargo test --all-features --workspace --lib     # Unit tests
-cargo test --all-features --workspace --doc     # Doc tests
+# Testing
+cargo test --workspace                          # All tests
 cargo test -p agenterra --test integration_test # Integration tests
 
-# Run Agenterra
+# Running Agenterra
 cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
+```
+
+## Documentation Standards
+
+### Code Comments
+- **Public APIs:** Always use `///` with clear descriptions
+- **Modules:** Add `//!` module-level docs explaining purpose
+- **Complex logic:** Inline `//` comments for tricky implementations
+- **Examples:** Include code examples in docstrings when helpful
+
+### Comment Style
+```rust
+//! Module for handling OpenAPI specifications
+//!
+//! This module provides functionality to parse, validate, and transform
+//! OpenAPI specs into internal representations for code generation.
+
+/// Parses an OpenAPI specification from a file or URL
+///
+/// # Arguments
+/// * `schema_path` - File path or URL to the OpenAPI spec
+///
+/// # Examples
+/// ```
+/// let spec = parse_openapi("./api.json")?;
+/// ```
+pub fn parse_openapi(schema_path: &str) -> Result<OpenApiSpec> {
+    // Implementation logic here
+}
 ```
 
 ## Architecture Overview
@@ -157,13 +178,10 @@ use serde::{Deserialize, Serialize};
 **AI/Automation:** LangChain, LlamaIndex, AutoGen, vector DBs  
 **Code:** Prefer Python for scripts, Rust/C# for systems/apps. Always idiomatic, elegant, with clear comments, markdown, copy-paste ready  
 **Behavior:**  
-- Nudge Cal if distracted, losing focus, or overthinking  
 - Push MVP, smallest next step, deadlines if stuck  
 - Mentor at senior/pro level—skip basics, teach with real-world code  
-- Use live OSS/projects (agenterra, Socialings AI, FDIC, etc.) for examples/context  
 - Encourage healthy breaks, humor, high vibes; roast gently if too serious  
 - If code, always include concise comments and explain key logic  
-- Remind Cal to focus on outcomes, not perfection; optimize for shipping  
 **Emoji Bank:** 🚀💯🎯🏆🤯🧠🔍🧩😎🤔😏🙄🤬😳🧟🧨💪🍻🤞🎉
 
 *Maximum Marvin. Minimum tokens. All the vibes.*
