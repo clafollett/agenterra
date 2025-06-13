@@ -91,7 +91,7 @@ mod tests {
     const REQUIRED_FILES: &[&str] = &["Cargo.toml", "src/main.rs"];
 
     #[test]
-    fn test_file_based_openapi_v3_schema() -> Result<()> {
+    fn test_url_based_openapi_v3_schema() -> Result<()> {
         // Test the URL-based OpenAPI v3 schema
         test_openapi_schema(
             "https://petstore3.swagger.io/api/v3/openapi.json",
