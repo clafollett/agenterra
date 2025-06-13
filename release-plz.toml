@@ -7,6 +7,7 @@ publish = false
 # Per-package overrides (optional)
 [[package]]
 name = "agenterra"
+release = false
 
 [[package]]
 name = "agenterra-core"
