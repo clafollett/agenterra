@@ -71,7 +71,7 @@ impl OpenApiContext {
     }
 
     /// Create a new OpenAPISpec from a URL (supports both YAML and JSON)
-    pub async fn from_url(url: &str) -> crate::Result<Self> {
+    async fn from_url(url: &str) -> crate::Result<Self> {
         let response = reqwest::get(url).await.map_err(|e| {
             crate::Error::openapi(format!("Failed to fetch OpenAPI spec from {}: {}", url, e))
         })?;
@@ -109,7 +109,28 @@ impl OpenApiContext {
         Err("content is neither valid JSON nor YAML".to_string())
     }
 
-    /// Get a reference to the raw JSON value
+    /// Returns a reference to the raw JSON representation of the OpenAPI specification.
+    ///
+    /// This provides direct access to the underlying JSON structure for advanced use cases
+    /// where the convenience methods don't provide the needed functionality.
+    ///
+    /// # Returns
+    /// A reference to the `JsonValue` containing the complete OpenAPI specification
+    ///
+    /// # Examples
+    /// ```
+    /// use agenterra_core::openapi::OpenApiContext;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> agenterra_core::Result<()> {
+    /// // Load spec from file and access raw JSON
+    /// let spec = OpenApiContext::from_file("../../tests/fixtures/openapi/petstore.openapi.v3.json").await?;
+    /// let raw_json = spec.as_json();
+    /// assert_eq!(raw_json["openapi"], "3.0.4");
+    /// assert_eq!(raw_json["info"]["title"], "Swagger Petstore - OpenAPI 3.0");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn as_json(&self) -> &JsonValue {
         &self.json
     }
@@ -242,7 +263,8 @@ impl OpenApiContext {
         Ok(operations)
     }
 
-    pub fn extract_parameters(&self, path_item: &JsonValue) -> Option<Vec<OpenApiParameter>> {
+    /// Extracts parameters from an OpenAPI path item, resolving any $ref references
+    fn extract_parameters(&self, path_item: &JsonValue) -> Option<Vec<OpenApiParameter>> {
         path_item
             .get("parameters")
             .and_then(JsonValue::as_array)
@@ -261,8 +283,8 @@ impl OpenApiContext {
             })
     }
 
-    /// Extract responses from JSON object
-    pub fn extract_responses(
+    /// Extracts response definitions from an OpenAPI operation
+    fn extract_responses(
         &self,
         get_item: &serde_json::Map<String, JsonValue>,
     ) -> std::collections::HashMap<String, OpenApiResponse> {
@@ -281,8 +303,8 @@ impl OpenApiContext {
             .unwrap_or_default()
     }
 
-    /// Extract vendor extensions from JSON object
-    pub fn extract_vendor_extensions(
+    /// Extracts vendor extensions (x-* prefixed properties) from an OpenAPI operation
+    fn extract_vendor_extensions(
         &self,
         get_item: &serde_json::Map<String, JsonValue>,
     ) -> std::collections::HashMap<String, JsonValue> {
@@ -291,85 +313,6 @@ impl OpenApiContext {
             .filter(|(k, _)| k.starts_with("x-"))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
-    }
-
-    pub fn extract_properties_json_value(
-        &self,
-        path_item: &JsonValue,
-        endpoint: &str,
-    ) -> crate::Result<(JsonValue, Option<String>)> {
-        let get_item = path_item
-            .get("get")
-            .and_then(JsonValue::as_object)
-            .ok_or_else(|| {
-                Error::openapi(format!("No GET operation for endpoint '{}'", endpoint))
-            })?;
-        let response = get_item
-            .get("responses")
-            .and_then(JsonValue::as_object)
-            .and_then(|m| m.get("200"))
-            .and_then(JsonValue::as_object)
-            .ok_or_else(|| {
-                Error::openapi(format!("No 200 response for endpoint '{}'", endpoint))
-            })?;
-        // Extract content map once, treat missing content or non-JSON content as no properties
-        let content_map = match response.get("content").and_then(JsonValue::as_object) {
-            Some(m) => m,
-            None => return Ok((JsonValue::Null, None)),
-        };
-        let content = match content_map
-            .get("application/json")
-            .and_then(JsonValue::as_object)
-        {
-            Some(m) => m,
-            None => return Ok((JsonValue::Null, None)),
-        };
-        // Extract the actual schema object
-        let schema = content
-            .get("schema")
-            .and_then(JsonValue::as_object)
-            .ok_or_else(|| Error::openapi(format!("No schema in content for '{}'", endpoint)))?;
-        // Inline object schema: use direct properties or additionalProperties
-        if schema.get("properties").is_some() || schema.get("additionalProperties").is_some() {
-            let props = schema.get("properties").cloned().unwrap_or(JsonValue::Null);
-            return Ok((props, None));
-        }
-        // Primitive types: return no properties
-        if let Some(typ) = schema.get("type").and_then(JsonValue::as_str) {
-            if typ != "object" && typ != "array" {
-                return Ok((JsonValue::Null, None));
-            }
-        }
-        // Extract reference, support both direct and array item refs
-        let ref_str = match schema.get("$ref").and_then(JsonValue::as_str) {
-            Some(r) => r,
-            None => schema
-                .get("items")
-                .and_then(JsonValue::as_object)
-                .and_then(|o| o.get("$ref").and_then(JsonValue::as_str))
-                .ok_or_else(|| Error::openapi(format!("No $ref in schema for '{}'", endpoint)))?,
-        };
-        let key = "#/components/schemas/";
-        if !ref_str.starts_with(key) {
-            return Err(Error::openapi(format!(
-                "Unexpected schema ref '{}'",
-                ref_str
-            )));
-        }
-        let name = &ref_str[key.len()..];
-        let schemas = self
-            .json
-            .get("components")
-            .and_then(JsonValue::as_object)
-            .and_then(|m| m.get("schemas"))
-            .and_then(JsonValue::as_object)
-            .ok_or_else(|| Error::openapi("No components.schemas section"))?;
-        let def = schemas
-            .get(name)
-            .cloned()
-            .ok_or_else(|| Error::openapi(format!("Schema '{}' not found", name)))?;
-        let props = def.get("properties").cloned().unwrap_or(JsonValue::Null);
-        Ok((props, None))
     }
 
     /// Extract row properties from properties JSON
@@ -389,20 +332,6 @@ impl OpenApiContext {
                 .collect();
         }
         Vec::new()
-    }
-
-    /// Extract typed parameter info for a handler
-    pub fn extract_parameter_info(&self, path_item: &JsonValue) -> Vec<OpenApiParameterInfo> {
-        self.extract_parameters(path_item)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|param| OpenApiParameterInfo {
-                name: param.name,
-                description: param.description,
-                example: param.example,
-                // rust_type is intentionally omitted here
-            })
-            .collect()
     }
 
     /// Extract typed property info from properties JSON
@@ -436,8 +365,8 @@ impl OpenApiContext {
     }
 
     /// Sanitize a string to be safe for use as a filename across all operating systems
-    /// Replaces any non-alphanumeric characters with underscores
-    pub fn sanitize_filename(name: &str) -> String {
+    #[allow(dead_code)]
+    fn sanitize_filename(name: &str) -> String {
         name.chars()
             .map(|c| {
                 if c.is_ascii_alphanumeric() || c == '_' {
@@ -450,8 +379,8 @@ impl OpenApiContext {
     }
 
     /// Sanitize endpoint names to be valid Rust module identifiers
-    /// Replaces path parameters like {petId} with underscore_param format
-    pub fn sanitize_endpoint_name(endpoint: &str) -> String {
+    #[allow(dead_code)]
+    fn sanitize_endpoint_name(endpoint: &str) -> String {
         // Replace any characters that aren't valid in Rust identifiers
         let mut result = String::new();
 
@@ -527,11 +456,7 @@ impl OpenApiContext {
     }
 
     /// Extract properties from a schema, resolving $ref if necessary
-    ///
-    /// Returns a tuple of (properties_json, schema_name) where:
-    /// - properties_json: The schema properties as a JSON object
-    /// - schema_name: The name of the schema if it was a $ref
-    pub fn extract_schema_properties(
+    fn extract_schema_properties(
         &self,
         schema: &JsonValue,
     ) -> crate::Result<(JsonValue, Option<String>)> {
@@ -876,21 +801,6 @@ mod tests {
     fn test_build_response_schema() {
         let schema = OpenApiContext::build_response_schema("X");
         assert_eq!(schema, json!({"$ref": "#/components/schemas/X"}));
-    }
-
-    #[test]
-    fn test_extract_properties_json_value() {
-        let json = json!({
-            "components": { "schemas": { "T": { "properties": { "a": {"type":"string"} } } } },
-            "paths": {}
-        });
-        let spec = OpenApiContext { json };
-        let path_item = json!({"get": {"responses": {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/T"}}}}}}});
-        let (props, file) = spec
-            .extract_properties_json_value(&path_item, "/x")
-            .unwrap();
-        assert_eq!(file, None);
-        assert_eq!(props, json!({"a": {"type":"string"}}));
     }
 
     #[test]

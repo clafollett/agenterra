@@ -1,97 +1,173 @@
 # Agenterra Roadmap 🗺️
 
-## Current Status 📊
+## Mission: Terraforming AI Agent Integrations 🌍🤖
 
-1. ✅ Schema Value Foundation
-   - OpenAPI parsing
-   - JSON/YAML support
-   - Reference resolution
+Agenterra is building the foundational infrastructure for AI agents to discover, communicate, and integrate with each other across the entire ecosystem.
 
-2. 🔄 Core Types Migration
-   - Property extraction
-   - Parameter parsing
-   - Schema generation
+## Priority 1: MCP Foundation 🏗️
 
-3. 🔄 Template System
-   - Basic handler generation
-   - Module generation
-   - Custom template support
+**Goal:** Build and validate our own MCP client to fully test generated servers and understand client implementation patterns.
 
-## Upcoming Features 🚀
+- [ ] **MCP Client Development**
+  - [ ] Core MCP protocol implementation
+  - [ ] Tool discovery and invocation
+  - [ ] Resource access management
+  - [ ] Prompt template handling
+  - [ ] Real-time communication layer
 
-### 1. Template Configuration (Q3 2025)
-- [ ] Case formatting options (snake_case, camelCase, UPPERCASE)
-- [ ] Response envelope customization
-- [ ] Parameter handling strategies
-- [ ] Custom trait implementations
-- [ ] Logging/tracing configuration
-- [ ] Documentation format and style
-- [ ] Middleware injection points
-- [ ] Error handling strategies
+- [ ] **Integration Testing Suite**
+  - [ ] Load generated MCP servers in our client
+  - [ ] Automated test execution for all OpenAPI endpoints
+  - [ ] Validation of tool responses and schemas
+  - [ ] Performance benchmarking
+  - [ ] Error handling verification
 
-### 2. OpenAPI Support (Q3 2025)
-- [ ] OpenAPI/Swagger 2.0 support
-  - Schema conversion to v3
-  - Legacy format handling
-  - Migration helpers
-- [ ] OpenAPI 3.1 preparation
-  - JSON Schema 2020-12 support
-  - Enhanced validation keywords
-  - Webhooks support
+- [ ] **MCP Server Enhancements**
+  - [ ] Enhanced error handling patterns
+  - [ ] Improved type safety
+  - [ ] Better documentation generation
+  - [ ] Optimized template structure
 
-### 3. Code Generation Enhancements (Q3 2025)
-- [ ] Smart type inference
-- [ ] Better enum support
-- [ ] Complex schema handling
-- [ ] Circular reference detection
-- [ ] Default value handling
-- [ ] Example generation
+## Priority 2: A2A Protocol Research & Implementation 🔍
 
-### 4. Developer Experience (Q4 2025)
-- [ ] Interactive scaffolding
-- [ ] Template hot-reload
-- [ ] Better error messages
-- [ ] Development server
-- [ ] OpenAPI validation
-- [ ] Auto-formatting
-- [ ] Documentation generation
+**Goal:** Research and implement the emerging Agent-to-Agent (A2A) protocol to enable direct AI agent communication.
 
-### 5. Testing & Validation (Q4 2025)
-- [ ] Test template generation
-- [ ] Schema validation
-- [ ] API contract testing
-- [ ] Performance benchmarks
-- [ ] Coverage reporting
+- [ ] **A2A Protocol Research**
+  - [ ] Protocol specification analysis
+  - [ ] Existing implementations survey
+  - [ ] Compatible systems identification
+  - [ ] Security and authentication models
+  - [ ] Performance characteristics
 
-### 6. Integration & Ecosystem (Q1 2026)
-- [ ] CI/CD templates
-- [ ] Docker support
-- [ ] Cloud deployment
-- [ ] IDE integration
-- [ ] Plugin system
+- [ ] **A2A Implementation**
+  - [ ] Protocol client/server implementation
+  - [ ] Integration with MCP infrastructure
+  - [ ] Agent discovery mechanisms
+  - [ ] Inter-agent communication patterns
+  - [ ] A2A template generation
 
-## Long-term Goals 🎯
+- [ ] **A2A Testing & Validation**
+  - [ ] Multi-agent communication scenarios
+  - [ ] Protocol compliance testing
+  - [ ] Performance under load
+  - [ ] Security vulnerability assessment
 
-1. **Extensibility**
-   - Plugin architecture
-   - Custom generators
-   - Template marketplace
+## Priority 3: Multi-Language Template Support 🌐
 
-2. **Performance**
-   - Incremental generation
-   - Parallel processing
-   - Smart caching
+**Goal:** Expand Agenterra to generate MCP servers in multiple programming languages, starting with enterprise-focused languages.
 
-3. **Interoperability**
-   - Multiple spec formats
-   - Legacy API support
-   - Custom protocol support
+### Phase 3.1: C# Support
+- [ ] **C# MCP Server Templates**
+  - [ ] ASP.NET Core template structure
+  - [ ] Entity Framework integration
+  - [ ] C# type mapping from OpenAPI schemas
+  - [ ] NuGet package management
+  - [ ] Enterprise security patterns
 
-4. **Developer Tools**
-   - VS Code extension
-   - Web playground
-   - Interactive documentation
+### Phase 3.2: Python Support
+- [ ] **Python MCP Server Templates**
+  - [ ] FastAPI/Flask template options
+  - [ ] Pydantic model generation
+  - [ ] Python type hints integration
+  - [ ] Virtual environment management
+  - [ ] Package dependency handling
+
+### Phase 3.3: TypeScript Support
+- [ ] **TypeScript MCP Server Templates**
+  - [ ] Express/Fastify template options
+  - [ ] Strong typing throughout
+  - [ ] npm/yarn package management
+  - [ ] Modern ES modules support
+  - [ ] Zod schema validation
+
+### Phase 3.4: Additional Languages
+- [ ] **Java** (Spring Boot templates)
+- [ ] **Go** (Gin/Echo templates)
+- [ ] **PHP** (Laravel/Symfony templates)
+- [ ] **Ruby** (Rails/Sinatra templates)
+
+## Priority 4: MCP Client Generation 🏭
+
+**Goal:** After mastering MCP client development, generate clients in multiple languages for consuming MCP servers.
+
+- [ ] **Client Template Architecture**
+  - [ ] Generic client interface patterns
+  - [ ] Language-specific implementations
+  - [ ] OpenAPI → MCP client mapping
+  - [ ] Authentication handling
+  - [ ] Error management patterns
+
+- [ ] **Multi-Language Client Support**
+  - [ ] C# MCP clients (HttpClient-based)
+  - [ ] Python MCP clients (aiohttp/requests)
+  - [ ] TypeScript MCP clients (fetch/axios)
+  - [ ] Java MCP clients (OkHttp/RestTemplate)
+  - [ ] Go MCP clients (net/http)
+
+- [ ] **Client Features**
+  - [ ] Async/await patterns
+  - [ ] Connection pooling
+  - [ ] Retry mechanisms
+  - [ ] Caching strategies
+  - [ ] Monitoring integration
+
+## Priority 5: AI Agent Ecosystem 🦍
+
+**Goal:** Build the infrastructure for AI agents to discover, register, and collaborate with each other.
+
+- [ ] **MCP Server Registry**
+  - [ ] Centralized server discovery
+  - [ ] Capability indexing
+  - [ ] Version management
+  - [ ] Health monitoring
+  - [ ] Usage analytics
+
+- [ ] **Agent Orchestration**
+  - [ ] Multi-agent workflow coordination
+  - [ ] Dependency resolution
+  - [ ] Load balancing
+  - [ ] Fault tolerance
+  - [ ] Performance optimization
+
+- [ ] **Developer Tools**
+  - [ ] MCP server testing tools
+  - [ ] Agent communication debugger
+  - [ ] Performance profiling
+  - [ ] Integration testing suite
+  - [ ] Documentation generation
+
+## Future Considerations 🔮
+
+*Lower priority items that align with the mission but come after core AI agent infrastructure:*
+
+### Workflow Integration (Later)
+- [ ] n8n workflow generation (AI agent → workflow tools)
+- [ ] Trigger.dev integration templates
+- [ ] Zapier app scaffolding (for AI agent exposure)
+
+### Developer Experience (Later)
+- [ ] VS Code extension for MCP development
+- [ ] Web playground for testing
+- [ ] Visual flow builder for agent interactions
+
+### Advanced Features (Later)
+- [ ] Claude Code Flow integration
+- [ ] Multi-terminal AI collaboration
+- [ ] Auto-optimized code generation
+- [ ] Real-time collaborative development
+
+## Success Metrics 🎯
+
+1. **MCP Adoption**: Number of generated MCP servers in production
+2. **Language Coverage**: Percentage of popular languages supported
+3. **A2A Integration**: Number of A2A-compatible agent systems
+4. **Community Growth**: Developer adoption and contribution rates
+5. **Ecosystem Health**: Active agent-to-agent communications
 
 ## Contributing 🤝
 
-See our [Contributing Guide](CONTRIBUTING.md) for details on how to help with these features.
+See our [Contributing Guide](CONTRIBUTING.md) for details on how to help terraform the AI agent ecosystem.
+
+---
+
+*"Building the infrastructure for AI agents to discover, communicate, and integrate with each other across the entire ecosystem."*

@@ -38,8 +38,13 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 2. **Create a Branch**
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout -b <type>/issue-<number>/<description>
    ```
+   
+   Examples:
+   - `docs/issue-57/update-readme`
+   - `feature/issue-42/add-login`
+   - `fix/issue-123/login-error`
 
 3. **Make Changes**
    - Follow our coding style
@@ -53,12 +58,12 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 5. **Commit**
    ```bash
-   git commit -m "feat: add your feature"
+   git commit -m "feat: add your feature (#<issue-number>)"
    ```
 
 6. **Push & Create PR**
    ```bash
-   git push origin feature/your-feature-name
+   git push origin <type>/issue-<number>/<description>
    ```
 
 ## Development Setup 🛠️
@@ -75,13 +80,13 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 3. **Running Tests**
    ```bash
-   cargo test
-   cargo test --all-features
+   cargo test                                        # All tests
+   cargo test -p agenterra-cli --test integration_test  # Integration tests
    ```
 
-4. **Development Server**
+4. **Test Agenterra CLI**
    ```bash
-   cargo run -- serve
+   cargo run -p agenterra -- scaffold --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir test-output
    ```
 
 ## Coding Guidelines 📝
@@ -112,9 +117,10 @@ agenterra/
 ├── crates/
 │   ├── agenterra-core/      # Core library
 │   └── agenterra-cli/       # CLI interface
-├── docs/                 # Documentation
-├── examples/            # Example projects
-└── templates/           # Default templates
+├── docs/                    # Documentation
+├── templates/               # Code generation templates
+├── tests/fixtures/          # Test OpenAPI specs
+└── plans/                   # Project planning docs
 ```
 
 ## Getting Help 💬
@@ -125,4 +131,4 @@ agenterra/
 
 ## License 📄
 
-By contributing, you agree that your contributions will be licensed under both the MIT and Apache 2.0 licenses.
+By contributing, you agree that your contributions will be licensed under the MIT license.

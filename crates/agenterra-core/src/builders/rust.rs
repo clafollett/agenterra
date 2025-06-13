@@ -1,4 +1,14 @@
 //! Rust-specific endpoint context builder for Agenterra codegen.
+//!
+//! This module provides the Rust language implementation of the `EndpointContextBuilder` trait,
+//! converting OpenAPI operations into Rust-specific contexts suitable for generating idiomatic
+//! Rust code using frameworks like Axum.
+//!
+//! The builder handles:
+//! - Converting OpenAPI identifiers to Rust naming conventions (snake_case, PascalCase)
+//! - Mapping OpenAPI types to Rust types (string -> String, integer -> i32, etc.)
+//! - Organizing parameters and responses into Rust-appropriate structures
+//! - Generating type names for structs, enums, and functions
 
 use super::EndpointContextBuilder;
 use crate::openapi::OpenApiOperation;
@@ -7,20 +17,35 @@ use crate::utils::{to_snake_case, to_upper_camel_case};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-// Type alias for Rust-specific parameter info
+/// Type alias for Rust-specific parameter info.
+///
+/// This reuses the generic `TemplateParameterInfo` structure but provides a more
+/// specific name in the Rust context for clarity.
 pub type RustParameterInfo = TemplateParameterInfo;
 
-/// Rust-specific property info (adds rust_type to OpenAPI property)
+/// Rust-specific property information with type mapping.
+///
+/// Extends the basic OpenAPI property information with Rust-specific type information,
+/// allowing templates to generate properly typed Rust code.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RustPropertyInfo {
+    /// The property name in snake_case format
     pub name: String,
+    /// The corresponding Rust type (e.g., "String", "i32", "bool")
     pub rust_type: String,
+    /// Optional title from the OpenAPI schema
     pub title: Option<String>,
+    /// Optional description from the OpenAPI schema
     pub description: Option<String>,
+    /// Optional example value from the OpenAPI schema
     pub example: Option<JsonValue>,
 }
 
-// Rust-specific context for codegen
+/// Complete Rust-specific context for code generation.
+///
+/// This struct contains all the information needed to generate idiomatic Rust code
+/// for a single OpenAPI endpoint, including proper naming conventions, type mappings,
+/// and structured data for template rendering.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RustEndpointContext {
     /// Identifier for the endpoint (path with slashes replaced by '_')
@@ -63,6 +88,11 @@ pub struct RustEndpointContext {
     pub valid_fields: Vec<String>,
 }
 
+/// Builder for creating Rust-specific endpoint contexts.
+///
+/// This builder implements the `EndpointContextBuilder` trait to convert OpenAPI operations
+/// into contexts suitable for generating Rust code with appropriate naming conventions
+/// and type mappings.
 #[derive(Debug, Clone)]
 pub struct RustEndpointContextBuilder;
 
@@ -113,7 +143,24 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
     }
 }
 
-// Helper to map OpenAPI schema to Rust type
+/// Maps OpenAPI schema types to appropriate Rust types.
+///
+/// This function converts OpenAPI type definitions into their Rust equivalents,
+/// providing sensible defaults for cases where type information is missing or ambiguous.
+///
+/// # Arguments
+/// * `schema` - Optional reference to the OpenAPI schema JSON value
+///
+/// # Returns
+/// A String representing the appropriate Rust type
+///
+/// # Type Mappings
+/// - `string` → `String`
+/// - `integer` → `i32`
+/// - `boolean` → `bool`
+/// - `number` → `f64`
+/// - Unknown/missing types → `String` (safe default)
+///
 fn map_openapi_schema_to_rust_type(schema: Option<&JsonValue>) -> String {
     if let Some(sch) = schema {
         if let Some(typ) = sch.get("type").and_then(|v| v.as_str()) {

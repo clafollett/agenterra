@@ -59,7 +59,7 @@ Use semantic commit messages with GitHub issue linking:
      - `fix/issue-123/login-error`
      - `docs/issue-57/update-readme`
 2. **Make changes** following coding standards
-3. **Run Rust workspace checks:** `cargo fmt && cargo clippy && cargo test`
+3. **Run Rust workspace checks:** `cargo fmt --all -- --check && cargo clippy -- -D warnings && cargo test`
    - For non-Rust code, run the formatter, linter, and test suite appropriate to that language before committing.
 4. **Push branch** and create pull request
 5. **Wait for CI** - All checks must pass
@@ -87,7 +87,7 @@ Use semantic commit messages with GitHub issue linking:
 
 ## Code Quality Requirements
 
-- Run `cargo fmt` immediately after code changes
+- Run `cargo fmt --all -- --check` immediately after code changes
 - Run `cargo clippy -- -D warnings` to catch issues
 - Run `cargo test` before committing to GitHub
 - Validate all user inputs with explicit error handling
@@ -98,7 +98,7 @@ Use semantic commit messages with GitHub issue linking:
 
 ```bash
 # Pre-commit check
-cargo fmt && cargo clippy && cargo test
+cargo fmt --all -- --check && cargo clippy -- -D warnings && cargo test
 
 # Builds
 cargo build             # Debug build
@@ -159,6 +159,32 @@ use serde::{Deserialize, Serialize};
 - `CamelCase` - types, structs, enums
 - `SCREAMING_SNAKE_CASE` - constants
 
+### Method Organization
+**Public methods:** 
+- Place immediately after struct/impl declaration
+- Order alphabetically 
+- Full documentation with examples, arguments, returns, errors
+
+**Private methods:**
+- Place at bottom of impl block
+- Order alphabetically
+- Simple summary comments only (single line preferred)
+
+**Example structure:**
+```rust
+impl MyStruct {
+    // Public methods (alphabetical)
+    pub fn create() -> Self { ... }
+    pub fn process(&self) -> Result<()> { ... }
+    pub fn validate(&self) -> bool { ... }
+    
+    // Private methods (alphabetical)  
+    fn extract_data(&self) -> Vec<Data> { ... }
+    fn parse_input(&self, input: &str) -> Result<Value> { ... }
+    fn sanitize_output(&self, data: &Data) -> String { ... }
+}
+```
+
 
 ## Claude-Specific Tips
 
@@ -177,13 +203,10 @@ use serde::{Deserialize, Serialize};
 **AI/Automation:** LangChain, LlamaIndex, AutoGen, vector DBs  
 **Code:** Prefer Python for scripts, Rust/C# for systems/apps. Always idiomatic, elegant, with clear comments, markdown, copy-paste ready  
 **Behavior:**  
-- Nudge Cal if distracted, losing focus, or overthinking  
 - Push MVP, smallest next step, deadlines if stuck  
 - Mentor at senior/pro level—skip basics, teach with real-world code  
-- Use live OSS/projects (agenterra, Socialings AI, FDIC, etc.) for examples/context  
 - Encourage healthy breaks, humor, high vibes; roast gently if too serious  
 - If code, always include concise comments and explain key logic  
-- Remind Cal to focus on outcomes, not perfection; optimize for shipping  
 **Emoji Bank:** 🚀💯🎯🏆🤯🧠🔍🧩😎🤔😏🙄🤬😳🧟🧨💪🍻🤞🎉
 
 *Maximum Marvin. Minimum tokens. All the vibes.*

@@ -1,4 +1,9 @@
-//! Template-specific types for code generation
+//! Template-specific types for code generation.
+//!
+//! This module defines specialized types used in template rendering contexts,
+//! particularly for handling parameters and properties in language-specific ways.
+//! These types extend the basic OpenAPI definitions with template-specific metadata
+//! needed for generating idiomatic code in different programming languages.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;

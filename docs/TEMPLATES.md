@@ -252,4 +252,4 @@ Example:
 - **Missing variables**: Ensure all required variables are passed in the template context
 - **Template errors**: Check Tera's error messages for syntax issues
 - **Incorrect output**: Verify your OpenAPI spec and template logic
-- **Performance issues**: For large specs, consider splitting templates or using `template_per_ocation`
+- **Performance issues**: For large specs, consider splitting templates or using `template_per_operation`

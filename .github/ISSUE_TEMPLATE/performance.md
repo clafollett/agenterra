@@ -13,7 +13,7 @@ assignees: ''
 <!-- Which parts of the Agenterra CLI are affected? -->
 
 ## Current Measurements
-<!-- If available, provide metrics showing the current performance (load time, Lighthouse scores, etc.) -->
+<!-- If available, provide metrics showing the current performance (execution time, memory usage, etc.) -->
 
 ## Proposed Optimization
 <!-- Describe your suggested optimization approach -->

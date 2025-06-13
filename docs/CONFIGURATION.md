@@ -7,7 +7,6 @@ This guide explains how to configure Agenterra using different methods.
 - [Command-Line Options](#command-line-options)
 - [Configuration File](#configuration-file)
 - [Environment Variables](#environment-variables)
-- [Template Configuration](#template-configuration)
 - [Example Configurations](#example-configurations)
 
 ## Configuration Methods
@@ -15,7 +14,7 @@ This guide explains how to configure Agenterra using different methods.
 Agenterra can be configured using the following methods (in order of precedence):
 
 1. **Command-Line Arguments** (highest priority)
-2. **Configuration File** (`agenterra.toml` or `.agenterra.toml` in project root)
+2. **Configuration File** (`agenterra.toml` in project root)
 3. **Environment Variables**
 4. **Default Values** (lowest priority)
 
@@ -29,88 +28,62 @@ agenterra [OPTIONS] <SUBCOMMAND>
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-c`, `--config <FILE>` | Path to config file | `agenterra.toml` or `.agenterra.toml` |
-| `-v`, `--verbose` | Enable verbose output | `false` |
-| `-q`, `--quiet` | Suppress non-essential output | `false` |
 | `-h`, `--help` | Print help | |
 | `-V`, `--version` | Print version | |
 
-### Generate Command
+### Scaffold Command
 
 ```bash
-agenterra generate [OPTIONS] --input <INPUT> --output <OUTPUT>
+agenterra scaffold --schema-path <SCHEMA_PATH> [OPTIONS]
 ```
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-i`, `--input <FILE>` | Path to OpenAPI spec file | *required* |
-| `-o`, `--output <DIR>` | Output directory | *required* |
-| `-t`, `--template <NAME>` | Template name | `rust_axum` |
-| `--force` | Overwrite existing files | `false` |
-| `--skip-validate` | Skip OpenAPI validation | `false` |
+| `--schema-path <SCHEMA_PATH>` | Path or URL to OpenAPI schema (YAML or JSON) | *required* |
+| `--project-name <PROJECT_NAME>` | Project name | `agenterra_mcp_server` |
+| `--template-kind <TEMPLATE_KIND>` | Template to use for code generation | `rust_axum` |
+| `--template-dir <TEMPLATE_DIR>` | Custom template directory | |
+| `--output-dir <OUTPUT_DIR>` | Output directory for generated code | |
+| `--log-file <LOG_FILE>` | Log file name without extension | `mcp-server` |
+| `--port <PORT>` | Server port | `3000` |
+| `--base-url <BASE_URL>` | Base URL of the OpenAPI specification | |
 
 ## Configuration File
 
-Create a `agenterra.toml` or `.agenterra.toml` file in your project root:
+Create a `agenterra.toml` file in your project root:
 
 ```toml
-[generate]
-input = "openapi.yaml"
-output = "generated"
-template = "rust_axum"
-force = false
-skip_validate = false
+[scaffold]
+schema_path = "openapi.yaml"
+project_name = "my_api_server"
+template_kind = "rust_axum"
+output_dir = "generated"
+log_file = "my-server"
+port = 3000
+base_url = "https://api.example.com"
 
-[template_options]
-# Template-specific options
-all_operations = true
-include_operations = []
-exclude_operations = []
-
-[server]
-port = 8080
-log_level = "info"
-
-[openapi]
-# OpenAPI processing options
-prefer_async = true
-use_chrono = true
-use_uuid = true
+# Custom template directory (optional)
+template_dir = "./custom-templates"
 ```
 
 ## Environment Variables
 
-All configuration options can be set via environment variables with the `AGENTERRA_` prefix:
+Configuration options can be set via environment variables with the `AGENTERRA_` prefix:
 
 ```bash
 # Basic options
-export AGENTERRA_INPUT=openapi.yaml
-export AGENTERRA_OUTPUT=generated
+export AGENTERRA_SCHEMA_PATH=openapi.yaml
+export AGENTERRA_OUTPUT_DIR=generated
+export AGENTERRA_PROJECT_NAME=my_api_server
 
 # Template options
-export AGENTERRA_TEMPLATE=rust_axum
-export AGENTERRA_TEMPLATE_OPTIONS_ALL_OPERATIONS=true
+export AGENTERRA_TEMPLATE_KIND=rust_axum
+export AGENTERRA_TEMPLATE_DIR=./custom-templates
 
 # Server options
-export AGENTERRA_SERVER_PORT=8080
-export AGENTERRA_SERVER_LOG_LEVEL=debug
-```
-
-## Template Configuration
-
-Templates can be configured using the `[template_options]` section in the config file:
-
-```toml
-[template_options]
-# Include only specific operations
-all_operations = false
-include_operations = ["getPets", "createPet"]
-
-# Or exclude specific operations
-exclude_operations = ["deprecatedOperation"]
-
-# Custom template variables
-custom_value = "example"
+export AGENTERRA_PORT=8080
+export AGENTERRA_BASE_URL=https://api.example.com
+export AGENTERRA_LOG_FILE=my-server
 ```
 
 ## Example Configurations
@@ -118,59 +91,42 @@ custom_value = "example"
 ### Minimal Configuration
 
 ```toml
-[generate]
-input = "api/openapi.yaml"
-output = "generated"
+[scaffold]
+schema_path = "api/openapi.yaml"
+output_dir = "generated"
 ```
 
 ### Full Configuration
 
 ```toml
-[generate]
-input = "api/openapi.yaml"
-output = "generated"
-template = "rust_axum"
-force = true
-skip_validate = false
-
-[template_options]
-all_operations = true
-include_operations = []
-exclude_operations = ["deprecatedOperation"]
-
-[server]
+[scaffold]
+schema_path = "api/openapi.yaml"
+project_name = "petstore_mcp_server"
+template_kind = "rust_axum"
+output_dir = "generated"
+log_file = "petstore-server"
 port = 3000
-log_level = "debug"
-host = "0.0.0.0"
-
-[openapi]
-prefer_async = true
-use_chrono = true
-use_uuid = true
-use_serde = true
-
-[logging]
-level = "info"
-format = "json"
+base_url = "https://petstore3.swagger.io"
 ```
 
 ### Environment Variables Example
 
 ```bash
 # .env file
-AGENTERRA_INPUT=api/openapi.yaml
-AGENTERRA_OUTPUT=generated
-AGENTERRA_TEMPLATE=rust_axum
-AGENTERRA_SERVER_PORT=3000
-AGENTERRA_LOGGING_LEVEL=debug
+AGENTERRA_SCHEMA_PATH=api/openapi.yaml
+AGENTERRA_OUTPUT_DIR=generated
+AGENTERRA_PROJECT_NAME=my_api_server
+AGENTERRA_TEMPLATE_KIND=rust_axum
+AGENTERRA_PORT=3000
+AGENTERRA_BASE_URL=https://api.example.com
 ```
 
 ## Configuration Precedence
 
-1. Command-line arguments
+1. Command-line arguments (highest priority)
 2. Environment variables
-3. Configuration file (`agenterra.toml` or `.agenterra.toml`)
-4. Default values
+3. Configuration file (`agenterra.toml`)
+4. Default values (lowest priority)
 
 ## Next Steps
 
