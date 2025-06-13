@@ -3,7 +3,9 @@ run-name: ${{ format('🚀 Publish & Release {0}', github.ref_name) }}
 
 on:
   push:
-    tags: ["v*.*.*"]   # Run only on tag pushes
+    tags:
+      - "v*.*.*"          # workspace-level tag (legacy)
+      - "*-v*.*.*"        # per-crate tags, e.g. agenterra-core-v0.2.0
 
 permissions:
   contents: write     # commit changelog & Cargo.toml bumps
