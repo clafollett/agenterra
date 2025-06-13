@@ -38,15 +38,29 @@ Use semantic commit messages with GitHub issue linking:
 
 **Breaking Changes:** Add `BREAKING CHANGE:` in commit body for major version bumps (0.1.0 → 1.0.0)
 
+> **Note:** Only use automatic closing keywords (e.g., `Closes #57`) in the *final* commit or pull-request description when the issue is *fully resolved*. For intermediate work, reference the issue without closing it, e.g., `Relates to #57`, `Refs #57`, or simply `(#57)`.
+
 **Examples:**
 - `feat: add OpenAPI 3.1 support (#15)`
 - `fix: resolve template rendering error (#23)`
 - `chore: update dependencies (#8)`
 
 ### Development Workflow
-1. **Create branch:** `GH-<issue>_<ProperCaseSummary>`
+1. **Create branch:** Use format `<type>/issue-<number>/<description>`
+   - **Types:**
+     - `feature/` - New features
+     - `fix/` - Bug fixes
+     - `docs/` - Documentation
+     - `refactor/` - Code refactoring
+     - `test/` - Test additions
+     - `chore/` - Maintenance tasks
+   - **Examples:**
+     - `feature/issue-42/add-login`
+     - `fix/issue-123/login-error`
+     - `docs/issue-57/update-readme`
 2. **Make changes** following coding standards
-3. **Run local checks:** `cargo fmt && cargo clippy && cargo test`
+3. **Run Rust workspace checks:** `cargo fmt && cargo clippy && cargo test`
+   - For non-Rust code, run the formatter, linter, and test suite appropriate to that language before committing.
 4. **Push branch** and create pull request
 5. **Wait for CI** - All checks must pass
 6. **Request review** from maintainer
@@ -55,7 +69,13 @@ Use semantic commit messages with GitHub issue linking:
 
 ### Branch Protection Rules
 - **No direct pushes** - All changes via pull requests
-- **Required status checks** - Test Suite (ubuntu/macos), Linting, Security Audit
+- **Required status checks (blocking):**
+  - `Test Suite (ubuntu-latest, stable)`
+  - `Test Suite (macos-latest, stable)`
+  - `Linting`
+  - `Security Audit`
+  
+  All other checks must pass but are non-blocking.
 - **Required reviews** - At least 1 approving review
 
 ### Release Process (Automated)
