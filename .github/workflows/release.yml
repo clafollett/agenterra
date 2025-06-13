@@ -5,7 +5,7 @@ on:
   push:
     tags:
       - "v*.*.*"          # workspace-level tag (legacy)
-      - "*-v*.*.*"        # per-crate tags, e.g. agenterra-core-v0.2.0
+      - "agenterra-v*.*.*"  # CLI crate tags only, e.g. agenterra-v0.2.0
 
 permissions:
   contents: write     # commit changelog & Cargo.toml bumps
