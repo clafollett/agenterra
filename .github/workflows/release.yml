@@ -31,6 +31,8 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: Linux-stable
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -73,7 +75,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.os }}-${{ matrix.target }}
 
       - name: Install musl-related tools
         if: contains(matrix.target, 'musl')
