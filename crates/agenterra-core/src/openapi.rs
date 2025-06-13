@@ -121,7 +121,7 @@ impl OpenApiContext {
     /// ```
     /// use agenterra_core::openapi::OpenApiContext;
     /// use serde_json::json;
-    /// 
+    ///
     /// # let spec_json = json!({"openapi": "3.0.0", "info": {"title": "Test", "version": "1.0"}});
     /// # let spec = OpenApiContext { json: spec_json };
     /// let raw_json = spec.as_json();
@@ -311,7 +311,6 @@ impl OpenApiContext {
             .collect()
     }
 
-
     /// Extract row properties from properties JSON
     pub fn extract_row_properties(properties_json: &JsonValue) -> Vec<JsonValue> {
         if let Some(data) = properties_json.get("data").and_then(JsonValue::as_object) {
@@ -330,7 +329,6 @@ impl OpenApiContext {
         }
         Vec::new()
     }
-
 
     /// Extract typed property info from properties JSON
     pub fn extract_property_info(properties_json: &JsonValue) -> Vec<OpenApiPropertyInfo> {
@@ -800,7 +798,6 @@ mod tests {
         let schema = OpenApiContext::build_response_schema("X");
         assert_eq!(schema, json!({"$ref": "#/components/schemas/X"}));
     }
-
 
     #[test]
     fn test_extract_row_properties() {

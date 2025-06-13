@@ -59,7 +59,7 @@ Use semantic commit messages with GitHub issue linking:
      - `fix/issue-123/login-error`
      - `docs/issue-57/update-readme`
 2. **Make changes** following coding standards
-3. **Run Rust workspace checks:** `cargo fmt && cargo clippy -- -D warnings && cargo test`
+3. **Run Rust workspace checks:** `cargo fmt --all -- --check && cargo clippy -- -D warnings && cargo test`
    - For non-Rust code, run the formatter, linter, and test suite appropriate to that language before committing.
 4. **Push branch** and create pull request
 5. **Wait for CI** - All checks must pass
@@ -87,7 +87,7 @@ Use semantic commit messages with GitHub issue linking:
 
 ## Code Quality Requirements
 
-- Run `cargo fmt` immediately after code changes
+- Run `cargo fmt --all -- --check` immediately after code changes
 - Run `cargo clippy -- -D warnings` to catch issues
 - Run `cargo test` before committing to GitHub
 - Validate all user inputs with explicit error handling
@@ -98,7 +98,7 @@ Use semantic commit messages with GitHub issue linking:
 
 ```bash
 # Pre-commit check
-cargo fmt && cargo clippy -- -D warnings && cargo test
+cargo fmt --all -- --check && cargo clippy -- -D warnings && cargo test
 
 # Builds
 cargo build             # Debug build
