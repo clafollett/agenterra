@@ -31,7 +31,7 @@ pub enum Commands {
         ///
         /// Can be a local file path or an HTTP/HTTPS URL
         /// Example: --schema-path path/to/schema.yaml
-        /// Example: --schema-path https://example.com/openapi.json
+        /// Example: --schema-path <https://petstore3.swagger.io/api/v3/openapi.json>
         #[arg(long)]
         schema_path: String,
         /// Template to use for code generation (e.g., rust_axum, python_fastapi)

@@ -1,6 +1,25 @@
 //! String transformation utilities for code generation
 
-/// Convert a string to snake_case
+/// Converts a string to snake_case format for Rust identifiers.
+///
+/// This function handles various input formats including camelCase, PascalCase,
+/// kebab-case, and space-separated strings, converting them all to snake_case.
+///
+/// # Arguments
+/// * `s` - The input string to convert
+///
+/// # Returns
+/// A new String in snake_case format
+///
+/// # Examples
+/// ```
+/// use agenterra_core::utils::to_snake_case;
+///
+/// assert_eq!(to_snake_case("findPetsByStatus"), "find_pets_by_status");
+/// assert_eq!(to_snake_case("FindPetsByStatus"), "find_pets_by_status");
+/// assert_eq!(to_snake_case("find-pets-by-status"), "find_pets_by_status");
+/// assert_eq!(to_snake_case("get HTTP Response"), "get_http_response");
+/// ```
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
     let mut prev_is_lowercase = false;
@@ -44,7 +63,25 @@ pub fn to_snake_case(s: &str) -> String {
     final_result.trim_matches('_').to_string()
 }
 
-/// Convert a string to UpperCamelCase (PascalCase)
+/// Converts a string to UpperCamelCase (PascalCase) format for Rust type names.
+///
+/// This function normalizes the input through snake_case conversion first,
+/// then capitalizes each word to create proper PascalCase identifiers.
+///
+/// # Arguments
+/// * `s` - The input string to convert
+///
+/// # Returns
+/// A new String in UpperCamelCase format
+///
+/// # Examples
+/// ```
+/// use agenterra_core::utils::to_upper_camel_case;
+///
+/// assert_eq!(to_upper_camel_case("find_pets_by_status"), "FindPetsByStatus");
+/// assert_eq!(to_upper_camel_case("http_response"), "HttpResponse");
+/// assert_eq!(to_upper_camel_case("find-pets-by-status"), "FindPetsByStatus");
+/// ```
 pub fn to_upper_camel_case(s: &str) -> String {
     // First convert to snake_case to normalize the input
     let snake = to_snake_case(s);
@@ -63,7 +100,25 @@ pub fn to_upper_camel_case(s: &str) -> String {
         .collect()
 }
 
-/// Convert a string to lowerCamelCase
+/// Converts a string to lowerCamelCase format for Rust function and variable names.
+///
+/// This function first converts to UpperCamelCase, then lowercases the first character
+/// to create proper camelCase identifiers commonly used in JavaScript/TypeScript.
+///
+/// # Arguments
+/// * `s` - The input string to convert
+///
+/// # Returns
+/// A new String in lowerCamelCase format
+///
+/// # Examples
+/// ```
+/// use agenterra_core::utils::to_lower_camel_case;
+///
+/// assert_eq!(to_lower_camel_case("find_pets_by_status"), "findPetsByStatus");
+/// assert_eq!(to_lower_camel_case("http_response"), "httpResponse");
+/// assert_eq!(to_lower_camel_case("FindPetsByStatus"), "findPetsByStatus");
+/// ```
 pub fn to_lower_camel_case(s: &str) -> String {
     let upper_camel = to_upper_camel_case(s);
     if upper_camel.is_empty() {

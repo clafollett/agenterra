@@ -1,4 +1,10 @@
 //! Context builder traits and adapters for language-specific codegen.
+//!
+//! This module provides the infrastructure for converting OpenAPI operations into
+//! language-specific contexts that can be used in template rendering. Each supported
+//! target language has its own builder implementation that handles the specifics
+//! of that language's naming conventions, type mappings, and code generation patterns.
+
 pub mod rust;
 
 use crate::openapi::OpenApiOperation;
@@ -6,15 +12,67 @@ use crate::templates::TemplateKind;
 use serde_json::Value as JsonValue;
 
 /// Trait for converting an OpenApiOperation into a language-specific context.
+///
+/// Implementations of this trait are responsible for transforming generic OpenAPI
+/// operation definitions into structured contexts that templates can use to generate
+/// idiomatic code for specific programming languages.
+///
+/// The builder should handle:
+/// - Language-specific naming conventions (e.g., snake_case for Rust, camelCase for JavaScript)
+/// - Type mappings from OpenAPI schemas to target language types
+/// - Parameter and response structure organization
+/// - Any language-specific metadata needed for code generation
 pub trait EndpointContextBuilder {
+    /// Build a language-specific context from an OpenAPI operation.
+    ///
+    /// # Arguments
+    /// * `op` - The OpenAPI operation to convert
+    ///
+    /// # Returns
+    /// A JSON value containing the language-specific context data for template rendering
+    ///
+    /// # Errors
+    /// Returns an error if the operation cannot be converted to the target language context
     fn build(&self, op: &OpenApiOperation) -> crate::Result<JsonValue>;
 }
 
+/// Factory for creating and managing endpoint context builders.
+///
+/// This struct provides the main interface for transforming OpenAPI operations
+/// into language-specific contexts suitable for code generation.
 pub struct EndpointContext;
 
 impl EndpointContext {
-    /// Transform a list of OpenAPI operations into language-specific endpoint contexts
-    /// The returned contexts are sorted alphabetically by endpoint name for consistent output
+    /// Transform a list of OpenAPI operations into language-specific endpoint contexts.
+    ///
+    /// This method converts all operations using the appropriate language-specific builder
+    /// and returns them sorted alphabetically by endpoint name for consistent output.
+    ///
+    /// # Arguments
+    /// * `template` - The target template kind that determines which builder to use
+    /// * `operations` - The list of OpenAPI operations to transform
+    ///
+    /// # Returns
+    /// A vector of JSON values representing the language-specific endpoint contexts,
+    /// sorted alphabetically by endpoint name
+    ///
+    /// # Errors
+    /// Returns an error if any operation cannot be converted to the target language context
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use agenterra_core::builders::EndpointContext;
+    /// use agenterra_core::templates::TemplateKind;
+    /// # use agenterra_core::openapi::OpenApiOperation;
+    ///
+    /// # fn example(operations: Vec<OpenApiOperation>) -> agenterra_core::Result<()> {
+    /// let contexts = EndpointContext::transform_endpoints(
+    ///     TemplateKind::RustAxum,
+    ///     operations
+    /// )?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn transform_endpoints(
         template: TemplateKind,
         operations: Vec<OpenApiOperation>,
@@ -35,6 +93,16 @@ impl EndpointContext {
         Ok(contexts)
     }
 
+    /// Get the appropriate context builder for a given template kind.
+    ///
+    /// # Arguments
+    /// * `template` - The template kind to get a builder for
+    ///
+    /// # Returns
+    /// A boxed trait object implementing `EndpointContextBuilder` for the specified template
+    ///
+    /// # Panics
+    /// Panics if the template kind is not supported (via `unimplemented!` macro)
     pub fn get_builder(template: TemplateKind) -> Box<dyn EndpointContextBuilder> {
         match template {
             TemplateKind::RustAxum => Box::new(rust::RustEndpointContextBuilder),
