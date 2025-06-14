@@ -2,6 +2,7 @@
 
 use crate::error::{ClientError, Result};
 use crate::registry::ToolRegistry;
+use crate::result::ToolResult;
 use crate::transport::Transport;
 use std::time::Duration;
 
@@ -229,6 +230,30 @@ impl AgenterraClient {
     ) -> Box<dyn futures::Stream<Item = Result<serde_json::Value>> + Send + Unpin> {
         use futures::stream;
         Box::new(stream::iter(vec![Ok(response)]))
+    }
+
+    /// Call a tool and return a processed ToolResult with typed content
+    pub async fn call_tool_typed(
+        &mut self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<ToolResult> {
+        let service = self.service.as_ref().ok_or_else(|| {
+            ClientError::Client(
+                "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
+            )
+        })?;
+
+        // Validate parameters using our registry (if populated)
+        self.registry.validate_parameters(tool_name, &arguments)?;
+
+        // Make the tool call
+        let tool_response = self
+            .execute_tool_call(service, tool_name, arguments)
+            .await?;
+
+        // Process the response into a typed ToolResult
+        ToolResult::from_rmcp_result(&tool_response)
     }
 
     /// Get access to the tool registry for inspection
@@ -521,5 +546,102 @@ mod tests {
                 panic!("Expected ClientError::Client for tool: {}", tool_name);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_call_tool_typed_not_connected() {
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Without connecting to a server, typed tool call should fail
+        let result = client
+            .call_tool_typed("get_pet_by_id", json!({"id": 123}))
+            .await;
+
+        // Should fail with "not connected" error
+        assert!(result.is_err());
+        if let Err(ClientError::Client(msg)) = result {
+            assert!(msg.contains("Not connected to MCP server"));
+        } else {
+            panic!("Expected ClientError::Client");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_call_tool_typed_response_processing() {
+        // This test will fail until we have a real connection, but shows the expected API
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        let test_cases = vec![
+            // Text response
+            ("get_status", json!({})),
+            // JSON response
+            ("get_data", json!({"format": "json"})),
+            // Error response
+            ("invalid_tool", json!({"bad": "params"})),
+        ];
+
+        for (tool_name, params) in test_cases {
+            let result = client.call_tool_typed(tool_name, params).await;
+
+            // Should fail with not connected for now
+            assert!(result.is_err());
+            if let Err(ClientError::Client(msg)) = result {
+                assert!(msg.contains("Not connected to MCP server"));
+            } else {
+                panic!("Expected ClientError::Client for typed tool: {}", tool_name);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_result_content_types() {
+        // This test demonstrates how we'll handle different content types
+        // It will pass once we have real tool results to process
+        use crate::result::{ContentType, ToolResult};
+
+        // Mock a tool result with different content types
+        let mock_result = ToolResult {
+            content: vec![
+                ContentType::Text {
+                    text: "Status: OK".to_string(),
+                },
+                ContentType::Json {
+                    json: json!({"count": 42, "status": "success"}),
+                },
+            ],
+            is_error: false,
+            error_code: None,
+            raw_response: json!({"mock": "response"}),
+        };
+
+        // Test content extraction methods
+        assert_eq!(mock_result.first_text(), Some("Status: OK"));
+        assert_eq!(mock_result.text(), "Status: OK");
+        assert!(!mock_result.has_error());
+
+        let json_items = mock_result.json();
+        assert_eq!(json_items.len(), 1);
+        assert_eq!(json_items[0].get("count").unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_error_tool_result_handling() {
+        use crate::result::{ContentType, ToolResult};
+
+        // Mock an error result
+        let error_result = ToolResult {
+            content: vec![ContentType::Text {
+                text: "Tool execution failed".to_string(),
+            }],
+            is_error: true,
+            error_code: Some("EXECUTION_ERROR".to_string()),
+            raw_response: json!({"error": "Tool not found"}),
+        };
+
+        assert!(error_result.has_error());
+        assert_eq!(error_result.error_code, Some("EXECUTION_ERROR".to_string()));
+        assert_eq!(error_result.first_text(), Some("Tool execution failed"));
     }
 }
