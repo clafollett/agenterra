@@ -52,7 +52,7 @@ Agenterra is building the foundational infrastructure for AI agents to discover,
   - [ ] Performance under load
   - [ ] Security vulnerability assessment
 
-## Priority 4: Multi-Language Template Support 🌐
+## Priority 3: Multi-Language Template Support 🌐
 
 **Goal:** Expand Agenterra to generate MCP servers in multiple programming languages, starting with enterprise-focused languages.
 
@@ -82,7 +82,7 @@ Agenterra is building the foundational infrastructure for AI agents to discover,
 - [ ] **PHP** (Laravel/Symfony templates)
 - [ ] **Ruby** (Rails/Sinatra templates)
 
-## Priority 5: MCP Client Generation 🏭
+## Priority 4: MCP Client Generation 🏭
 
 **Goal:** After mastering MCP client development, generate clients in multiple languages for consuming MCP servers.
 
@@ -107,7 +107,7 @@ Agenterra is building the foundational infrastructure for AI agents to discover,
   - [ ] Caching strategies
   - [ ] Monitoring integration
 
-## Priority 6: AI-Powered API Exploration 🤖✨
+## Priority 5: AI-Powered API Exploration 🤖✨
 
 **Goal:** Leverage AI to provide intelligent API discovery, testing, and optimization features that go beyond traditional tools.
 
@@ -139,7 +139,7 @@ Agenterra is building the foundational infrastructure for AI agents to discover,
   - [ ] Framework-specific adaptations
   - [ ] Usage pattern learning
 
-## Priority 7: AI Agent Ecosystem 🦍
+## Priority 6: AI Agent Ecosystem 🦍
 
 **Goal:** Build the infrastructure for AI agents to discover, register, and collaborate with each other.
 
