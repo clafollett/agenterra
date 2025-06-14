@@ -35,7 +35,7 @@ impl MockTransport {
 impl Transport for MockTransport {
     async fn send(&mut self, _message: serde_json::Value) -> Result<serde_json::Value> {
         use crate::error::ClientError;
-        
+
         if self.call_count >= self.responses.len() {
             return Err(ClientError::Transport("No more mock responses".to_string()));
         }
