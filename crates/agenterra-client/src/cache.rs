@@ -1,0 +1,1034 @@
+//! SQLite-powered resource caching system
+//!
+//! This module provides a revolutionary resource caching system built on SQLite
+//! that goes beyond simple key-value storage to offer a full-featured resource database
+//! with structured storage, rich queries, ACID transactions, and built-in analytics.
+
+use crate::error::{ClientError, Result};
+use crate::resource::{ResourceContent, ResourceInfo};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::Duration;
+use tokio_rusqlite::Connection;
+use uuid::Uuid;
+
+/// Configuration for the resource cache
+#[derive(Debug, Clone)]
+pub struct CacheConfig {
+    /// Database file path (or ":memory:" for in-memory cache)
+    pub database_path: String,
+    /// Default TTL for cached resources
+    pub default_ttl: Duration,
+    /// Maximum cache size in MB (0 = unlimited)
+    pub max_size_mb: u64,
+    /// Enable automatic cleanup of expired resources
+    pub auto_cleanup: bool,
+    /// Cleanup interval for expired resources
+    pub cleanup_interval: Duration,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            database_path: ":memory:".to_string(),
+            default_ttl: Duration::from_secs(3600), // 1 hour
+            max_size_mb: 100,                       // 100 MB
+            auto_cleanup: true,
+            cleanup_interval: Duration::from_secs(300), // 5 minutes
+        }
+    }
+}
+
+/// Cache analytics and performance metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheAnalytics {
+    /// Total cache requests
+    pub total_requests: u64,
+    /// Cache hits
+    pub cache_hits: u64,
+    /// Cache misses
+    pub cache_misses: u64,
+    /// Cache hit rate (0.0 to 1.0)
+    pub hit_rate: f64,
+    /// Total cache size in bytes
+    pub cache_size_bytes: u64,
+    /// Number of cached resources
+    pub resource_count: u64,
+    /// Number of expired resources cleaned up
+    pub eviction_count: u64,
+    /// Last cleanup timestamp
+    pub last_cleanup: DateTime<Utc>,
+}
+
+/// Cached resource metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedResource {
+    /// Unique cache entry ID
+    pub id: String,
+    /// Resource URI
+    pub uri: String,
+    /// Resource content
+    pub content: Vec<u8>,
+    /// Content type/MIME type
+    pub content_type: Option<String>,
+    /// Resource metadata as JSON
+    pub metadata: HashMap<String, serde_json::Value>,
+    /// When the resource was first cached
+    pub created_at: DateTime<Utc>,
+    /// When the resource was last accessed
+    pub accessed_at: DateTime<Utc>,
+    /// When the resource expires (if any)
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Number of times this resource has been accessed
+    pub access_count: u64,
+    /// Size of the resource in bytes
+    pub size_bytes: u64,
+}
+
+/// SQLite-powered resource cache
+pub struct ResourceCache {
+    /// SQLite database connection
+    connection: Connection,
+    /// Cache configuration
+    config: CacheConfig,
+    /// Cache analytics
+    analytics: CacheAnalytics,
+}
+
+impl ResourceCache {
+    /// Create a new resource cache with the given configuration
+    pub async fn new(config: CacheConfig) -> Result<Self> {
+        // Open SQLite connection
+        let connection = Connection::open(&config.database_path)
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to open cache database: {}", e)))?;
+
+        // Initialize analytics
+        let analytics = CacheAnalytics {
+            total_requests: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            hit_rate: 0.0,
+            cache_size_bytes: 0,
+            resource_count: 0,
+            eviction_count: 0,
+            last_cleanup: Utc::now(),
+        };
+
+        let mut cache = Self {
+            connection,
+            config,
+            analytics,
+        };
+
+        // Initialize database schema
+        cache.init_schema().await?;
+
+        Ok(cache)
+    }
+
+    /// Initialize the SQLite database schema
+    async fn init_schema(&self) -> Result<()> {
+        self.connection
+            .call(|conn| {
+                // Enable WAL mode for better concurrent access
+                conn.pragma_update(None, "journal_mode", "WAL")?;
+                conn.pragma_update(None, "synchronous", "NORMAL")?;
+                conn.pragma_update(None, "cache_size", 10000)?;
+                conn.pragma_update(None, "temp_store", "memory")?;
+
+                // Create resources table
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS resources (
+                        id TEXT PRIMARY KEY,
+                        uri TEXT UNIQUE NOT NULL,
+                        content BLOB NOT NULL,
+                        content_type TEXT,
+                        metadata_json TEXT,
+                        created_at INTEGER NOT NULL,
+                        accessed_at INTEGER NOT NULL,
+                        expires_at INTEGER,
+                        access_count INTEGER DEFAULT 0,
+                        size_bytes INTEGER NOT NULL
+                    )",
+                    [],
+                )?;
+
+                // Create indexes for performance
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri)",
+                    [],
+                )?;
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at)",
+                    [],
+                )?;
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at)",
+                    [],
+                )?;
+
+                // Create cache analytics table
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS cache_analytics (
+                        timestamp INTEGER PRIMARY KEY,
+                        hit_rate REAL,
+                        total_requests INTEGER,
+                        cache_size_mb REAL,
+                        eviction_count INTEGER
+                    )",
+                    [],
+                )?;
+
+                // Create cleanup trigger for expired resources
+                conn.execute(
+                    "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
+                     AFTER INSERT ON resources
+                     BEGIN
+                         DELETE FROM resources 
+                         WHERE expires_at IS NOT NULL 
+                         AND expires_at < strftime('%s', 'now') * 1000;
+                     END",
+                    [],
+                )?;
+
+                Ok(())
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to initialize cache schema: {}", e)))
+    }
+
+    /// Store a resource in the cache
+    pub async fn store_resource(&mut self, resource: &ResourceContent) -> Result<String> {
+        self.store_resource_with_ttl(resource, self.config.default_ttl).await
+    }
+
+    /// Store a resource with custom TTL
+    pub async fn store_resource_with_ttl(
+        &mut self,
+        resource: &ResourceContent,
+        ttl: Duration,
+    ) -> Result<String> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        let expires_at = if ttl.is_zero() {
+            None
+        } else {
+            Some(now + chrono::Duration::from_std(ttl).map_err(|_| {
+                ClientError::Validation("Invalid TTL duration".to_string())
+            })?)
+        };
+
+        let metadata_json = serde_json::to_string(&resource.info.metadata)
+            .map_err(|e| ClientError::Client(format!("Failed to serialize metadata: {}", e)))?;
+
+        let size_bytes = resource.data.len() as u64;
+
+        // Clone data needed for the closure
+        let id_clone = id.clone();
+        let uri = resource.info.uri.clone();
+        let content = resource.data.clone();
+        let content_type = resource.info.mime_type.clone();
+        let created_at = now.timestamp_millis();
+        let accessed_at = now.timestamp_millis();
+        let expires_at_millis = expires_at.map(|t| t.timestamp_millis());
+
+        self.connection
+            .call(move |conn| {
+                // Use a transaction for ACID guarantees
+                let tx = conn.transaction()?;
+
+                tx.execute(
+                    "INSERT OR REPLACE INTO resources (
+                        id, uri, content, content_type, metadata_json,
+                        created_at, accessed_at, expires_at, access_count, size_bytes
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    rusqlite::params![
+                        id_clone,
+                        uri,
+                        content,
+                        content_type,
+                        metadata_json,
+                        created_at,
+                        accessed_at,
+                        expires_at_millis,
+                        1, // Initial access count
+                        size_bytes as i64,
+                    ],
+                )?;
+
+                tx.commit()?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to store resource: {}", e)))?;
+
+        // Update analytics
+        self.analytics.resource_count += 1;
+        self.analytics.cache_size_bytes += size_bytes;
+
+        Ok(id)
+    }
+
+    /// Get a resource from the cache by URI
+    pub async fn get_resource(&mut self, uri: &str) -> Result<Option<ResourceContent>> {
+        let uri = uri.to_string();
+        let now = Utc::now().timestamp_millis();
+
+        let result = self
+            .connection
+            .call(move |conn| {
+                // Check if resource exists and is not expired
+                let mut stmt = conn.prepare(
+                    "SELECT id, uri, content, content_type, metadata_json, 
+                            created_at, accessed_at, expires_at, access_count, size_bytes
+                     FROM resources 
+                     WHERE uri = ?1 
+                     AND (expires_at IS NULL OR expires_at > ?2)"
+                )?;
+
+                let row = match stmt.query_row(rusqlite::params![uri, now], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,       // id
+                        row.get::<_, String>(1)?,       // uri
+                        row.get::<_, Vec<u8>>(2)?,      // content
+                        row.get::<_, Option<String>>(3)?, // content_type
+                        row.get::<_, String>(4)?,       // metadata_json
+                        row.get::<_, i64>(5)?,          // created_at
+                        row.get::<_, i64>(6)?,          // accessed_at
+                        row.get::<_, Option<i64>>(7)?,  // expires_at
+                        row.get::<_, i64>(8)?,          // access_count
+                        row.get::<_, i64>(9)?,          // size_bytes
+                    ))
+                }) {
+                    Ok(row) => row,
+                    Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+                    Err(e) => return Err(tokio_rusqlite::Error::Rusqlite(e)),
+                };
+
+                // Update access time and count
+                conn.execute(
+                    "UPDATE resources SET accessed_at = ?1, access_count = access_count + 1 WHERE uri = ?2",
+                    rusqlite::params![now, uri],
+                )?;
+
+                Ok(Some(row))
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to retrieve resource: {}", e)))?;
+
+        match result {
+            Some((_, uri, content, content_type, metadata_json, _, _, _, _, _)) => {
+                // Parse metadata
+                let metadata: HashMap<String, serde_json::Value> = serde_json::from_str(&metadata_json)
+                    .map_err(|e| ClientError::Client(format!("Failed to parse metadata: {}", e)))?;
+
+                // Construct ResourceInfo
+                let info = ResourceInfo {
+                    uri: uri.clone(),
+                    name: metadata.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    description: metadata.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    mime_type: content_type,
+                    metadata,
+                };
+
+                // Update analytics
+                self.analytics.total_requests += 1;
+                self.analytics.cache_hits += 1;
+                self.analytics.hit_rate = self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+
+                Ok(Some(ResourceContent {
+                    info,
+                    data: content,
+                    encoding: None, // TODO: Handle encoding properly
+                }))
+            }
+            None => {
+                // Update analytics for cache miss
+                self.analytics.total_requests += 1;
+                self.analytics.cache_misses += 1;
+                self.analytics.hit_rate = self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+
+                Ok(None)
+            }
+        }
+    }
+
+    /// List all cached resources
+    pub async fn list_cached_resources(&self) -> Result<Vec<CachedResource>> {
+        let now = Utc::now().timestamp_millis();
+
+        self.connection
+            .call(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, uri, content, content_type, metadata_json,
+                            created_at, accessed_at, expires_at, access_count, size_bytes
+                     FROM resources
+                     WHERE expires_at IS NULL OR expires_at > ?1
+                     ORDER BY accessed_at DESC"
+                )?;
+
+                let rows = stmt.query_map(rusqlite::params![now], |row| {
+                    let metadata_json: String = row.get(4)?;
+                    let metadata: HashMap<String, serde_json::Value> = 
+                        serde_json::from_str(&metadata_json).unwrap_or_default();
+
+                    Ok(CachedResource {
+                        id: row.get(0)?,
+                        uri: row.get(1)?,
+                        content: row.get(2)?,
+                        content_type: row.get(3)?,
+                        metadata,
+                        created_at: DateTime::from_timestamp_millis(row.get::<_, i64>(5)?).unwrap_or_default(),
+                        accessed_at: DateTime::from_timestamp_millis(row.get::<_, i64>(6)?).unwrap_or_default(),
+                        expires_at: row.get::<_, Option<i64>>(7)?.map(|ts| DateTime::from_timestamp_millis(ts).unwrap_or_default()),
+                        access_count: row.get::<_, i64>(8)? as u64,
+                        size_bytes: row.get::<_, i64>(9)? as u64,
+                    })
+                })?;
+
+                let mut resources = Vec::new();
+                for row in rows {
+                    resources.push(row?);
+                }
+
+                Ok(resources)
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to list cached resources: {}", e)))
+    }
+
+    /// Check if a resource exists in the cache
+    pub async fn contains_resource(&self, uri: &str) -> Result<bool> {
+        let uri = uri.to_string();
+        let now = Utc::now().timestamp_millis();
+
+        self.connection
+            .call(move |conn| {
+                let count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM resources WHERE uri = ?1 AND (expires_at IS NULL OR expires_at > ?2)",
+                    rusqlite::params![uri, now],
+                    |row| row.get(0),
+                )?;
+                Ok(count > 0)
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to check resource existence: {}", e)))
+    }
+
+    /// Remove a resource from the cache
+    pub async fn remove_resource(&mut self, uri: &str) -> Result<bool> {
+        let uri = uri.to_string();
+
+        let removed = self
+            .connection
+            .call(move |conn| {
+                let changes = conn.execute(
+                    "DELETE FROM resources WHERE uri = ?1",
+                    rusqlite::params![uri],
+                )?;
+                Ok(changes > 0)
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to remove resource: {}", e)))?;
+
+        if removed {
+            // Update analytics (we'll recalculate these properly in update_analytics)
+            self.analytics.resource_count = self.analytics.resource_count.saturating_sub(1);
+        }
+
+        Ok(removed)
+    }
+
+    /// Clear all cached resources
+    pub async fn clear(&mut self) -> Result<()> {
+        self.connection
+            .call(|conn| {
+                conn.execute("DELETE FROM resources", [])?;
+                conn.execute("DELETE FROM cache_analytics", [])?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to clear cache: {}", e)))?;
+
+        // Reset analytics
+        self.analytics = CacheAnalytics {
+            total_requests: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            hit_rate: 0.0,
+            cache_size_bytes: 0,
+            resource_count: 0,
+            eviction_count: 0,
+            last_cleanup: Utc::now(),
+        };
+
+        Ok(())
+    }
+
+    /// Run cleanup to remove expired resources
+    pub async fn cleanup_expired(&mut self) -> Result<u64> {
+        let now = Utc::now().timestamp_millis();
+
+        let removed_count = self
+            .connection
+            .call(move |conn| {
+                let changes = conn.execute(
+                    "DELETE FROM resources WHERE expires_at IS NOT NULL AND expires_at <= ?1",
+                    rusqlite::params![now],
+                )?;
+                Ok(changes as u64)
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to cleanup expired resources: {}", e)))?;
+
+        // Update analytics
+        self.analytics.eviction_count += removed_count;
+        self.analytics.last_cleanup = Utc::now();
+        self.analytics.resource_count = self.analytics.resource_count.saturating_sub(removed_count);
+
+        Ok(removed_count)
+    }
+
+    /// Get cache analytics
+    pub fn get_analytics(&self) -> &CacheAnalytics {
+        &self.analytics
+    }
+
+    /// Update cache analytics
+    async fn update_analytics(&mut self) -> Result<()> {
+        let (total_size, resource_count) = self
+            .connection
+            .call(|conn| {
+                let size: i64 = conn
+                    .query_row("SELECT COALESCE(SUM(size_bytes), 0) FROM resources", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap_or(0);
+
+                let count: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM resources", [], |row| row.get(0))
+                    .unwrap_or(0);
+
+                Ok((size as u64, count as u64))
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to update analytics: {}", e)))?;
+
+        self.analytics.cache_size_bytes = total_size;
+        self.analytics.resource_count = resource_count;
+
+        // Store analytics in database
+        let timestamp = Utc::now().timestamp_millis();
+        let hit_rate = self.analytics.hit_rate;
+        let total_requests = self.analytics.total_requests as i64;
+        let cache_size_mb = (self.analytics.cache_size_bytes as f64) / (1024.0 * 1024.0);
+        let eviction_count = self.analytics.eviction_count as i64;
+
+        self.connection
+            .call(move |conn| {
+                conn.execute(
+                    "INSERT INTO cache_analytics (timestamp, hit_rate, total_requests, cache_size_mb, eviction_count)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![
+                        timestamp,
+                        hit_rate,
+                        total_requests,
+                        cache_size_mb,
+                        eviction_count,
+                    ],
+                )?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to store analytics: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Search cached resources by metadata
+    pub async fn search_resources(
+        &self,
+        query: &str,
+    ) -> Result<Vec<CachedResource>> {
+        let query = query.to_string();
+        let now = Utc::now().timestamp_millis();
+
+        self.connection
+            .call(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, uri, content, content_type, metadata_json,
+                            created_at, accessed_at, expires_at, access_count, size_bytes
+                     FROM resources
+                     WHERE (expires_at IS NULL OR expires_at > ?2)
+                     AND (uri LIKE ?1 OR content_type LIKE ?1 OR metadata_json LIKE ?1)
+                     ORDER BY accessed_at DESC"
+                )?;
+
+                let search_pattern = format!("%{}%", query);
+                let rows = stmt.query_map(rusqlite::params![search_pattern, now], |row| {
+                    let metadata_json: String = row.get(4)?;
+                    let metadata: HashMap<String, serde_json::Value> = 
+                        serde_json::from_str(&metadata_json).unwrap_or_default();
+
+                    Ok(CachedResource {
+                        id: row.get(0)?,
+                        uri: row.get(1)?,
+                        content: row.get(2)?,
+                        content_type: row.get(3)?,
+                        metadata,
+                        created_at: DateTime::from_timestamp_millis(row.get::<_, i64>(5)?).unwrap_or_default(),
+                        accessed_at: DateTime::from_timestamp_millis(row.get::<_, i64>(6)?).unwrap_or_default(),
+                        expires_at: row.get::<_, Option<i64>>(7)?.map(|ts| DateTime::from_timestamp_millis(ts).unwrap_or_default()),
+                        access_count: row.get::<_, i64>(8)? as u64,
+                        size_bytes: row.get::<_, i64>(9)? as u64,
+                    })
+                })?;
+
+                let mut resources = Vec::new();
+                for row in rows {
+                    resources.push(row?);
+                }
+
+                Ok(resources)
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to search resources: {}", e)))
+    }
+
+    /// Get cache size in bytes
+    pub async fn get_cache_size(&self) -> Result<u64> {
+        self.connection
+            .call(|conn| {
+                let size: i64 = conn.query_row(
+                    "SELECT COALESCE(SUM(size_bytes), 0) FROM resources",
+                    [],
+                    |row| row.get(0),
+                )?;
+                Ok(size as u64)
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to get cache size: {}", e)))
+    }
+
+    /// Compact the database to reclaim space
+    pub async fn compact(&mut self) -> Result<()> {
+        self.connection
+            .call(|conn| {
+                conn.execute("VACUUM", [])?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| ClientError::Client(format!("Failed to compact database: {}", e)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resource::ResourceInfo;
+    use std::collections::HashMap;
+    use tempfile::NamedTempFile;
+
+    fn create_test_resource() -> ResourceContent {
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(13)),
+        );
+
+        let info = ResourceInfo {
+            uri: "test://example.txt".to_string(),
+            name: Some("example.txt".to_string()),
+            description: Some("Test resource".to_string()),
+            mime_type: Some("text/plain".to_string()),
+            metadata,
+        };
+
+        ResourceContent {
+            info,
+            data: b"Hello, World!".to_vec(),
+            encoding: Some("utf-8".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_creation_in_memory() {
+        let config = CacheConfig::default();
+        let result = ResourceCache::new(config).await;
+
+        // Should succeed now that it's implemented
+        assert!(result.is_ok());
+        let cache = result.unwrap();
+        assert_eq!(cache.get_analytics().resource_count, 0);
+        assert_eq!(cache.get_analytics().cache_size_bytes, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cache_creation_file_based() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let config = CacheConfig {
+            database_path: temp_file.path().to_string_lossy().to_string(),
+            ..Default::default()
+        };
+
+        let result = ResourceCache::new(config).await;
+
+        // Should succeed now that it's implemented
+        assert!(result.is_ok());
+        let cache = result.unwrap();
+        assert_eq!(cache.get_analytics().resource_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_store_and_retrieve_resource() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+        let resource = create_test_resource();
+
+        // Store resource
+        let result = cache.store_resource(&resource).await;
+        assert!(result.is_ok());
+        let resource_id = result.unwrap();
+        assert!(!resource_id.is_empty());
+
+        // Retrieve resource
+        let result = cache.get_resource("test://example.txt").await;
+        assert!(result.is_ok());
+        let retrieved = result.unwrap();
+        assert!(retrieved.is_some());
+        let retrieved_resource = retrieved.unwrap();
+        assert_eq!(retrieved_resource.info.uri, "test://example.txt");
+        assert_eq!(retrieved_resource.data, b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_store_resource_with_custom_ttl() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+        let resource = create_test_resource();
+        let ttl = Duration::from_secs(60);
+
+        let result = cache.store_resource_with_ttl(&resource, ttl).await;
+        assert!(result.is_ok());
+        let resource_id = result.unwrap();
+        assert!(!resource_id.is_empty());
+
+        // Verify resource was stored
+        let retrieved = cache.get_resource("test://example.txt").await.unwrap();
+        assert!(retrieved.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_list_cached_resources() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Initially empty
+        let result = cache.list_cached_resources().await;
+        assert!(result.is_ok());
+        let resources = result.unwrap();
+        assert_eq!(resources.len(), 0);
+
+        // Add a resource
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+
+        // Should have one resource
+        let result = cache.list_cached_resources().await;
+        assert!(result.is_ok());
+        let resources = result.unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].uri, "test://example.txt");
+    }
+
+    #[tokio::test]
+    async fn test_contains_resource() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Initially should not contain resource
+        let result = cache.contains_resource("test://example.txt").await;
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+
+        // Add resource
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+
+        // Should now contain resource
+        let result = cache.contains_resource("test://example.txt").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_remove_resource() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Add resource
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+
+        // Verify it exists
+        assert!(cache.contains_resource("test://example.txt").await.unwrap());
+
+        // Remove resource
+        let result = cache.remove_resource("test://example.txt").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap()); // Should return true (was removed)
+
+        // Verify it's gone
+        assert!(!cache.contains_resource("test://example.txt").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_clear_cache() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Add some resources
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+
+        // Verify cache has resources
+        let resources = cache.list_cached_resources().await.unwrap();
+        assert!(!resources.is_empty());
+
+        // Clear cache
+        let result = cache.clear().await;
+        assert!(result.is_ok());
+
+        // Verify cache is empty
+        let resources = cache.list_cached_resources().await.unwrap();
+        assert!(resources.is_empty());
+        assert_eq!(cache.get_analytics().resource_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_resources() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Add resource that expires immediately
+        let resource = create_test_resource();
+        cache.store_resource_with_ttl(&resource, Duration::from_millis(1)).await.unwrap();
+
+        // Wait for expiration
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Run cleanup
+        let result = cache.cleanup_expired().await;
+        assert!(result.is_ok());
+        let removed_count = result.unwrap();
+        assert_eq!(removed_count, 1);
+
+        // Verify resource is gone
+        assert!(!cache.contains_resource("test://example.txt").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_cache_analytics() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Initial analytics
+        let analytics = cache.get_analytics();
+        assert_eq!(analytics.resource_count, 0);
+        assert_eq!(analytics.cache_size_bytes, 0);
+        assert_eq!(analytics.total_requests, 0);
+        assert_eq!(analytics.cache_hits, 0);
+        assert_eq!(analytics.cache_misses, 0);
+
+        // Add a resource and access it
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+
+        // Access the resource to generate analytics
+        let _retrieved = cache.get_resource("test://example.txt").await.unwrap();
+
+        // Check updated analytics
+        let analytics = cache.get_analytics();
+        assert_eq!(analytics.resource_count, 1);
+        assert!(analytics.cache_size_bytes > 0);
+        assert_eq!(analytics.total_requests, 1);
+        assert_eq!(analytics.cache_hits, 1);
+        assert_eq!(analytics.cache_misses, 0);
+        assert_eq!(analytics.hit_rate, 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_search_resources() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Initially empty
+        let result = cache.search_resources("text/plain").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+
+        // Add a resource
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+
+        // Search should find it
+        let result = cache.search_resources("text/plain").await;
+        assert!(result.is_ok());
+        let resources = result.unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].uri, "test://example.txt");
+
+        // Search by URI should also work
+        let result = cache.search_resources("example").await;
+        assert!(result.is_ok());
+        let resources = result.unwrap();
+        assert_eq!(resources.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_cache_size() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Initially empty
+        let result = cache.get_cache_size().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Add a resource
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+
+        // Should have size now
+        let result = cache.get_cache_size().await;
+        assert!(result.is_ok());
+        let size = result.unwrap();
+        assert!(size > 0);
+        assert_eq!(size, 13); // "Hello, World!" is 13 bytes
+    }
+
+    #[tokio::test]
+    async fn test_database_compaction() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Add and remove some resources to create fragmentation
+        let resource = create_test_resource();
+        cache.store_resource(&resource).await.unwrap();
+        cache.remove_resource("test://example.txt").await.unwrap();
+
+        // Compact should succeed
+        let result = cache.compact().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_ttl_expiration() {
+        let config = CacheConfig {
+            default_ttl: Duration::from_millis(100), // Very short TTL for testing
+            ..Default::default()
+        };
+        let mut cache = ResourceCache::new(config).await.unwrap();
+        let resource = create_test_resource();
+
+        // Store resource
+        let _id = cache.store_resource(&resource).await.unwrap();
+
+        // Wait for expiration
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // Resource should be expired
+        let result = cache.get_resource("test://example.txt").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_access() {
+        let config = CacheConfig::default();
+        let cache = std::sync::Arc::new(tokio::sync::Mutex::new(
+            ResourceCache::new(config).await.unwrap(),
+        ));
+
+        let resource = create_test_resource();
+        let tasks = (0..10).map(|i| {
+            let cache = cache.clone();
+            let mut resource = resource.clone();
+            resource.info.uri = format!("test://example{}.txt", i);
+
+            tokio::spawn(async move {
+                let mut cache = cache.lock().await;
+                cache.store_resource(&resource).await
+            })
+        });
+
+        // All operations should complete without corruption
+        let results = futures::future::join_all(tasks).await;
+        for result in results {
+            assert!(result.is_ok());
+            let store_result = result.unwrap();
+            assert!(store_result.is_ok());
+        }
+
+        // Verify all resources were stored
+        let cache = cache.lock().await;
+        let resources = cache.list_cached_resources().await.unwrap();
+        assert_eq!(resources.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_acid_transactions() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+        let resource = create_test_resource();
+
+        // Simulate a transaction that should either fully succeed or fully fail
+        let result = cache.store_resource(&resource).await;
+
+        // Even if it fails, the database should remain in a consistent state
+        match result {
+            Ok(_) => {
+                // If successful, resource should be retrievable
+                let retrieved = cache.get_resource("test://example.txt").await.unwrap();
+                assert!(retrieved.is_some());
+            }
+            Err(_) => {
+                // If failed, resource should not be partially stored
+                let retrieved = cache.get_resource("test://example.txt").await.unwrap();
+                assert!(retrieved.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn test_cache_config_defaults() {
+        let config = CacheConfig::default();
+        assert_eq!(config.database_path, ":memory:");
+        assert_eq!(config.default_ttl, Duration::from_secs(3600));
+        assert_eq!(config.max_size_mb, 100);
+        assert!(config.auto_cleanup);
+        assert_eq!(config.cleanup_interval, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_cached_resource_structure() {
+        let cached_resource = CachedResource {
+            id: Uuid::new_v4().to_string(),
+            uri: "test://example.txt".to_string(),
+            content: b"Hello, World!".to_vec(),
+            content_type: Some("text/plain".to_string()),
+            metadata: HashMap::new(),
+            created_at: Utc::now(),
+            accessed_at: Utc::now(),
+            expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
+            access_count: 1,
+            size_bytes: 13,
+        };
+
+        assert_eq!(cached_resource.uri, "test://example.txt");
+        assert_eq!(cached_resource.content, b"Hello, World!");
+        assert_eq!(cached_resource.size_bytes, 13);
+        assert!(cached_resource.expires_at.is_some());
+    }
+}

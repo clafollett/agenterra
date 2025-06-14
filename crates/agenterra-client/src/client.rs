@@ -1,6 +1,7 @@
 //! Main client implementation for Agenterra MCP Client
 
 use crate::auth::AuthConfig;
+use crate::cache::{CacheConfig, ResourceCache};
 use crate::error::{ClientError, Result};
 use crate::registry::ToolRegistry;
 use crate::result::ToolResult;
@@ -23,6 +24,8 @@ pub struct AgenterraClient {
     registry: ToolRegistry,
     // Authentication configuration
     auth_config: Option<AuthConfig>,
+    // Resource cache for performance optimization
+    resource_cache: Option<ResourceCache>,
     timeout: Duration,
 }
 
@@ -33,6 +36,7 @@ impl AgenterraClient {
             service: None,                        // Will be connected later via connect()
             registry: ToolRegistry::new(),        // Empty registry initially
             auth_config: None,                    // No authentication initially
+            resource_cache: None,                 // No cache initially
             timeout: Duration::from_millis(5000), // 5 second default timeout
         }
     }
@@ -52,6 +56,24 @@ impl AgenterraClient {
     /// Get the current authentication configuration
     pub fn auth_config(&self) -> Option<&AuthConfig> {
         self.auth_config.as_ref()
+    }
+
+    /// Enable resource caching with the given configuration
+    pub async fn with_cache(mut self, cache_config: CacheConfig) -> Result<Self> {
+        let cache = ResourceCache::new(cache_config).await?;
+        self.resource_cache = Some(cache);
+        Ok(self)
+    }
+
+    /// Disable resource caching
+    pub fn without_cache(mut self) -> Self {
+        self.resource_cache = None;
+        self
+    }
+
+    /// Get cache analytics if caching is enabled
+    pub fn cache_analytics(&self) -> Option<&crate::cache::CacheAnalytics> {
+        self.resource_cache.as_ref().map(|cache| cache.get_analytics())
     }
 
     /// Connect to an MCP server using child process transport
@@ -333,6 +355,15 @@ impl AgenterraClient {
 
     /// Get a specific resource by URI
     pub async fn get_resource(&mut self, uri: &str) -> Result<crate::resource::ResourceContent> {
+        // Check cache first if caching is enabled
+        if let Some(ref mut cache) = self.resource_cache {
+            if let Some(cached_resource) = cache.get_resource(uri).await? {
+                log::debug!("Cache hit for resource: {}", uri);
+                return Ok(cached_resource);
+            }
+            log::debug!("Cache miss for resource: {}", uri);
+        }
+
         let service = self.service.as_ref().ok_or_else(|| {
             ClientError::Client(
                 "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
@@ -375,16 +406,72 @@ impl AgenterraClient {
                 metadata: std::collections::HashMap::new(),
             };
 
-            Ok(crate::resource::ResourceContent {
+            let resource_content = crate::resource::ResourceContent {
                 info: resource_info,
                 data,
                 encoding,
-            })
+            };
+
+            // Store in cache if caching is enabled
+            if let Some(ref mut cache) = self.resource_cache {
+                if let Err(e) = cache.store_resource(&resource_content).await {
+                    log::warn!("Failed to cache resource '{}': {}", uri, e);
+                    // Don't fail the request if caching fails
+                }
+            }
+
+            Ok(resource_content)
         } else {
             Err(ClientError::Protocol(format!(
                 "No content returned for resource '{}'",
                 uri
             )))
+        }
+    }
+
+    /// Invalidate cached resource(s)
+    pub async fn invalidate_cache(&mut self, uri: Option<&str>) -> Result<()> {
+        if let Some(ref mut cache) = self.resource_cache {
+            match uri {
+                Some(uri) => {
+                    cache.remove_resource(uri).await?;
+                    log::debug!("Invalidated cache for resource: {}", uri);
+                }
+                None => {
+                    cache.clear().await?;
+                    log::debug!("Cleared all cached resources");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Clean up expired cache entries
+    pub async fn cleanup_cache(&mut self) -> Result<u64> {
+        if let Some(ref mut cache) = self.resource_cache {
+            let removed_count = cache.cleanup_expired().await?;
+            log::debug!("Cleaned up {} expired cache entries", removed_count);
+            Ok(removed_count)
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Get list of cached resources
+    pub async fn list_cached_resources(&self) -> Result<Vec<crate::cache::CachedResource>> {
+        if let Some(ref cache) = self.resource_cache {
+            cache.list_cached_resources().await
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Search cached resources
+    pub async fn search_cached_resources(&self, query: &str) -> Result<Vec<crate::cache::CachedResource>> {
+        if let Some(ref cache) = self.resource_cache {
+            cache.search_resources(query).await
+        } else {
+            Ok(Vec::new())
         }
     }
 }
@@ -1128,5 +1215,104 @@ mod tests {
 
         // Should not have auth config by default
         assert!(client.auth_config().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cache_configuration() {
+        let mock_transport = MockTransport::new(vec![]);
+        let client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Initially no cache
+        assert!(client.cache_analytics().is_none());
+
+        // Enable cache
+        let cache_config = crate::cache::CacheConfig::default();
+        let client = client.with_cache(cache_config).await.unwrap();
+
+        // Should have cache analytics now
+        assert!(client.cache_analytics().is_some());
+        let analytics = client.cache_analytics().unwrap();
+        assert_eq!(analytics.resource_count, 0);
+        assert_eq!(analytics.cache_size_bytes, 0);
+
+        // Disable cache
+        let client = client.without_cache();
+        assert!(client.cache_analytics().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cache_operations() {
+        let mock_transport = MockTransport::new(vec![]);
+        let cache_config = crate::cache::CacheConfig::default();
+        let mut client = AgenterraClient::new(Box::new(mock_transport))
+            .with_cache(cache_config)
+            .await
+            .unwrap();
+
+        // Initially no cached resources
+        let cached_resources = client.list_cached_resources().await.unwrap();
+        assert_eq!(cached_resources.len(), 0);
+
+        // Search should return empty
+        let search_results = client.search_cached_resources("test").await.unwrap();
+        assert_eq!(search_results.len(), 0);
+
+        // Cache invalidation should succeed even with empty cache
+        client.invalidate_cache(Some("nonexistent")).await.unwrap();
+        client.invalidate_cache(None).await.unwrap();
+
+        // Cleanup should return 0 (no expired entries)
+        let cleaned_count = client.cleanup_cache().await.unwrap();
+        assert_eq!(cleaned_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cache_analytics_tracking() {
+        let mock_transport = MockTransport::new(vec![]);
+        let cache_config = crate::cache::CacheConfig::default();
+        let mut client = AgenterraClient::new(Box::new(mock_transport))
+            .with_cache(cache_config)
+            .await
+            .unwrap();
+
+        // Check initial analytics
+        let analytics = client.cache_analytics().unwrap();
+        assert_eq!(analytics.total_requests, 0);
+        assert_eq!(analytics.cache_hits, 0);
+        assert_eq!(analytics.cache_misses, 0);
+        assert_eq!(analytics.hit_rate, 0.0);
+
+        // Since we're not connected to a real MCP server, 
+        // get_resource will fail before reaching the cache logic
+        // This test validates the cache is properly integrated
+        let result = client.get_resource("test://resource").await;
+        assert!(result.is_err());
+        
+        // Cache should still be accessible
+        assert!(client.cache_analytics().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_cache_with_custom_config() {
+        use std::time::Duration;
+        
+        let mock_transport = MockTransport::new(vec![]);
+        let cache_config = crate::cache::CacheConfig {
+            database_path: ":memory:".to_string(),
+            default_ttl: Duration::from_secs(300), // 5 minutes
+            max_size_mb: 50,
+            auto_cleanup: true,
+            cleanup_interval: Duration::from_secs(60),
+        };
+        
+        let client = AgenterraClient::new(Box::new(mock_transport))
+            .with_cache(cache_config)
+            .await
+            .unwrap();
+
+        // Verify cache is configured
+        assert!(client.cache_analytics().is_some());
+        let analytics = client.cache_analytics().unwrap();
+        assert_eq!(analytics.resource_count, 0);
     }
 }

@@ -4,6 +4,7 @@
 //! Provides high-level APIs for tool discovery, invocation, resource management, and real-time communication.
 
 pub mod auth;
+pub mod cache;
 pub mod client;
 pub mod error;
 pub mod registry;
@@ -13,6 +14,7 @@ pub mod transport;
 
 // Re-exports
 pub use auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
+pub use cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
 pub use client::AgenterraClient;
 pub use error::{ClientError, Result};
 pub use registry::{ToolInfo, ToolRegistry};
