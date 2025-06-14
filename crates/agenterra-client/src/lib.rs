@@ -5,9 +5,11 @@
 
 pub mod client;
 pub mod error;
+pub mod registry;
 pub mod transport;
 
 // Re-exports
 pub use client::AgenterraClient;
 pub use error::{ClientError, Result};
+pub use registry::{ToolInfo, ToolRegistry};
 pub use transport::Transport;

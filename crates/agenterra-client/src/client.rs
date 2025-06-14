@@ -1,12 +1,14 @@
 //! Main client implementation for Agenterra MCP Client
 
 use crate::error::{ClientError, Result};
+use crate::registry::ToolRegistry;
 use crate::transport::Transport;
 use std::time::Duration;
 
 // Import rmcp types for real MCP protocol integration
 use rmcp::{
     RoleClient,
+    model::CallToolRequestParam,
     service::{RunningService, ServiceExt},
     transport::TokioChildProcess,
 };
@@ -15,6 +17,8 @@ use rmcp::{
 pub struct AgenterraClient {
     // We'll store the rmcp service for actual MCP communication
     service: Option<RunningService<RoleClient, ()>>,
+    // Tool registry for caching and validating tools
+    registry: ToolRegistry,
     timeout: Duration,
 }
 
@@ -23,6 +27,7 @@ impl AgenterraClient {
     pub fn new(_transport: Box<dyn Transport>) -> Self {
         Self {
             service: None,                        // Will be connected later via connect()
+            registry: ToolRegistry::new(),        // Empty registry initially
             timeout: Duration::from_millis(5000), // 5 second default timeout
         }
     }
@@ -65,7 +70,7 @@ impl AgenterraClient {
         }
     }
 
-    /// List available tools from the server
+    /// List available tools from the server and update the registry
     pub async fn list_tools(&mut self) -> Result<Vec<String>> {
         match &self.service {
             Some(service) => {
@@ -73,6 +78,10 @@ impl AgenterraClient {
                     .list_tools(Default::default())
                     .await
                     .map_err(|e| ClientError::Protocol(format!("Failed to list tools: {}", e)))?;
+
+                // Update our registry with the latest tool information
+                self.registry
+                    .update_from_rmcp_tools(tools_response.tools.clone());
 
                 let tool_names = tools_response
                     .tools
@@ -86,6 +95,48 @@ impl AgenterraClient {
                 "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
             )),
         }
+    }
+
+    /// Call a tool on the MCP server with parameters
+    pub async fn call_tool(
+        &mut self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        match &self.service {
+            Some(service) => {
+                // Validate parameters using our registry (if populated)
+                self.registry.validate_parameters(tool_name, &arguments)?;
+
+                // Convert arguments to the format expected by rmcp
+                let arguments_object = arguments.as_object().cloned();
+
+                let request = CallToolRequestParam {
+                    name: tool_name.to_string().into(),
+                    arguments: arguments_object,
+                };
+
+                let tool_response = service.call_tool(request).await.map_err(|e| {
+                    ClientError::Protocol(format!("Failed to call tool '{}': {}", tool_name, e))
+                })?;
+
+                // Extract the response content
+                // rmcp returns CallToolResult with a content field
+                let response_json = serde_json::to_value(&tool_response).map_err(|e| {
+                    ClientError::Client(format!("Failed to serialize tool response: {}", e))
+                })?;
+
+                Ok(response_json)
+            }
+            None => Err(ClientError::Client(
+                "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
+            )),
+        }
+    }
+
+    /// Get access to the tool registry for inspection
+    pub fn registry(&self) -> &ToolRegistry {
+        &self.registry
     }
 }
 
@@ -177,5 +228,100 @@ mod tests {
         } else {
             panic!("Expected ClientError::Client");
         }
+    }
+
+    #[tokio::test]
+    async fn test_call_tool_not_connected() {
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Without connecting to a server, call_tool should fail
+        let result = client.call_tool("get_pet_by_id", json!({"id": 123})).await;
+
+        // Should fail with "not connected" error
+        assert!(result.is_err());
+        if let Err(ClientError::Client(msg)) = result {
+            assert!(msg.contains("Not connected to MCP server"));
+        } else {
+            panic!("Expected ClientError::Client");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_call_tool_snake_case_naming() {
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Test various snake_case tool names that our server generation would create
+        let test_cases = vec![
+            ("get_pet_by_id", json!({"id": 123})),
+            ("list_pets", json!({})),
+            (
+                "create_pet",
+                json!({"name": "Fluffy", "status": "available"}),
+            ),
+            ("update_pet_status", json!({"id": 456, "status": "sold"})),
+        ];
+
+        for (tool_name, params) in test_cases {
+            let result = client.call_tool(tool_name, params).await;
+
+            // Should fail with "not connected" error since we haven't connected
+            assert!(result.is_err());
+            if let Err(ClientError::Client(msg)) = result {
+                assert!(msg.contains("Not connected to MCP server"));
+            } else {
+                panic!("Expected ClientError::Client for tool: {}", tool_name);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_call_tool_argument_handling() {
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Test different argument types that call_tool should handle
+        let test_cases = vec![
+            // Empty object
+            ("ping", json!({})),
+            // Simple object
+            ("get_pet_by_id", json!({"id": 123})),
+            // Complex object
+            (
+                "create_pet",
+                json!({
+                    "name": "Fluffy",
+                    "status": "available",
+                    "tags": ["cute", "fluffy"],
+                    "metadata": {"breed": "Persian", "age": 2}
+                }),
+            ),
+            // Array as argument (though less common for MCP)
+            ("batch_process", json!(["item1", "item2", "item3"])),
+        ];
+
+        for (tool_name, args) in test_cases {
+            let result = client.call_tool(tool_name, args).await;
+
+            // Should fail with not connected, but importantly shouldn't panic on argument processing
+            assert!(result.is_err());
+            if let Err(ClientError::Client(msg)) = result {
+                assert!(msg.contains("Not connected to MCP server"));
+            } else {
+                panic!("Expected ClientError::Client for tool: {}", tool_name);
+            }
+        }
+    }
+
+    #[test]
+    fn test_registry_access() {
+        let mock_transport = MockTransport::new(vec![]);
+        let client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Should start with empty registry
+        let registry = client.registry();
+        assert_eq!(registry.tool_names().len(), 0);
+        assert!(!registry.has_tool("get_pet_by_id"));
     }
 }
