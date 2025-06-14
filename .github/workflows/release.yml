@@ -5,7 +5,7 @@ on:
   push:
     tags:
       - "v*.*.*"          # workspace-level tag (legacy)
-      - "*-v*.*.*"        # per-crate tags, e.g. agenterra-core-v0.2.0
+      - "agenterra-v*.*.*"  # CLI crate tags only, e.g. agenterra-v0.2.0
 
 permissions:
   contents: write     # commit changelog & Cargo.toml bumps
@@ -31,6 +31,8 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: Linux-stable-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -73,7 +75,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install musl-related tools
         if: contains(matrix.target, 'musl')

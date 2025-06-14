@@ -10,5 +10,5 @@ publish = false
 
 [[package]]
 name = "agenterra-core"
-release = true
+release = false
 publish = false
