@@ -260,6 +260,22 @@ impl AgenterraClient {
     pub fn registry(&self) -> &ToolRegistry {
         &self.registry
     }
+
+    /// Get mutable access to the tool registry for testing
+    #[cfg(test)]
+    pub fn registry_mut(&mut self) -> &mut ToolRegistry {
+        &mut self.registry
+    }
+
+    /// Validate parameters for a tool call using the tool registry
+    pub async fn validate_parameters(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<()> {
+        // This will delegate to the registry's validation method
+        self.registry.validate_parameters(tool_name, &arguments)
+    }
 }
 
 #[cfg(test)]
@@ -643,5 +659,225 @@ mod tests {
         assert!(error_result.has_error());
         assert_eq!(error_result.error_code, Some("EXECUTION_ERROR".to_string()));
         assert_eq!(error_result.first_text(), Some("Tool execution failed"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_required_parameters() {
+        use crate::registry::ToolInfo;
+
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Add a tool to the registry with required parameters
+        let tool = ToolInfo {
+            name: "get_pet_by_id".to_string(),
+            description: Some("Get a pet by ID".to_string()),
+            input_schema: Some(json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            })),
+        };
+        client.registry_mut().add_tool(tool);
+
+        // This test should fail because required 'id' parameter is missing
+        let result = client.validate_parameters("get_pet_by_id", json!({})).await;
+
+        // Should fail because required 'id' parameter is missing
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("required parameter 'id' is missing"));
+        } else {
+            panic!("Expected ClientError::Validation for missing required parameter");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_parameter_types() {
+        use crate::registry::ToolInfo;
+
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Add a tool to the registry with typed parameters
+        let tool = ToolInfo {
+            name: "get_pet_by_id".to_string(),
+            description: Some("Get a pet by ID".to_string()),
+            input_schema: Some(json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            })),
+        };
+        client.registry_mut().add_tool(tool);
+
+        // This test should fail because 'id' should be a number, not a string
+        let result = client
+            .validate_parameters("get_pet_by_id", json!({"id": "not_a_number"}))
+            .await;
+
+        // Should fail because 'id' should be a number, not a string
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("parameter 'id' should be a number"));
+        } else {
+            panic!("Expected ClientError::Validation for wrong parameter type");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_unknown_parameters() {
+        use crate::registry::ToolInfo;
+
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Add a tool to the registry
+        let tool = ToolInfo {
+            name: "get_pet_by_id".to_string(),
+            description: Some("Get a pet by ID".to_string()),
+            input_schema: Some(json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            })),
+        };
+        client.registry_mut().add_tool(tool);
+
+        // This test should fail because 'unknown_param' is not a valid parameter
+        let result = client
+            .validate_parameters(
+                "get_pet_by_id",
+                json!({"id": 123, "unknown_param": "value"}),
+            )
+            .await;
+
+        // Should fail because 'unknown_param' is not a valid parameter
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("unknown parameter 'unknown_param'"));
+        } else {
+            panic!("Expected ClientError::Validation for unknown parameter");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_parameters_successful() {
+        use crate::registry::ToolInfo;
+
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Add a tool to the registry
+        let tool = ToolInfo {
+            name: "get_pet_by_id".to_string(),
+            description: Some("Get a pet by ID".to_string()),
+            input_schema: Some(json!({
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                },
+                "required": ["id"]
+            })),
+        };
+        client.registry_mut().add_tool(tool);
+
+        // This test should pass with valid parameters
+        let result = client
+            .validate_parameters("get_pet_by_id", json!({"id": 123}))
+            .await;
+
+        // Should succeed with valid parameters
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_end_to_end_tool_validation_integration() {
+        use crate::registry::ToolInfo;
+
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Add a comprehensive tool to the registry
+        let tool = ToolInfo {
+            name: "create_pet".to_string(),
+            description: Some("Create a new pet".to_string()),
+            input_schema: Some(json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "status": {"type": "string"},
+                    "age": {"type": "integer"},
+                    "tags": {"type": "array"}
+                },
+                "required": ["name", "status"]
+            })),
+        };
+        client.registry_mut().add_tool(tool);
+
+        // Test 1: Valid parameters should pass validation
+        let valid_params = json!({
+            "name": "Fluffy",
+            "status": "available",
+            "age": 2,
+            "tags": ["cute", "fluffy"]
+        });
+        let result = client.validate_parameters("create_pet", valid_params).await;
+        assert!(result.is_ok(), "Valid parameters should pass validation");
+
+        // Test 2: Missing required parameter should fail
+        let missing_required = json!({"name": "Fluffy"});
+        let result = client
+            .validate_parameters("create_pet", missing_required)
+            .await;
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("required parameter 'status' is missing"));
+        } else {
+            panic!("Expected validation error for missing required parameter");
+        }
+
+        // Test 3: Wrong parameter type should fail
+        let wrong_type = json!({"name": "Fluffy", "status": "available", "age": "not_a_number"});
+        let result = client.validate_parameters("create_pet", wrong_type).await;
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("parameter 'age' should be a number"));
+        } else {
+            panic!("Expected validation error for wrong parameter type");
+        }
+
+        // Test 4: Unknown parameter should fail
+        let unknown_param = json!({"name": "Fluffy", "status": "available", "unknown": "value"});
+        let result = client
+            .validate_parameters("create_pet", unknown_param)
+            .await;
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("unknown parameter 'unknown'"));
+        } else {
+            panic!("Expected validation error for unknown parameter");
+        }
+
+        // Test 5: call_tool_typed should fail gracefully when not connected
+        // This tests the integration between validation and actual tool calls
+        let result = client
+            .call_tool_typed(
+                "create_pet",
+                json!({"name": "Fluffy", "status": "available"}),
+            )
+            .await;
+        assert!(result.is_err());
+        if let Err(ClientError::Client(msg)) = result {
+            assert!(msg.contains("Not connected to MCP server"));
+        } else {
+            panic!("Expected client error when not connected to server");
+        }
     }
 }

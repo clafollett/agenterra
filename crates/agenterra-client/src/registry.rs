@@ -50,23 +50,128 @@ impl ToolRegistry {
         self.tools.keys().cloned().collect()
     }
 
-    /// Validate tool parameters against the schema (basic validation for now)
+    /// Validate tool parameters against the schema
     pub fn validate_parameters(&self, tool_name: &str, params: &serde_json::Value) -> Result<()> {
         if !self.has_tool(tool_name) {
-            return Err(ClientError::Client(format!(
+            return Err(ClientError::Validation(format!(
                 "Unknown tool: '{}'. Available tools: {:?}",
                 tool_name,
                 self.tool_names()
             )));
         }
 
-        // For now, just check that parameters is an object if the tool expects parameters
-        if let Some(tool_info) = self.get_tool(tool_name) {
-            if tool_info.input_schema.is_some() && !params.is_object() && !params.is_null() {
-                return Err(ClientError::Client(format!(
-                    "Tool '{}' expects object parameters, got: {}",
-                    tool_name, params
-                )));
+        let tool_info = self.get_tool(tool_name).unwrap(); // Safe because we checked above
+
+        // If no schema is defined, accept any parameters
+        let Some(schema) = &tool_info.input_schema else {
+            return Ok(());
+        };
+
+        // Basic type checking - parameters should be an object if schema expects one
+        if schema.get("type") == Some(&serde_json::Value::String("object".to_string()))
+            && !params.is_object()
+            && !params.is_null()
+        {
+            return Err(ClientError::Validation(format!(
+                "Tool '{}' expects object parameters, got: {}",
+                tool_name, params
+            )));
+        }
+
+        // If parameters are null or empty, check for required fields
+        if params.is_null() || (params.is_object() && params.as_object().unwrap().is_empty()) {
+            if let Some(required) = schema.get("required") {
+                if let Some(required_array) = required.as_array() {
+                    if !required_array.is_empty() {
+                        let required_fields: Vec<String> = required_array
+                            .iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect();
+                        return Err(ClientError::Validation(format!(
+                            "required parameter '{}' is missing",
+                            required_fields.first().unwrap_or(&"unknown".to_string())
+                        )));
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // Enhanced validation for object parameters
+        if let Some(params_obj) = params.as_object() {
+            // Check required parameters
+            if let Some(required) = schema.get("required") {
+                if let Some(required_array) = required.as_array() {
+                    for required_field in required_array {
+                        if let Some(field_name) = required_field.as_str() {
+                            if !params_obj.contains_key(field_name) {
+                                return Err(ClientError::Validation(format!(
+                                    "required parameter '{}' is missing",
+                                    field_name
+                                )));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check parameter types and unknown parameters
+            if let Some(properties) = schema.get("properties") {
+                if let Some(properties_obj) = properties.as_object() {
+                    // Check each provided parameter
+                    for (param_name, param_value) in params_obj {
+                        // Check if parameter is known
+                        if !properties_obj.contains_key(param_name) {
+                            return Err(ClientError::Validation(format!(
+                                "unknown parameter '{}'",
+                                param_name
+                            )));
+                        }
+
+                        // Check parameter type
+                        if let Some(param_schema) = properties_obj.get(param_name) {
+                            if let Some(expected_type) = param_schema.get("type") {
+                                if let Some(type_str) = expected_type.as_str() {
+                                    let actual_type = match param_value {
+                                        serde_json::Value::Null => "null",
+                                        serde_json::Value::Bool(_) => "boolean",
+                                        serde_json::Value::Number(n) => {
+                                            if n.is_i64() || n.is_u64() {
+                                                "integer"
+                                            } else {
+                                                "number"
+                                            }
+                                        }
+                                        serde_json::Value::String(_) => "string",
+                                        serde_json::Value::Array(_) => "array",
+                                        serde_json::Value::Object(_) => "object",
+                                    };
+
+                                    // Special case: "number" type accepts both integer and number
+                                    let type_matches = match type_str {
+                                        "number" => {
+                                            actual_type == "number" || actual_type == "integer"
+                                        }
+                                        _ => type_str == actual_type,
+                                    };
+
+                                    if !type_matches {
+                                        return Err(ClientError::Validation(format!(
+                                            "parameter '{}' should be a {}, got {}",
+                                            param_name,
+                                            if type_str == "integer" {
+                                                "number"
+                                            } else {
+                                                type_str
+                                            },
+                                            actual_type
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

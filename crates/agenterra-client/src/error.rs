@@ -27,4 +27,8 @@ pub enum ClientError {
     /// Client configuration or usage errors
     #[error("Client error: {0}")]
     Client(String),
+
+    /// Parameter validation errors
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
