@@ -2,5 +2,6 @@
 members = [
     "crates/agenterra-core",
     "crates/agenterra-cli",
+    "crates/agenterra-client",
 ]
 resolver = "2"
