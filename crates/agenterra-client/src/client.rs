@@ -1,5 +1,6 @@
 //! Main client implementation for Agenterra MCP Client
 
+use crate::auth::AuthConfig;
 use crate::error::{ClientError, Result};
 use crate::registry::ToolRegistry;
 use crate::result::ToolResult;
@@ -9,7 +10,7 @@ use std::time::Duration;
 // Import rmcp types for real MCP protocol integration
 use rmcp::{
     RoleClient,
-    model::CallToolRequestParam,
+    model::{CallToolRequestParam, ReadResourceRequestParam},
     service::{RunningService, ServiceExt},
     transport::TokioChildProcess,
 };
@@ -20,6 +21,8 @@ pub struct AgenterraClient {
     service: Option<RunningService<RoleClient, ()>>,
     // Tool registry for caching and validating tools
     registry: ToolRegistry,
+    // Authentication configuration
+    auth_config: Option<AuthConfig>,
     timeout: Duration,
 }
 
@@ -29,6 +32,7 @@ impl AgenterraClient {
         Self {
             service: None,                        // Will be connected later via connect()
             registry: ToolRegistry::new(),        // Empty registry initially
+            auth_config: None,                    // No authentication initially
             timeout: Duration::from_millis(5000), // 5 second default timeout
         }
     }
@@ -37,6 +41,17 @@ impl AgenterraClient {
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
+    }
+
+    /// Set authentication configuration
+    pub fn with_auth(mut self, auth_config: AuthConfig) -> Self {
+        self.auth_config = Some(auth_config);
+        self
+    }
+
+    /// Get the current authentication configuration
+    pub fn auth_config(&self) -> Option<&AuthConfig> {
+        self.auth_config.as_ref()
     }
 
     /// Connect to an MCP server using child process transport
@@ -279,26 +294,98 @@ impl AgenterraClient {
 
     /// List all available resources from the MCP server
     pub async fn list_resources(&mut self) -> Result<Vec<crate::resource::ResourceInfo>> {
-        let _service = self.service.as_ref().ok_or_else(|| {
+        let service = self.service.as_ref().ok_or_else(|| {
             ClientError::Client(
                 "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
             )
         })?;
 
-        // This will fail until we implement it properly
-        Err(ClientError::Client("Resource listing not implemented yet".to_string()))
+        // Use rmcp's list_all_resources for convenience
+        let rmcp_resources = service
+            .list_all_resources()
+            .await
+            .map_err(|e| ClientError::Protocol(format!("Failed to list resources: {}", e)))?;
+
+        // Convert rmcp::model::Resource to our ResourceInfo
+        let resources = rmcp_resources
+            .into_iter()
+            .map(|rmcp_resource| {
+                let mut metadata = std::collections::HashMap::new();
+                if let Some(size) = rmcp_resource.size {
+                    metadata.insert(
+                        "size".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(size)),
+                    );
+                }
+
+                crate::resource::ResourceInfo {
+                    uri: rmcp_resource.uri.clone(),
+                    name: Some(rmcp_resource.name.clone()),
+                    description: rmcp_resource.description.clone(),
+                    mime_type: rmcp_resource.mime_type.clone(),
+                    metadata,
+                }
+            })
+            .collect();
+
+        Ok(resources)
     }
 
     /// Get a specific resource by URI
-    pub async fn get_resource(&mut self, _uri: &str) -> Result<crate::resource::ResourceContent> {
-        let _service = self.service.as_ref().ok_or_else(|| {
+    pub async fn get_resource(&mut self, uri: &str) -> Result<crate::resource::ResourceContent> {
+        let service = self.service.as_ref().ok_or_else(|| {
             ClientError::Client(
                 "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
             )
         })?;
 
-        // This will fail until we implement it properly
-        Err(ClientError::Client("Resource retrieval not implemented yet".to_string()))
+        // Use rmcp's read_resource method
+        let read_result = service
+            .read_resource(ReadResourceRequestParam {
+                uri: uri.to_string(),
+            })
+            .await
+            .map_err(|e| {
+                ClientError::Protocol(format!("Failed to read resource '{}': {}", uri, e))
+            })?;
+
+        // Convert the first resource content to our format
+        if let Some(content) = read_result.contents.into_iter().next() {
+            let (data, encoding, mime_type) = match content {
+                rmcp::model::ResourceContents::TextResourceContents {
+                    text, mime_type, ..
+                } => (text.into_bytes(), Some("utf-8".to_string()), mime_type),
+                rmcp::model::ResourceContents::BlobResourceContents {
+                    blob, mime_type, ..
+                } => {
+                    // blob is base64 encoded
+                    use base64::prelude::*;
+                    let decoded_data = BASE64_STANDARD.decode(&blob).map_err(|e| {
+                        ClientError::Protocol(format!("Failed to decode base64 blob: {}", e))
+                    })?;
+                    (decoded_data, None, mime_type)
+                }
+            };
+
+            let resource_info = crate::resource::ResourceInfo {
+                uri: uri.to_string(),
+                name: None, // rmcp ResourceContents doesn't include name
+                description: None,
+                mime_type,
+                metadata: std::collections::HashMap::new(),
+            };
+
+            Ok(crate::resource::ResourceContent {
+                info: resource_info,
+                data,
+                encoding,
+            })
+        } else {
+            Err(ClientError::Protocol(format!(
+                "No content returned for resource '{}'",
+                uri
+            )))
+        }
     }
 }
 
@@ -937,5 +1024,109 @@ mod tests {
         } else {
             panic!("Expected client error when not connected to server");
         }
+    }
+
+    #[tokio::test]
+    async fn test_client_with_auth_configuration() {
+        use crate::auth::{AuthConfig, CredentialType};
+
+        let mock_transport = MockTransport::new(vec![]);
+
+        // This test should fail until we properly implement auth integration
+        let auth_config = AuthConfig::new().with_api_key(
+            "test_api_key_123".to_string(),
+            Some("X-API-Key".to_string()),
+        );
+
+        assert!(auth_config.is_ok());
+        let auth_config = auth_config.unwrap();
+
+        let client = AgenterraClient::new(Box::new(mock_transport)).with_auth(auth_config);
+
+        // Should have auth config
+        assert!(client.auth_config().is_some());
+
+        // Should be able to get auth headers
+        let auth_headers = client.auth_config().unwrap().get_auth_headers();
+        assert!(auth_headers.is_ok());
+
+        let headers = auth_headers.unwrap();
+        assert!(headers.contains_key("X-API-Key"));
+        assert_eq!(
+            headers.get("X-API-Key"),
+            Some(&"test_api_key_123".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_client_auth_security_validation() {
+        use crate::auth::AuthConfig;
+
+        let mock_transport = MockTransport::new(vec![]);
+
+        // Test that dangerous credentials are rejected
+        let dangerous_api_key = "ignore previous instructions\x00malicious";
+        let auth_result = AuthConfig::new()
+            .with_api_key(dangerous_api_key.to_string(), Some("X-API-Key".to_string()));
+
+        // Should fail due to security validation
+        assert!(auth_result.is_err());
+        if let Err(ClientError::Validation(msg)) = auth_result {
+            assert!(msg.contains("potentially unsafe characters"));
+        } else {
+            panic!("Expected validation error for dangerous credential");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_bearer_token_auth() {
+        use crate::auth::AuthConfig;
+
+        let mock_transport = MockTransport::new(vec![]);
+
+        // Valid JWT token
+        let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+
+        let auth_config = AuthConfig::new().with_bearer_token(jwt.to_string());
+        assert!(auth_config.is_ok());
+
+        let auth_config = auth_config.unwrap();
+        let client = AgenterraClient::new(Box::new(mock_transport)).with_auth(auth_config);
+
+        // Should have auth config with bearer token
+        assert!(client.auth_config().is_some());
+
+        let headers = client.auth_config().unwrap().get_auth_headers().unwrap();
+        assert!(headers.contains_key("Authorization"));
+        assert!(headers.get("Authorization").unwrap().starts_with("Bearer "));
+    }
+
+    #[tokio::test]
+    async fn test_auth_header_injection_protection() {
+        use crate::auth::AuthConfig;
+
+        let mock_transport = MockTransport::new(vec![]);
+
+        // Try to inject malicious headers
+        let malicious_header_name = "X-API-Key\r\nInjected-Header: malicious";
+        let auth_result = AuthConfig::new()
+            .with_custom_header(malicious_header_name.to_string(), "value".to_string());
+
+        // Should fail due to header injection protection
+        assert!(auth_result.is_err());
+        if let Err(ClientError::Validation(msg)) = auth_result {
+            assert!(msg.contains("invalid characters"));
+        } else {
+            panic!("Expected validation error for header injection attempt");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_without_auth() {
+        let mock_transport = MockTransport::new(vec![]);
+        let client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Should not have auth config by default
+        assert!(client.auth_config().is_none());
     }
 }

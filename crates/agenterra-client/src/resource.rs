@@ -31,9 +31,7 @@ pub struct ResourceClient {
 impl ResourceClient {
     /// Create a new resource client
     pub fn new() -> Self {
-        Self {
-            _placeholder: (),
-        }
+        Self { _placeholder: () }
     }
 
     /// List all available resources from the MCP server
@@ -78,45 +76,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_resources_not_implemented() {
+    async fn test_list_resources_standalone_client() {
         let client = ResourceClient::new();
-        
-        // This test should fail until we implement list_resources
+
+        // Standalone ResourceClient should still fail (it needs integration with AgenterraClient)
         let result = client.list_resources().await;
-        
+
         assert!(result.is_err());
         if let Err(ClientError::Client(msg)) = result {
             assert!(msg.contains("Not implemented yet"));
         } else {
-            panic!("Expected ClientError::Client for unimplemented list_resources");
+            panic!("Expected ClientError::Client for standalone ResourceClient");
         }
     }
 
     #[tokio::test]
-    async fn test_get_resource_not_implemented() {
+    async fn test_get_resource_standalone_client() {
         let client = ResourceClient::new();
-        
-        // This test should fail until we implement get_resource
+
+        // Standalone ResourceClient should still fail (it needs integration with AgenterraClient)
         let result = client.get_resource("file:///test.txt").await;
-        
+
         assert!(result.is_err());
         if let Err(ClientError::Client(msg)) = result {
             assert!(msg.contains("Not implemented yet"));
         } else {
-            panic!("Expected ClientError::Client for unimplemented get_resource");
+            panic!("Expected ClientError::Client for standalone ResourceClient");
         }
     }
 
     #[tokio::test]
     async fn test_list_resources_expected_behavior() {
         let client = ResourceClient::new();
-        
+
         // This test defines the expected behavior when implemented
         let result = client.list_resources().await;
-        
+
         // Should fail for now, but when implemented should return Vec<ResourceInfo>
         assert!(result.is_err());
-        
+
         // TODO: When implemented, this test should pass:
         // assert!(result.is_ok());
         // let resources = result.unwrap();
@@ -126,13 +124,13 @@ mod tests {
     #[tokio::test]
     async fn test_get_resource_expected_behavior() {
         let client = ResourceClient::new();
-        
+
         // This test defines the expected behavior when implemented
         let result = client.get_resource("file:///example.txt").await;
-        
+
         // Should fail for now, but when implemented should return ResourceContent
         assert!(result.is_err());
-        
+
         // TODO: When implemented, this test should pass:
         // assert!(result.is_ok());
         // let content = result.unwrap();
@@ -143,8 +141,11 @@ mod tests {
     #[test]
     fn test_resource_info_creation() {
         let mut metadata = HashMap::new();
-        metadata.insert("size".to_string(), serde_json::Value::Number(serde_json::Number::from(1024)));
-        
+        metadata.insert(
+            "size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(1024)),
+        );
+
         let resource = ResourceInfo {
             uri: "file:///test.txt".to_string(),
             name: Some("test.txt".to_string()),
@@ -152,7 +153,7 @@ mod tests {
             mime_type: Some("text/plain".to_string()),
             metadata,
         };
-        
+
         assert_eq!(resource.uri, "file:///test.txt");
         assert_eq!(resource.name, Some("test.txt".to_string()));
         assert_eq!(resource.mime_type, Some("text/plain".to_string()));
@@ -168,13 +169,13 @@ mod tests {
             mime_type: Some("text/plain".to_string()),
             metadata: HashMap::new(),
         };
-        
+
         let content = ResourceContent {
             info: resource_info.clone(),
             data: b"Hello, World!".to_vec(),
             encoding: Some("utf-8".to_string()),
         };
-        
+
         assert_eq!(content.info.uri, "file:///test.txt");
         assert_eq!(content.data, b"Hello, World!");
         assert_eq!(content.encoding, Some("utf-8".to_string()));
