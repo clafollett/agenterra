@@ -141,7 +141,7 @@ mod tests {
         let ctx = TestContext::new()?;
 
         let template = "rust_axum";
-        let template_dir = ctx.workspace_root.join("templates").join(template);
+        let template_dir = ctx.workspace_root.join("templates").join("mcp").join("server").join(template);
         let output_dir = ctx.output_path(template, schema_path);
 
         if output_dir.exists() {
@@ -168,11 +168,13 @@ mod tests {
         // Run the scaffold command
         let mut cmd = ctx.build_command()?;
         cmd.arg("scaffold")
+            .arg("mcp")
+            .arg("server")
             .arg("--project-name")
             .arg("petstore-mcp-server")
             .arg("--schema-path")
             .arg(schema_path)
-            .arg("--template-kind")
+            .arg("--template")
             .arg(template)
             .arg("--output-dir")
             .arg(&output_dir)

@@ -8,21 +8,43 @@ use std::{
 };
 use tokio::task;
 
-use crate::{
-    builders::EndpointContext,
+use crate::{builders::EndpointContext, manifest::TemplateManifest};
+use agenterra_core::{
     config::Config,
     error::Result,
-    manifest::TemplateManifest,
     openapi::{OpenApiContext, OpenApiOperation},
     utils::to_snake_case,
 };
 
-use super::{TemplateDir, TemplateKind, TemplateOptions};
+use super::{ServerTemplateKind, ClientTemplateKind, TemplateDir, TemplateOptions};
 
 // External imports (alphabetized)
 use serde::Serialize;
 use serde_json::{Map, Value as JsonValue, json};
 use tera::{Context, Tera};
+
+/// Internal unified template kind for TemplateManager
+#[derive(Debug, Clone)]
+pub enum TemplateKind {
+    Server(ServerTemplateKind),
+    Client(ClientTemplateKind),
+}
+
+impl TemplateKind {
+    pub fn role(&self) -> super::TemplateRole {
+        match self {
+            TemplateKind::Server(kind) => kind.role(),
+            TemplateKind::Client(kind) => kind.role(),
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TemplateKind::Server(kind) => kind.as_str(),
+            TemplateKind::Client(kind) => kind.as_str(),
+        }
+    }
+}
 
 /// Manages loading and rendering of code generation templates
 #[derive(Debug, Clone)]
@@ -44,7 +66,10 @@ impl TemplateManager {
     ///
     /// # Returns
     /// A new `TemplateManager` instance or an error if the template directory cannot be found or loaded.
-    pub async fn new(template_kind: TemplateKind, template_dir: Option<PathBuf>) -> Result<Self> {
+    pub async fn new(
+        template_kind: ServerTemplateKind,
+        template_dir: Option<PathBuf>,
+    ) -> Result<Self> {
         // Convert PathBuf to TemplateDir
         let template_dir = if let Some(dir) = template_dir {
             // Check if the directory already ends with the template kind
@@ -135,8 +160,113 @@ impl TemplateManager {
         Ok(manager)
     }
 
+    /// Create a new TemplateManager for client template generation
+    ///
+    /// # Arguments
+    /// * `template_kind` - The kind of client template to use
+    /// * `template_dir` - Optional path to the template directory. If None, the default location will be used.
+    ///
+    /// # Returns
+    /// A new `TemplateManager` instance or an error if the template directory cannot be found or loaded.
+    pub async fn new_client(
+        template_kind: ClientTemplateKind,
+        template_dir: Option<PathBuf>,
+    ) -> Result<Self> {
+        // For client templates, we need to create a similar structure but for clients
+        // For now, we'll reuse the existing logic but adapt the paths
+        
+        // Convert ClientTemplateKind to ServerTemplateKind for TemplateDir compatibility
+        // This is a temporary workaround - we should make TemplateDir generic later
+        let server_kind = match template_kind {
+            ClientTemplateKind::RustReqwest => ServerTemplateKind::RustAxum, // Placeholder
+            ClientTemplateKind::PythonRequests => ServerTemplateKind::PythonFastAPI, // Placeholder
+            ClientTemplateKind::TypeScriptAxios => ServerTemplateKind::TypeScriptExpress, // Placeholder
+            ClientTemplateKind::Custom => ServerTemplateKind::Custom,
+        };
+        
+        let template_dir_path = if let Some(dir) = template_dir {
+            if dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name == template_kind.as_str())
+                .unwrap_or(false)
+            {
+                dir.clone()
+            } else {
+                dir.join(template_kind.as_str())
+            }
+        } else {
+            // Discover client template directory
+            TemplateDir::find_template_base_dir()
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "Could not find template directory in any standard location",
+                    )
+                })?
+                .join("templates")
+                .join("mcp")
+                .join("client")
+                .join(template_kind.as_str())
+        };
+
+        // Validate the template directory exists
+        if !template_dir_path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Client template directory not found: {}", template_dir_path.display()),
+            ).into());
+        }
+
+        // Create TemplateDir (using server_kind as placeholder)
+        let template_dir_obj = TemplateDir::new(
+            template_dir_path.parent().unwrap().to_path_buf(),
+            template_dir_path.clone(),
+            server_kind,
+        );
+
+        // Load template manifest
+        let yaml_manifest_path = template_dir_path.join("manifest.yaml");
+        let toml_manifest_path = template_dir_path.join("manifest.toml");
+        
+        let manifest = if yaml_manifest_path.exists() {
+            TemplateManifest::load_from_dir(&template_dir_path).await?
+        } else if toml_manifest_path.exists() {
+            let content = tokio::fs::read_to_string(&toml_manifest_path).await?;
+            toml::from_str::<TemplateManifest>(&content).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Failed to parse template manifest: {}", e),
+                )
+            })?
+        } else {
+            TemplateManifest::default()
+        };
+
+        // Create Tera instance
+        let template_dir_str = template_dir_path.to_str().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Template path contains invalid UTF-8",
+            )
+        })?;
+        
+        let tera = Tera::new(&format!("{}/**/*", template_dir_str)).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to parse client templates: {}", e),
+            )
+        })?;
+
+        Ok(TemplateManager {
+            tera: Arc::new(tera),
+            template_dir: template_dir_obj,
+            manifest,
+        })
+    }
+
     /// Get the template kind this template manager is configured for
-    pub fn template_kind(&self) -> TemplateKind {
+    pub fn template_kind(&self) -> ServerTemplateKind {
         self.template_dir.kind()
     }
 
@@ -227,11 +357,11 @@ impl TemplateManager {
 
         // First validate required context variables
         let context_value = serde_json::to_value(context).map_err(|e| {
-            crate::error::Error::template(format!("Failed to serialize context: {}", e))
+            agenterra_core::Error::Template(format!("Failed to serialize context: {}", e))
         })?;
 
         let context_map = context_value.as_object().ok_or_else(|| {
-            crate::error::Error::template("Context must be a JSON object".to_string())
+            agenterra_core::Error::Template("Context must be a JSON object".to_string())
         })?;
 
         // Define required variables per template type
@@ -262,7 +392,10 @@ impl TemplateManager {
         // Verify template exists
         log::debug!("Checking if template exists: {}", template_name);
         self.tera.get_template(template_name).map_err(|e| {
-            crate::error::Error::template(format!("Template not found: {} - {}", template_name, e))
+            agenterra_core::Error::Template(format!(
+                "Template not found: {} - {}",
+                template_name, e
+            ))
         })?;
 
         log::debug!("Found template: {}", template_name);
@@ -288,7 +421,7 @@ impl TemplateManager {
                     "Available context keys: {:?}",
                     context_map.keys().collect::<Vec<_>>()
                 );
-                return Err(crate::error::Error::template(format!(
+                return Err(agenterra_core::Error::Template(format!(
                     "Failed to render template '{}': {}\nTemplate source:\n{}",
                     template_name, e, template_source
                 )));
@@ -310,7 +443,7 @@ impl TemplateManager {
         log::debug!("Ensuring parent directory exists: {}", parent.display());
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
             log::error!("Failed to create directory: {}", e);
-            return Err(crate::error::Error::Io(e));
+            return Err(agenterra_core::Error::Io(e));
         }
 
         // Write the output file
@@ -377,7 +510,7 @@ impl TemplateManager {
                         .await?;
                     }
                     _ => {
-                        return Err(crate::error::Error::template(format!(
+                        return Err(agenterra_core::Error::Template(format!(
                             "Unknown for_each directive: {}",
                             for_each
                         )));
@@ -398,12 +531,78 @@ impl TemplateManager {
         Ok(())
     }
 
+    /// Generate client code without requiring OpenAPI specification
+    /// 
+    /// This method generates MCP client code that can discover tools at runtime.
+    /// Unlike server generation, it doesn't require an OpenAPI schema.
+    pub async fn generate_client(
+        &self,
+        config: &Config,
+        template_opts: Option<TemplateOptions>,
+    ) -> Result<()> {
+        // Build client-specific context (no OpenAPI needed)
+        let base_context = self.build_client_context(config, &template_opts).await?;
+
+        // Create output directory
+        let output_dir = Path::new(&config.output_dir);
+        tokio::fs::create_dir_all(output_dir).await?;
+
+        // Process each template file (client templates don't use for_each typically)
+        for file in &self.manifest.files {
+            log::debug!("Processing client file: {} -> {}", file.source, file.destination);
+            
+            // Client templates typically don't use for_each operations
+            // since they don't depend on OpenAPI operations
+            let output_path = output_dir.join(&file.destination);
+            
+            // Generate file with base context
+            self.generate_with_context(
+                &file.source,
+                &base_context,
+                &output_path,
+            ).await?;
+        }
+
+        // TODO: Run post-generate hooks if needed
+        
+        Ok(())
+    }
+
+    /// Build client-specific template context (no OpenAPI required)
+    async fn build_client_context(
+        &self,
+        config: &Config,
+        template_opts: &Option<TemplateOptions>,
+    ) -> Result<serde_json::Value> {
+        let mut base_map = serde_json::Map::new();
+
+        // Add basic project information
+        base_map.insert("project_name".to_string(), json!(config.project_name));
+        base_map.insert("output_dir".to_string(), json!(config.output_dir));
+        
+        // Add template options if provided
+        if let Some(opts) = template_opts {
+            if let Some(port) = opts.server_port {
+                base_map.insert("server_port".to_string(), json!(port));
+            }
+            if let Some(log_file) = &opts.log_file {
+                base_map.insert("log_file".to_string(), json!(log_file));
+            }
+        }
+
+        // Add default values
+        base_map.insert("version".to_string(), json!("0.1.0"));
+        base_map.insert("description".to_string(), json!(format!("MCP client for {}", config.project_name)));
+        
+        Ok(json!(base_map))
+    }
+
     /// Build the complete template context from OpenAPI spec
     async fn build_context(
         &self,
         openapi_context: &OpenApiContext,
         template_opts: &Option<TemplateOptions>,
-        config: &crate::Config,
+        config: &Config,
     ) -> Result<(serde_json::Value, Vec<OpenApiOperation>)> {
         let mut base_map = serde_json::Map::new();
 
@@ -484,20 +683,20 @@ impl TemplateManager {
                     let trimmed = base_str.trim_end_matches('/');
                     format!("{}{}", trimmed, spec_url)
                 } else {
-                    return Err(crate::error::Error::template(format!(
+                    return Err(agenterra_core::Error::Template(format!(
                         "OpenAPI spec contains a relative server URL '{}', but no --base-url was provided. Please provide a base URL (e.g., --base-url https://api.example.com)",
                         spec_url
                     )));
                 }
             } else {
-                return Err(crate::error::Error::template(format!(
+                return Err(agenterra_core::Error::Template(format!(
                     "Invalid server URL format in OpenAPI spec: '{}'. URL must be either a fully qualified URL (https://api.example.com/v1) or a relative path (/api/v1)",
                     spec_url
                 )));
             };
             base_map.insert("base_api_url".to_string(), json!(final_url));
         } else {
-            return Err(crate::error::Error::template(
+            return Err(agenterra_core::Error::Template(
                 "No server URL found in OpenAPI spec. Please define at least one server in the 'servers' section (OpenAPI 3.0+) or 'host' field (Swagger 2.0) of your OpenAPI specification".to_string()
             ));
         }
@@ -605,7 +804,7 @@ impl TemplateManager {
                 log::error!("Tera error kind: {:?}", e.kind);
                 log::error!("Full error chain: {:#}", e);
 
-                return Err(crate::error::Error::template(format!(
+                return Err(agenterra_core::Error::Template(format!(
                     "Failed to render template '{}': {}",
                     file.source, e
                 )));
@@ -616,7 +815,7 @@ impl TemplateManager {
         log::debug!("Writing rendered content to: {}", output_path.display());
         tokio::fs::write(output_path, rendered).await.map_err(|e| {
             log::error!("Failed to write file {}: {}", output_path.display(), e);
-            crate::error::Error::Io(e)
+            agenterra_core::Error::Io(e)
         })?;
 
         log::debug!("Successfully processed file: {}", output_path.display());
@@ -925,7 +1124,7 @@ impl TemplateManager {
         template: &str,
         context: &Map<String, JsonValue>,
         required_vars: &[&str],
-    ) -> crate::Result<()> {
+    ) -> agenterra_core::Result<()> {
         let mut missing = Vec::new();
 
         for var in required_vars {
@@ -935,7 +1134,7 @@ impl TemplateManager {
         }
 
         if !missing.is_empty() {
-            return Err(crate::Error::template(format!(
+            return Err(agenterra_core::Error::Template(format!(
                 "Missing required context variables for template '{}': {}",
                 template,
                 missing.join(", ")
@@ -948,7 +1147,7 @@ impl TemplateManager {
     pub async fn execute_post_generation_hooks(
         &self,
         output_path: &std::path::Path,
-    ) -> crate::Result<()> {
+    ) -> agenterra_core::Result<()> {
         use tokio::process::Command as AsyncCommand;
 
         if !self.manifest.hooks.post_generate.is_empty() {
@@ -987,7 +1186,7 @@ impl TemplateManager {
         &self,
         base_context: &serde_json::Value,
         file: &crate::manifest::TemplateFile,
-    ) -> crate::Result<serde_json::Value> {
+    ) -> agenterra_core::Result<serde_json::Value> {
         let mut context = if let serde_json::Value::Object(file_ctx) = &file.context {
             file_ctx.clone()
         } else {
@@ -1116,10 +1315,11 @@ mod tests {
 
         // Test creating a new TemplateManager
         let manager =
-            TemplateManager::new(TemplateKind::Custom, Some(templates_base_dir.clone())).await?;
+            TemplateManager::new(ServerTemplateKind::Custom, Some(templates_base_dir.clone()))
+                .await?;
 
         // Test template_kind
-        assert_eq!(manager.template_kind(), TemplateKind::Custom);
+        assert_eq!(manager.template_kind(), ServerTemplateKind::Custom);
 
         // Test template_dir_path
         assert!(manager.template_dir_path().ends_with("custom"));

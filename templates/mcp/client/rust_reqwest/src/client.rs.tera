@@ -1,0 +1,167 @@
+//! MCP client implementation using rmcp protocol
+
+use anyhow::{Result, Context};
+use rmcp::{Client, ClientResponse, ToolCall, ToolResult, Resource, Tool, Prompt};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::time::Duration;
+use tokio::time;
+
+/// MCP client for tool discovery and invocation
+pub struct McpClient {
+    client: Option<Client>,
+    server_url: String,
+    timeout: Duration,
+    tools: HashMap<String, Tool>,
+    resources: Vec<Resource>,
+    prompts: Vec<Prompt>,
+}
+
+impl McpClient {
+    /// Create a new MCP client
+    pub async fn new(server_url: &str, timeout_secs: u64) -> Result<Self> {
+        Ok(Self {
+            client: None,
+            server_url: server_url.to_string(),
+            timeout: Duration::from_secs(timeout_secs),
+            tools: HashMap::new(),
+            resources: Vec::new(),
+            prompts: Vec::new(),
+        })
+    }
+
+    /// Connect to the MCP server
+    pub async fn connect(&mut self) -> Result<()> {
+        tracing::info!("Connecting to MCP server at: {}", self.server_url);
+        
+        // Create rmcp client based on connection type
+        let client = if self.server_url == "stdio" {
+            // For stdio connection (subprocess)
+            Client::stdio().context("Failed to create stdio MCP client")?
+        } else {
+            // For other connection types, we'd implement HTTP/WebSocket here
+            return Err(anyhow::anyhow!("Only stdio connections are currently supported"));
+        };
+
+        self.client = Some(client);
+        
+        // Discover available tools, resources, and prompts
+        self.discover_capabilities().await?;
+        
+        Ok(())
+    }
+
+    /// Discover tools, resources, and prompts from the server
+    async fn discover_capabilities(&mut self) -> Result<()> {
+        let client = self.client.as_mut().context("Client not connected")?;
+        
+        tracing::info!("Discovering server capabilities...");
+        
+        // Discover tools
+        match time::timeout(self.timeout, client.list_tools()).await? {
+            Ok(tools) => {
+                self.tools.clear();
+                for tool in tools {
+                    tracing::debug!("Discovered tool: {}", tool.name);
+                    self.tools.insert(tool.name.clone(), tool);
+                }
+                tracing::info!("Discovered {} tools", self.tools.len());
+            }
+            Err(e) => tracing::warn!("Failed to discover tools: {}", e),
+        }
+
+        // Discover resources
+        match time::timeout(self.timeout, client.list_resources()).await? {
+            Ok(resources) => {
+                self.resources = resources;
+                tracing::info!("Discovered {} resources", self.resources.len());
+            }
+            Err(e) => tracing::warn!("Failed to discover resources: {}", e),
+        }
+
+        // Discover prompts
+        match time::timeout(self.timeout, client.list_prompts()).await? {
+            Ok(prompts) => {
+                self.prompts = prompts;
+                tracing::info!("Discovered {} prompts", self.prompts.len());
+            }
+            Err(e) => tracing::warn!("Failed to discover prompts: {}", e),
+        }
+
+        Ok(())
+    }
+
+    /// Get list of available tools
+    pub fn get_tools(&self) -> &HashMap<String, Tool> {
+        &self.tools
+    }
+
+    /// Get list of available resources
+    pub fn get_resources(&self) -> &[Resource] {
+        &self.resources
+    }
+
+    /// Get list of available prompts
+    pub fn get_prompts(&self) -> &[Prompt] {
+        &self.prompts
+    }
+
+    /// Call a tool with given arguments
+    pub async fn call_tool(&mut self, tool_name: &str, arguments: Value) -> Result<ToolResult> {
+        let client = self.client.as_mut().context("Client not connected")?;
+        
+        tracing::info!("Calling tool: {} with arguments: {}", tool_name, arguments);
+        
+        let tool_call = ToolCall {
+            name: tool_name.to_string(),
+            arguments,
+        };
+
+        let result = time::timeout(self.timeout, client.call_tool(tool_call))
+            .await?
+            .context("Tool call failed")?;
+
+        tracing::debug!("Tool call result: {:?}", result);
+        Ok(result)
+    }
+
+    /// Get a resource by URI
+    pub async fn get_resource(&mut self, uri: &str) -> Result<Value> {
+        let client = self.client.as_mut().context("Client not connected")?;
+        
+        tracing::info!("Getting resource: {}", uri);
+        
+        let result = time::timeout(self.timeout, client.read_resource(uri))
+            .await?
+            .context("Resource read failed")?;
+
+        Ok(result)
+    }
+
+    /// Get a prompt by name with arguments
+    pub async fn get_prompt(&mut self, name: &str, arguments: Option<Value>) -> Result<Value> {
+        let client = self.client.as_mut().context("Client not connected")?;
+        
+        tracing::info!("Getting prompt: {} with arguments: {:?}", name, arguments);
+        
+        let result = time::timeout(self.timeout, client.get_prompt(name, arguments))
+            .await?
+            .context("Prompt get failed")?;
+
+        Ok(result)
+    }
+
+    /// Check if client is connected
+    pub fn is_connected(&self) -> bool {
+        self.client.is_some()
+    }
+
+    /// Disconnect from server
+    pub async fn disconnect(&mut self) -> Result<()> {
+        if let Some(mut client) = self.client.take() {
+            tracing::info!("Disconnecting from MCP server");
+            // rmcp client handles cleanup on drop
+        }
+        Ok(())
+    }
+}

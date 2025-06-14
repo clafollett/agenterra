@@ -94,7 +94,9 @@ impl TemplateManifest {
     /// # Errors
     ///
     /// Returns an error if the file doesn't exist, can't be read, or contains invalid YAML.
-    pub async fn load_from_dir(template_dir: &std::path::Path) -> Result<Self, crate::Error> {
+    pub async fn load_from_dir(
+        template_dir: &std::path::Path,
+    ) -> Result<Self, agenterra_core::Error> {
         let manifest_path = template_dir.join("manifest.yaml");
 
         println!(
@@ -103,7 +105,7 @@ impl TemplateManifest {
         );
         // Read the file content and log it for debugging
         let content = fs::read_to_string(&manifest_path).await.map_err(|e| {
-            crate::Error::Template(format!(
+            agenterra_core::Error::Template(format!(
                 "Failed to read template manifest at full path {}: {}",
                 manifest_path.display(),
                 e
@@ -118,7 +120,7 @@ impl TemplateManifest {
 
         // Try to parse the YAML content
         let manifest: Self = serde_yaml::from_str(&content).map_err(|e| {
-            crate::Error::Template(format!(
+            agenterra_core::Error::Template(format!(
                 "Invalid YAML in template manifest at {}: {}\nContent:\n{}",
                 manifest_path.display(),
                 e,

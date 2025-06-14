@@ -82,30 +82,32 @@ Agenterra is building the foundational infrastructure for AI agents to discover,
 - [ ] **PHP** (Laravel/Symfony templates)
 - [ ] **Ruby** (Rails/Sinatra templates)
 
-## Priority 4: MCP Client Generation 🏭
+## Priority 4: Multi-Language MCP Templates 🌍
 
-**Goal:** After mastering MCP client development, generate clients in multiple languages for consuming MCP servers.
+**Goal:** Expand MCP client and server generation to multiple programming languages, building on the established template architecture.
 
-- [ ] **Client Template Architecture**
-  - [ ] Generic client interface patterns
-  - [ ] Language-specific implementations
-  - [ ] OpenAPI → MCP client mapping
-  - [ ] Authentication handling
-  - [ ] Error management patterns
+- [x] **Rust Templates (Completed)**
+  - [x] Rust MCP server template (`rust_axum`)
+  - [x] Rust MCP client template (`rust_reqwest`)
+  - [x] REPL interface and tool discovery
+  - [x] Production-ready code generation
 
-- [ ] **Multi-Language Client Support**
-  - [ ] C# MCP clients (HttpClient-based)
-  - [ ] Python MCP clients (aiohttp/requests)
-  - [ ] TypeScript MCP clients (fetch/axios)
-  - [ ] Java MCP clients (OkHttp/RestTemplate)
-  - [ ] Go MCP clients (net/http)
+- [ ] **Python MCP Templates**
+  - [ ] Python MCP server template (`python_fastapi`)
+  - [ ] Python MCP client template (`python_aiohttp`)
+  - [ ] Pydantic model generation
+  - [ ] Virtual environment setup
 
-- [ ] **Client Features**
-  - [ ] Async/await patterns
-  - [ ] Connection pooling
-  - [ ] Retry mechanisms
-  - [ ] Caching strategies
-  - [ ] Monitoring integration
+- [ ] **TypeScript MCP Templates**
+  - [ ] TypeScript MCP server template (`typescript_express`)
+  - [ ] TypeScript MCP client template (`typescript_fetch`)
+  - [ ] Strong typing throughout
+  - [ ] npm package management
+
+- [ ] **Additional Languages**
+  - [ ] C# MCP templates (ASP.NET Core + HttpClient)
+  - [ ] Java MCP templates (Spring Boot + OkHttp)
+  - [ ] Go MCP templates (Gin + net/http)
 
 ## Priority 5: AI-Powered API Exploration 🤖✨
 

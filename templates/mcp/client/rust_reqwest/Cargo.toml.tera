@@ -1,0 +1,39 @@
+[package]
+name = "{{ project_name | default(value="mcp_client") }}"
+version = "0.1.0"
+edition = "2021"
+description = "MCP client for {{ project_name | default(value="agenterra") }}"
+
+[[bin]]
+name = "{{ project_name | default(value="mcp_client") }}"
+path = "src/main.rs"
+
+[dependencies]
+# MCP Protocol
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main" }
+
+# HTTP Client
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Async Runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# CLI and REPL
+clap = { version = "4.4", features = ["derive"] }
+rustyline = "13.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+url = "2.4"
+futures = "0.3"

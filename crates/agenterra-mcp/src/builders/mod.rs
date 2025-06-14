@@ -7,8 +7,8 @@
 
 pub mod rust;
 
-use crate::openapi::OpenApiOperation;
-use crate::templates::TemplateKind;
+use crate::templates::ServerTemplateKind;
+use agenterra_core::openapi::OpenApiOperation;
 use serde_json::Value as JsonValue;
 
 /// Trait for converting an OpenApiOperation into a language-specific context.
@@ -33,7 +33,7 @@ pub trait EndpointContextBuilder {
     ///
     /// # Errors
     /// Returns an error if the operation cannot be converted to the target language context
-    fn build(&self, op: &OpenApiOperation) -> crate::Result<JsonValue>;
+    fn build(&self, op: &OpenApiOperation) -> agenterra_core::Result<JsonValue>;
 }
 
 /// Factory for creating and managing endpoint context builders.
@@ -61,22 +61,22 @@ impl EndpointContext {
     ///
     /// # Examples
     /// ```no_run
-    /// use agenterra_core::builders::EndpointContext;
-    /// use agenterra_core::templates::TemplateKind;
+    /// use agenterra_mcp::builders::EndpointContext;
+    /// use agenterra_mcp::templates::ServerTemplateKind;
     /// # use agenterra_core::openapi::OpenApiOperation;
     ///
     /// # fn example(operations: Vec<OpenApiOperation>) -> agenterra_core::Result<()> {
     /// let contexts = EndpointContext::transform_endpoints(
-    ///     TemplateKind::RustAxum,
+    ///     ServerTemplateKind::RustAxum,
     ///     operations
     /// )?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn transform_endpoints(
-        template: TemplateKind,
+        template: ServerTemplateKind,
         operations: Vec<OpenApiOperation>,
-    ) -> crate::Result<Vec<JsonValue>> {
+    ) -> agenterra_core::Result<Vec<JsonValue>> {
         let builder = Self::get_builder(template);
         let mut contexts = Vec::new();
         for op in operations {
@@ -103,9 +103,9 @@ impl EndpointContext {
     ///
     /// # Panics
     /// Panics if the template kind is not supported (via `unimplemented!` macro)
-    pub fn get_builder(template: TemplateKind) -> Box<dyn EndpointContextBuilder> {
+    pub fn get_builder(template: ServerTemplateKind) -> Box<dyn EndpointContextBuilder> {
         match template {
-            TemplateKind::RustAxum => Box::new(rust::RustEndpointContextBuilder),
+            ServerTemplateKind::RustAxum => Box::new(rust::RustEndpointContextBuilder),
             _ => unimplemented!("Builder not implemented for template: {:?}", template),
         }
     }
