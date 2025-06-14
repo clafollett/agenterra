@@ -73,7 +73,9 @@ impl AgenterraClient {
 
     /// Get cache analytics if caching is enabled
     pub fn cache_analytics(&self) -> Option<&crate::cache::CacheAnalytics> {
-        self.resource_cache.as_ref().map(|cache| cache.get_analytics())
+        self.resource_cache
+            .as_ref()
+            .map(|cache| cache.get_analytics())
     }
 
     /// Connect to an MCP server using child process transport
@@ -467,7 +469,10 @@ impl AgenterraClient {
     }
 
     /// Search cached resources
-    pub async fn search_cached_resources(&self, query: &str) -> Result<Vec<crate::cache::CachedResource>> {
+    pub async fn search_cached_resources(
+        &self,
+        query: &str,
+    ) -> Result<Vec<crate::cache::CachedResource>> {
         if let Some(ref cache) = self.resource_cache {
             cache.search_resources(query).await
         } else {
@@ -1282,12 +1287,12 @@ mod tests {
         assert_eq!(analytics.cache_misses, 0);
         assert_eq!(analytics.hit_rate, 0.0);
 
-        // Since we're not connected to a real MCP server, 
+        // Since we're not connected to a real MCP server,
         // get_resource will fail before reaching the cache logic
         // This test validates the cache is properly integrated
         let result = client.get_resource("test://resource").await;
         assert!(result.is_err());
-        
+
         // Cache should still be accessible
         assert!(client.cache_analytics().is_some());
     }
@@ -1295,7 +1300,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_with_custom_config() {
         use std::time::Duration;
-        
+
         let mock_transport = MockTransport::new(vec![]);
         let cache_config = crate::cache::CacheConfig {
             database_path: ":memory:".to_string(),
@@ -1304,7 +1309,7 @@ mod tests {
             auto_cleanup: true,
             cleanup_interval: Duration::from_secs(60),
         };
-        
+
         let client = AgenterraClient::new(Box::new(mock_transport))
             .with_cache(cache_config)
             .await

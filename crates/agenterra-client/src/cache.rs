@@ -201,7 +201,8 @@ impl ResourceCache {
 
     /// Store a resource in the cache
     pub async fn store_resource(&mut self, resource: &ResourceContent) -> Result<String> {
-        self.store_resource_with_ttl(resource, self.config.default_ttl).await
+        self.store_resource_with_ttl(resource, self.config.default_ttl)
+            .await
     }
 
     /// Store a resource with custom TTL
@@ -215,9 +216,10 @@ impl ResourceCache {
         let expires_at = if ttl.is_zero() {
             None
         } else {
-            Some(now + chrono::Duration::from_std(ttl).map_err(|_| {
-                ClientError::Validation("Invalid TTL duration".to_string())
-            })?)
+            Some(
+                now + chrono::Duration::from_std(ttl)
+                    .map_err(|_| ClientError::Validation("Invalid TTL duration".to_string()))?,
+            )
         };
 
         let metadata_json = serde_json::to_string(&resource.info.metadata)
@@ -321,14 +323,22 @@ impl ResourceCache {
         match result {
             Some((_, uri, content, content_type, metadata_json, _, _, _, _, _)) => {
                 // Parse metadata
-                let metadata: HashMap<String, serde_json::Value> = serde_json::from_str(&metadata_json)
-                    .map_err(|e| ClientError::Client(format!("Failed to parse metadata: {}", e)))?;
+                let metadata: HashMap<String, serde_json::Value> =
+                    serde_json::from_str(&metadata_json).map_err(|e| {
+                        ClientError::Client(format!("Failed to parse metadata: {}", e))
+                    })?;
 
                 // Construct ResourceInfo
                 let info = ResourceInfo {
                     uri: uri.clone(),
-                    name: metadata.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    description: metadata.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    name: metadata
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    description: metadata
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     mime_type: content_type,
                     metadata,
                 };
@@ -336,7 +346,8 @@ impl ResourceCache {
                 // Update analytics
                 self.analytics.total_requests += 1;
                 self.analytics.cache_hits += 1;
-                self.analytics.hit_rate = self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                self.analytics.hit_rate =
+                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
 
                 Ok(Some(ResourceContent {
                     info,
@@ -348,7 +359,8 @@ impl ResourceCache {
                 // Update analytics for cache miss
                 self.analytics.total_requests += 1;
                 self.analytics.cache_misses += 1;
-                self.analytics.hit_rate = self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                self.analytics.hit_rate =
+                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
 
                 Ok(None)
             }
@@ -366,12 +378,12 @@ impl ResourceCache {
                             created_at, accessed_at, expires_at, access_count, size_bytes
                      FROM resources
                      WHERE expires_at IS NULL OR expires_at > ?1
-                     ORDER BY accessed_at DESC"
+                     ORDER BY accessed_at DESC",
                 )?;
 
                 let rows = stmt.query_map(rusqlite::params![now], |row| {
                     let metadata_json: String = row.get(4)?;
-                    let metadata: HashMap<String, serde_json::Value> = 
+                    let metadata: HashMap<String, serde_json::Value> =
                         serde_json::from_str(&metadata_json).unwrap_or_default();
 
                     Ok(CachedResource {
@@ -380,9 +392,13 @@ impl ResourceCache {
                         content: row.get(2)?,
                         content_type: row.get(3)?,
                         metadata,
-                        created_at: DateTime::from_timestamp_millis(row.get::<_, i64>(5)?).unwrap_or_default(),
-                        accessed_at: DateTime::from_timestamp_millis(row.get::<_, i64>(6)?).unwrap_or_default(),
-                        expires_at: row.get::<_, Option<i64>>(7)?.map(|ts| DateTime::from_timestamp_millis(ts).unwrap_or_default()),
+                        created_at: DateTime::from_timestamp_millis(row.get::<_, i64>(5)?)
+                            .unwrap_or_default(),
+                        accessed_at: DateTime::from_timestamp_millis(row.get::<_, i64>(6)?)
+                            .unwrap_or_default(),
+                        expires_at: row
+                            .get::<_, Option<i64>>(7)?
+                            .map(|ts| DateTime::from_timestamp_millis(ts).unwrap_or_default()),
                         access_count: row.get::<_, i64>(8)? as u64,
                         size_bytes: row.get::<_, i64>(9)? as u64,
                     })
@@ -481,7 +497,9 @@ impl ResourceCache {
                 Ok(changes as u64)
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to cleanup expired resources: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Client(format!("Failed to cleanup expired resources: {}", e))
+            })?;
 
         // Update analytics
         self.analytics.eviction_count += removed_count;
@@ -502,9 +520,11 @@ impl ResourceCache {
             .connection
             .call(|conn| {
                 let size: i64 = conn
-                    .query_row("SELECT COALESCE(SUM(size_bytes), 0) FROM resources", [], |row| {
-                        row.get(0)
-                    })
+                    .query_row(
+                        "SELECT COALESCE(SUM(size_bytes), 0) FROM resources",
+                        [],
+                        |row| row.get(0),
+                    )
                     .unwrap_or(0);
 
                 let count: i64 = conn
@@ -548,10 +568,7 @@ impl ResourceCache {
     }
 
     /// Search cached resources by metadata
-    pub async fn search_resources(
-        &self,
-        query: &str,
-    ) -> Result<Vec<CachedResource>> {
+    pub async fn search_resources(&self, query: &str) -> Result<Vec<CachedResource>> {
         let query = query.to_string();
         let now = Utc::now().timestamp_millis();
 
@@ -563,13 +580,13 @@ impl ResourceCache {
                      FROM resources
                      WHERE (expires_at IS NULL OR expires_at > ?2)
                      AND (uri LIKE ?1 OR content_type LIKE ?1 OR metadata_json LIKE ?1)
-                     ORDER BY accessed_at DESC"
+                     ORDER BY accessed_at DESC",
                 )?;
 
                 let search_pattern = format!("%{}%", query);
                 let rows = stmt.query_map(rusqlite::params![search_pattern, now], |row| {
                     let metadata_json: String = row.get(4)?;
-                    let metadata: HashMap<String, serde_json::Value> = 
+                    let metadata: HashMap<String, serde_json::Value> =
                         serde_json::from_str(&metadata_json).unwrap_or_default();
 
                     Ok(CachedResource {
@@ -578,9 +595,13 @@ impl ResourceCache {
                         content: row.get(2)?,
                         content_type: row.get(3)?,
                         metadata,
-                        created_at: DateTime::from_timestamp_millis(row.get::<_, i64>(5)?).unwrap_or_default(),
-                        accessed_at: DateTime::from_timestamp_millis(row.get::<_, i64>(6)?).unwrap_or_default(),
-                        expires_at: row.get::<_, Option<i64>>(7)?.map(|ts| DateTime::from_timestamp_millis(ts).unwrap_or_default()),
+                        created_at: DateTime::from_timestamp_millis(row.get::<_, i64>(5)?)
+                            .unwrap_or_default(),
+                        accessed_at: DateTime::from_timestamp_millis(row.get::<_, i64>(6)?)
+                            .unwrap_or_default(),
+                        expires_at: row
+                            .get::<_, Option<i64>>(7)?
+                            .map(|ts| DateTime::from_timestamp_millis(ts).unwrap_or_default()),
                         access_count: row.get::<_, i64>(8)? as u64,
                         size_bytes: row.get::<_, i64>(9)? as u64,
                     })
@@ -814,7 +835,10 @@ mod tests {
 
         // Add resource that expires immediately
         let resource = create_test_resource();
-        cache.store_resource_with_ttl(&resource, Duration::from_millis(1)).await.unwrap();
+        cache
+            .store_resource_with_ttl(&resource, Duration::from_millis(1))
+            .await
+            .unwrap();
 
         // Wait for expiration
         tokio::time::sleep(Duration::from_millis(10)).await;
