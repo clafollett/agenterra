@@ -6,6 +6,7 @@
 pub mod client;
 pub mod error;
 pub mod registry;
+pub mod resource;
 pub mod result;
 pub mod transport;
 
@@ -13,5 +14,6 @@ pub mod transport;
 pub use client::AgenterraClient;
 pub use error::{ClientError, Result};
 pub use registry::{ToolInfo, ToolRegistry};
+pub use resource::{ResourceClient, ResourceContent, ResourceInfo};
 pub use result::{ContentType, ToolResult};
 pub use transport::Transport;

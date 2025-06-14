@@ -276,6 +276,30 @@ impl AgenterraClient {
         // This will delegate to the registry's validation method
         self.registry.validate_parameters(tool_name, &arguments)
     }
+
+    /// List all available resources from the MCP server
+    pub async fn list_resources(&mut self) -> Result<Vec<crate::resource::ResourceInfo>> {
+        let _service = self.service.as_ref().ok_or_else(|| {
+            ClientError::Client(
+                "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
+            )
+        })?;
+
+        // This will fail until we implement it properly
+        Err(ClientError::Client("Resource listing not implemented yet".to_string()))
+    }
+
+    /// Get a specific resource by URI
+    pub async fn get_resource(&mut self, _uri: &str) -> Result<crate::resource::ResourceContent> {
+        let _service = self.service.as_ref().ok_or_else(|| {
+            ClientError::Client(
+                "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
+            )
+        })?;
+
+        // This will fail until we implement it properly
+        Err(ClientError::Client("Resource retrieval not implemented yet".to_string()))
+    }
 }
 
 #[cfg(test)]
@@ -795,6 +819,40 @@ mod tests {
 
         // Should succeed with valid parameters
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_resources_not_connected() {
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Without connecting to a server, list_resources should fail
+        let result = client.list_resources().await;
+
+        // Should fail with "not connected" error
+        assert!(result.is_err());
+        if let Err(ClientError::Client(msg)) = result {
+            assert!(msg.contains("Not connected to MCP server"));
+        } else {
+            panic!("Expected ClientError::Client");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_resource_not_connected() {
+        let mock_transport = MockTransport::new(vec![]);
+        let mut client = AgenterraClient::new(Box::new(mock_transport));
+
+        // Without connecting to a server, get_resource should fail
+        let result = client.get_resource("file:///test.txt").await;
+
+        // Should fail with "not connected" error
+        assert!(result.is_err());
+        if let Err(ClientError::Client(msg)) = result {
+            assert!(msg.contains("Not connected to MCP server"));
+        } else {
+            panic!("Expected ClientError::Client");
+        }
     }
 
     #[tokio::test]
