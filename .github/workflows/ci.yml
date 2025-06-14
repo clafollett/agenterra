@@ -30,7 +30,8 @@ jobs:
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ matrix.os }}-${{ matrix.rust }}
+        key: ${{ matrix.os }}-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+        cache-on-failure: true
 
     - name: Run cargo check
       run: cargo check --all-targets --all-features
@@ -80,6 +81,9 @@ jobs:
 
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ github.job }}-${{ hashFiles('**/Cargo.lock') }}
+        cache-on-failure: true
 
     - name: Run cargo fmt
       run: cargo fmt --all -- --check
@@ -99,6 +103,9 @@ jobs:
 
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ github.job }}-${{ hashFiles('**/Cargo.lock') }}
+        cache-on-failure: true
 
     - name: Install cargo-audit
       run: cargo install cargo-audit
