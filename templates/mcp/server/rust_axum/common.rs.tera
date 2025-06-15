@@ -3,8 +3,6 @@ use crate::config::Config;
 use std::collections::HashMap;
 
 // Public/external imports (alphabetized)
-use log;
-use reqwest;
 use rmcp::model::*;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -54,13 +52,13 @@ where
         .query(&params)
         .send()
         .await
-        .map_err(|e| reqwest_to_rmcp_error(e))?;
+        .map_err(reqwest_to_rmcp_error)?;
 
     let status = res.status();
     log::debug!("Received response status: {}", status);
 
     // Get response body
-    let bytes = res.bytes().await.map_err(|e| reqwest_to_rmcp_error(e))?;
+    let bytes = res.bytes().await.map_err(reqwest_to_rmcp_error)?;
 
     // --- Parse Response ---
     match serde_json::from_slice::<serde_json::Value>(&bytes) {

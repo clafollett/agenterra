@@ -3,7 +3,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use super::TemplateKind;
+use super::ServerTemplateKind;
 
 /// Represents a template directory with resolved paths and validation
 #[derive(Debug, Clone)]
@@ -13,12 +13,12 @@ pub struct TemplateDir {
     /// Path to the specific template directory (root_dir/template_name)
     template_path: PathBuf,
     /// The template kind (language/framework)
-    kind: TemplateKind,
+    kind: ServerTemplateKind,
 }
 
 impl TemplateDir {
     /// Create a new TemplateDir with explicit paths
-    pub fn new(root_dir: PathBuf, template_path: PathBuf, kind: TemplateKind) -> Self {
+    pub fn new(root_dir: PathBuf, template_path: PathBuf, kind: ServerTemplateKind) -> Self {
         Self {
             root_dir,
             template_path,
@@ -37,10 +37,20 @@ impl TemplateDir {
     }
 
     /// Discover the template directory based on the template kind and optional override
-    pub fn discover(kind: TemplateKind, custom_dir: Option<&Path>) -> io::Result<Self> {
+    pub fn discover(kind: ServerTemplateKind, custom_dir: Option<&Path>) -> io::Result<Self> {
+        eprintln!(
+            "[DEBUG] TemplateDir::discover - kind: {:?}, custom_dir: {:?}",
+            kind, custom_dir
+        );
+
         let root_dir = if let Some(dir) = custom_dir {
             // Use the provided directory directly
+            eprintln!("[DEBUG] Using custom template directory: {}", dir.display());
             if !dir.exists() {
+                eprintln!(
+                    "[ERROR] Custom template directory not found: {}",
+                    dir.display()
+                );
                 return Err(io::Error::new(
                     io::ErrorKind::NotFound,
                     format!("Template directory not found: {}", dir.display()),
@@ -49,29 +59,54 @@ impl TemplateDir {
             dir.to_path_buf()
         } else {
             // Auto-discover the template directory
-            Self::find_template_base_dir().ok_or_else(|| {
+            eprintln!("[DEBUG] Auto-discovering template directory...");
+            let discovered = Self::find_template_base_dir().ok_or_else(|| {
+                eprintln!("[ERROR] Could not find template directory in any standard location");
                 io::Error::new(
                     io::ErrorKind::NotFound,
                     "Could not find template directory in any standard location",
                 )
-            })?
+            })?;
+            eprintln!(
+                "[DEBUG] Auto-discovered template base: {}",
+                discovered.display()
+            );
+            discovered
         };
 
-        let template_path = root_dir.join(kind.as_str());
+        let template_path = root_dir
+            .join("templates")
+            .join("mcp")
+            .join(kind.role().as_str())
+            .join(kind.as_str());
+
+        eprintln!(
+            "[DEBUG] Resolved template path: {}",
+            template_path.display()
+        );
+        eprintln!("[DEBUG] Template path exists: {}", template_path.exists());
 
         // Validate the template directory exists
         if !template_path.exists() {
+            eprintln!(
+                "[ERROR] Template directory not found at resolved path: {}",
+                template_path.display()
+            );
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("Template directory not found: {}", template_path.display()),
             ));
         }
 
+        eprintln!(
+            "[DEBUG] Successfully created TemplateDir for: {}",
+            template_path.display()
+        );
         Ok(Self::new(root_dir, template_path, kind))
     }
 
     /// Find the base template directory by checking standard locations
-    fn find_template_base_dir() -> Option<PathBuf> {
+    pub fn find_template_base_dir() -> Option<PathBuf> {
         // 1. Check environment variable
         if let Ok(dir) = std::env::var("AGENTERRA_TEMPLATE_DIR") {
             let path = PathBuf::from(dir);
@@ -122,7 +157,7 @@ impl TemplateDir {
     }
 
     /// Get the template kind
-    pub fn kind(&self) -> TemplateKind {
+    pub fn kind(&self) -> ServerTemplateKind {
         self.kind
     }
 
@@ -151,19 +186,25 @@ mod tests {
     #[test]
     fn test_template_dir_validation() {
         let temp_dir = tempdir().unwrap();
-        let template_dir = temp_dir.path().join("templates/rust_axum");
-        fs::create_dir_all(&template_dir).unwrap();
 
-        // Test with explicit directory
-        let template = TemplateDir::discover(
-            TemplateKind::RustAxum,
-            Some(temp_dir.path().join("templates").as_path()),
+        // Create new server structure
+        let server_template_dir = temp_dir.path().join("templates/mcp/server/rust_axum");
+        fs::create_dir_all(&server_template_dir).unwrap();
+
+        // Test server template discovery
+        let server_template =
+            TemplateDir::discover(ServerTemplateKind::RustAxum, Some(temp_dir.path()));
+        assert!(server_template.is_ok());
+        assert_eq!(
+            server_template.unwrap().template_path(),
+            server_template_dir.as_path()
         );
-        assert!(template.is_ok());
-        assert_eq!(template.unwrap().template_path(), template_dir.as_path());
 
         // Test with non-existent directory
-        let result = TemplateDir::discover(TemplateKind::RustAxum, Some(Path::new("/nonexistent")));
+        let result = TemplateDir::discover(
+            ServerTemplateKind::RustAxum,
+            Some(Path::new("/nonexistent")),
+        );
         assert!(result.is_err());
     }
 }

@@ -17,7 +17,7 @@ pub mod options;
 pub mod types;
 
 pub use dir::*;
-pub use kind::*;
+pub use kind::{ClientTemplateKind, ServerTemplateKind, TemplateRole};
 pub use manager::*;
 pub use options::*;
 pub use types::*;

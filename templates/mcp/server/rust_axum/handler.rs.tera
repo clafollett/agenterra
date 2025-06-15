@@ -84,10 +84,10 @@ impl IntoContents for {{ response_type }} {
 
 /// `{{ path }}` endpoint handler
 /// {{ summary }}
-{% if description -%}
+{%- if description %}
 /// {{ description }}
 {%- endif %}
-{% if parameters -%}
+{%- if parameters %}
 #[doc = r#"{% for p in parameters %}{%- if p.name %} - `{{ p.name }}` ({{ p.rust_type }}, optional): {{ p.description | trim }}{% if p.example %}
 {{ p.example }}{% endif %}{% endif %}{% endfor %}"#]
 {%- endif %}

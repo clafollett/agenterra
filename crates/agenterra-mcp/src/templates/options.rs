@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```rust
-//! use agenterra_core::TemplateOptions;
+//! use agenterra_mcp::TemplateOptions;
 //!
 //! let options = TemplateOptions {
 //!     all_operations: true,

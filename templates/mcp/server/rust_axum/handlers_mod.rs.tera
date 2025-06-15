@@ -18,7 +18,7 @@ pub struct McpServer;
 impl McpServer {
     /// Create a new MCP server instance
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
@@ -34,9 +34,7 @@ impl McpServer {
     /// MCP API `/{{ ep.endpoint }}` endpoint handler
     #[tool(description = r#"{{ ep.summary }} - {{ ep.description }} - {{ ep.tags.0 }}"#)]
     pub async fn {{ ep.fn_name }}(&self, #[tool(aggr)] params: {{ ep.endpoint }}::{{ ep.parameters_type }}) -> Result<CallToolResult, rmcp::Error> {
-        let config = Config::default();
-        let response = {{ ep.endpoint }}::{{ ep.fn_name }}_handler(&config, &params).await;
-        response
+        {{ ep.endpoint }}::{{ ep.fn_name }}_handler(&Config::default(), &params).await
     }
     {%- endfor %}
 }
@@ -47,11 +45,14 @@ impl ServerHandler for McpServer {
         debug!("[MCP] get_info() called - should show tools!");
 
         // Set up explicit capabilities for tools and resources
-        let mut tools_capability = ToolsCapability::default();
-        tools_capability.list_changed = Some(true);
+        let tools_capability = ToolsCapability {
+            list_changed: Some(true),
+        };
 
-        let mut resources_capability = ResourcesCapability::default();
-        resources_capability.list_changed = Some(true);
+        let resources_capability = ResourcesCapability {
+            list_changed: Some(true),
+            ..ResourcesCapability::default()
+        };
 
         let info = ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
