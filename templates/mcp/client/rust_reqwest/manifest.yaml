@@ -16,6 +16,9 @@ files:
   - source: "src/repl.rs.tera"
     destination: "src/repl.rs"
     
+  - source: "src/cache.rs.tera"
+    destination: "src/cache.rs"
+    
   - source: "README.md.tera"
     destination: "README.md"
 

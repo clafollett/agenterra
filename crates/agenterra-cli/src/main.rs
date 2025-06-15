@@ -142,15 +142,20 @@ struct ServerGenParams<'a> {
 
 /// Generate MCP server from OpenAPI specification
 async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> {
-    println!("🚀 Generating MCP server with template: {}", params.template);
+    println!(
+        "🚀 Generating MCP server with template: {}",
+        params.template
+    );
 
     // Parse template
-    let template_kind_enum: ServerTemplateKind = params.template
+    let template_kind_enum: ServerTemplateKind = params
+        .template
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid server template '{}': {}", params.template, e))?;
 
     // Resolve output directory - use project_name if not specified
-    let output_path = params.output_dir
+    let output_path = params
+        .output_dir
         .clone()
         .unwrap_or_else(|| PathBuf::from(params.project_name));
 
@@ -177,7 +182,8 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
         openapi_schema_path: params.schema_path.to_string(),
         output_dir: output_path.to_string_lossy().to_string(),
         template_kind: params.template.to_string(),
-        template_dir: params.template_dir
+        template_dir: params
+            .template_dir
             .as_ref()
             .map(|p| p.to_string_lossy().to_string()),
         include_all: true,

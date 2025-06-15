@@ -27,3 +27,4 @@ path = "src/main.rs"
 [dev-dependencies]
 lazy_static = "1.4.0"
 tokio = { version = "1.0", features = ["full", "process"] }
+rusqlite = { version = "0.32", features = ["bundled"] }

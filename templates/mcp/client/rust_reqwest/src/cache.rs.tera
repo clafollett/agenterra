@@ -1,17 +1,59 @@
-//! SQLite-powered resource caching system
+//! SQLite-powered resource caching system for {{ project_name | default(value="MCP Client") }}
 //!
 //! This module provides a revolutionary resource caching system built on SQLite
 //! that goes beyond simple key-value storage to offer a full-featured resource database
 //! with structured storage, rich queries, ACID transactions, and built-in analytics.
 
-use crate::error::{ClientError, Result};
-use crate::resource::{ResourceContent, ResourceInfo};
+use anyhow::{Result, Context};
+use thiserror::Error;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio_rusqlite::Connection;
 use uuid::Uuid;
+
+/// Errors that can occur during cache operations
+#[derive(Error, Debug)]
+pub enum CacheError {
+    /// Database errors
+    #[error("Database error: {0}")]
+    Database(String),
+    
+    /// Serialization/deserialization errors
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+    
+    /// Validation errors
+    #[error("Validation error: {0}")]
+    Validation(String),
+}
+
+/// Information about an MCP resource
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceInfo {
+    /// Resource URI identifier
+    pub uri: String,
+    /// Human-readable name
+    pub name: Option<String>,
+    /// Resource description
+    pub description: Option<String>,
+    /// MIME type of the resource
+    pub mime_type: Option<String>,
+    /// Additional metadata
+    pub metadata: HashMap<String, serde_json::Value>,
+}
+
+/// Content of a resource retrieved from MCP server
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceContent {
+    /// Resource metadata
+    pub info: ResourceInfo,
+    /// Raw content data
+    pub data: Vec<u8>,
+    /// Content encoding (if any)
+    pub encoding: Option<String>,
+}
 
 /// Configuration for the resource cache
 #[derive(Debug, Clone)]
@@ -102,7 +144,7 @@ impl ResourceCache {
         // Open SQLite connection
         let connection = Connection::open(&config.database_path)
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to open cache database: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to open cache database: {}", e)))?;
 
         // Initialize analytics
         let analytics = CacheAnalytics {
@@ -196,7 +238,8 @@ impl ResourceCache {
                 Ok(())
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to initialize cache schema: {}", e)))
+            .map_err(|e| CacheError::Database(format!("Failed to initialize cache schema: {}", e)))?;
+        Ok(())
     }
 
     /// Store a resource in the cache
@@ -218,12 +261,12 @@ impl ResourceCache {
         } else {
             Some(
                 now + chrono::Duration::from_std(ttl)
-                    .map_err(|_| ClientError::Validation("Invalid TTL duration".to_string()))?,
+                    .map_err(|_| CacheError::Validation("Invalid TTL duration".to_string()))?,
             )
         };
 
         let metadata_json = serde_json::to_string(&resource.info.metadata)
-            .map_err(|e| ClientError::Client(format!("Failed to serialize metadata: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to serialize metadata: {}", e)))?;
 
         let size_bytes = resource.data.len() as u64;
 
@@ -264,7 +307,7 @@ impl ResourceCache {
                 Ok(())
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to store resource: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to store resource: {}", e)))?;
 
         // Update analytics
         self.analytics.resource_count += 1;
@@ -318,14 +361,14 @@ impl ResourceCache {
                 Ok(Some(row))
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to retrieve resource: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to retrieve resource: {}", e)))?;
 
         match result {
             Some((_, uri, content, content_type, metadata_json, _, _, _, _, _)) => {
                 // Parse metadata
                 let metadata: HashMap<String, serde_json::Value> =
                     serde_json::from_str(&metadata_json).map_err(|e| {
-                        ClientError::Client(format!("Failed to parse metadata: {}", e))
+                        CacheError::Database(format!("Failed to parse metadata: {}", e))
                     })?;
 
                 // Construct ResourceInfo
@@ -412,7 +455,7 @@ impl ResourceCache {
                 Ok(resources)
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to list cached resources: {}", e)))
+            .map_err(|e| anyhow::anyhow!("Failed to list cached resources: {}", e))
     }
 
     /// Check if a resource exists in the cache
@@ -430,7 +473,7 @@ impl ResourceCache {
                 Ok(count > 0)
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to check resource existence: {}", e)))
+            .map_err(|e| anyhow::anyhow!("Failed to check resource existence: {}", e))
     }
 
     /// Remove a resource from the cache
@@ -447,7 +490,7 @@ impl ResourceCache {
                 Ok(changes > 0)
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to remove resource: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to remove resource: {}", e)))?;
 
         if removed {
             // Update analytics (we'll recalculate these properly in update_analytics)
@@ -466,7 +509,7 @@ impl ResourceCache {
                 Ok(())
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to clear cache: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to clear cache: {}", e)))?;
 
         // Reset analytics
         self.analytics = CacheAnalytics {
@@ -498,14 +541,14 @@ impl ResourceCache {
             })
             .await
             .map_err(|e| {
-                ClientError::Client(format!("Failed to cleanup expired resources: {}", e))
+                CacheError::Database(format!("Failed to cleanup expired resources: {}", e))
             })?;
 
         // Update analytics
         self.analytics.eviction_count += removed_count;
         self.analytics.last_cleanup = Utc::now();
         self.analytics.resource_count = self.analytics.resource_count.saturating_sub(removed_count);
-
+        
         // Update analytics from database
         self.update_analytics().await?;
 
@@ -537,7 +580,7 @@ impl ResourceCache {
                 Ok((size as u64, count as u64))
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to update analytics: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to update analytics: {}", e)))?;
 
         self.analytics.cache_size_bytes = total_size;
         self.analytics.resource_count = resource_count;
@@ -565,7 +608,7 @@ impl ResourceCache {
                 Ok(())
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to store analytics: {}", e)))?;
+            .map_err(|e| CacheError::Database(format!("Failed to store analytics: {}", e)))?;
 
         Ok(())
     }
@@ -618,7 +661,7 @@ impl ResourceCache {
                 Ok(resources)
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to search resources: {}", e)))
+            .map_err(|e| anyhow::anyhow!("Failed to search resources: {}", e))
     }
 
     /// Get cache size in bytes
@@ -633,7 +676,7 @@ impl ResourceCache {
                 Ok(size as u64)
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to get cache size: {}", e)))
+            .map_err(|e| anyhow::anyhow!("Failed to get cache size: {}", e))
     }
 
     /// Compact the database to reclaim space
@@ -644,14 +687,13 @@ impl ResourceCache {
                 Ok(())
             })
             .await
-            .map_err(|e| ClientError::Client(format!("Failed to compact database: {}", e)))
+            .map_err(|e| anyhow::anyhow!("Failed to compact database: {}", e))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resource::ResourceInfo;
     use std::collections::HashMap;
     use tempfile::NamedTempFile;
 

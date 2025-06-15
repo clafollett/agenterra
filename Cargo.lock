@@ -28,6 +28,7 @@ dependencies = [
  "lazy_static",
  "log",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "serde_yaml",

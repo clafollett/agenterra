@@ -71,10 +71,7 @@ impl TemplateManager {
         template_dir: Option<PathBuf>,
     ) -> Result<Self> {
         // Convert PathBuf to TemplateDir using discover method
-        let template_dir = TemplateDir::discover(
-            template_kind,
-            template_dir.as_deref(),
-        )?;
+        let template_dir = TemplateDir::discover(template_kind, template_dir.as_deref())?;
 
         // Get the template path for Tera
         let template_path = template_dir.template_path();
@@ -126,7 +123,10 @@ impl TemplateManager {
 
         // Create Tera instance with the template directory
         let tera_pattern = format!("{}/**/*", template_dir_str);
-        eprintln!("[DEBUG] TemplateManager - Creating Tera with pattern: {}", tera_pattern);
+        eprintln!(
+            "[DEBUG] TemplateManager - Creating Tera with pattern: {}",
+            tera_pattern
+        );
         let tera = Tera::new(&tera_pattern).map_err(|e| {
             eprintln!("[ERROR] Failed to create Tera instance: {}", e);
             io::Error::new(
@@ -171,10 +171,9 @@ impl TemplateManager {
 
         // Use the same pattern as server templates - construct the full path
         let base_dir = template_dir.unwrap_or_else(|| {
-            TemplateDir::find_template_base_dir()
-                .expect("Could not find template directory")
+            TemplateDir::find_template_base_dir().expect("Could not find template directory")
         });
-        
+
         let template_dir_path = base_dir
             .join("templates")
             .join("mcp")
@@ -587,7 +586,7 @@ impl TemplateManager {
 
         // Add project name from config (user-specified)
         base_map.insert("project_name".to_string(), json!(config.project_name));
-        
+
         // Add project title from spec for reference
         if let Some(title) = openapi_context
             .json
@@ -1268,8 +1267,12 @@ mod tests {
     #[tokio::test]
     async fn test_template_manager() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let templates_base_dir = temp_dir.path().join("templates");
-        let template_dir = templates_base_dir.join("custom");
+        let templates_base_dir = temp_dir.path();
+        let template_dir = templates_base_dir
+            .join("templates")
+            .join("mcp")
+            .join("server")
+            .join("custom");
         tokio::fs::create_dir_all(&template_dir).await?;
 
         // Create a simple template
@@ -1296,9 +1299,11 @@ mod tests {
         tokio::fs::write(&manifest_path, manifest_toml).await?;
 
         // Test creating a new TemplateManager
-        let manager =
-            TemplateManager::new(ServerTemplateKind::Custom, Some(templates_base_dir.clone()))
-                .await?;
+        let manager = TemplateManager::new(
+            ServerTemplateKind::Custom,
+            Some(templates_base_dir.to_path_buf()),
+        )
+        .await?;
 
         // Test template_kind
         assert_eq!(manager.template_kind(), ServerTemplateKind::Custom);

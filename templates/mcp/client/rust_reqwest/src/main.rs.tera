@@ -4,6 +4,7 @@
 
 mod client;
 mod repl;
+mod cache;
 
 use anyhow::Result;
 use clap::Parser;
