@@ -220,8 +220,8 @@ async fn generate_mcp_client(
 ) -> anyhow::Result<()> {
     println!("🚀 Generating MCP client with template: {}", template);
 
-    // Parse template
-    let _template_kind_enum: ClientTemplateKind = template
+    // Parse and validate template
+    let template_kind_enum: ClientTemplateKind = template
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid client template '{}': {}", template, e))?;
 
@@ -234,7 +234,7 @@ async fn generate_mcp_client(
     let client_config = ClientConfig {
         project_name: project_name.to_string(),
         output_dir: output_path.to_string_lossy().to_string(),
-        template_kind: template.to_string(),
+        template_kind: template_kind_enum.as_str().to_string(),
         template_dir: template_dir
             .as_ref()
             .map(|p| p.to_string_lossy().to_string()),

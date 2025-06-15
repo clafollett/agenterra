@@ -1,4 +1,4 @@
-//! Error types for the Agenterra MCP Client
+//! Error types for the {{ project_name | default(value="MCP Client") }}
 
 use thiserror::Error;
 

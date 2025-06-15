@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time;
 
-use crate::cache::{ResourceCache, CacheConfig, ResourceContent, ResourceInfo};
+use crate::cache::{ResourceCache, CacheConfig};
+use crate::resource::{ResourceContent, ResourceInfo};
 
 /// MCP client for tool discovery and invocation
 pub struct McpClient {

@@ -5,6 +5,8 @@
 mod client;
 mod repl;
 mod cache;
+mod error;
+mod resource;
 
 use anyhow::Result;
 use clap::Parser;

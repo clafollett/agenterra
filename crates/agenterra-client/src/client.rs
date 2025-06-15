@@ -1304,6 +1304,9 @@ mod tests {
             max_size_mb: 50,
             auto_cleanup: true,
             cleanup_interval: Duration::from_secs(60),
+            pool_min_connections: None,
+            pool_max_connections: None,
+            pool_connection_timeout: None,
         };
 
         let client = AgenterraClient::new(Box::new(mock_transport))

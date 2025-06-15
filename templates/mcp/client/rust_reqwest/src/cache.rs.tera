@@ -4,56 +4,16 @@
 //! that goes beyond simple key-value storage to offer a full-featured resource database
 //! with structured storage, rich queries, ACID transactions, and built-in analytics.
 
-use anyhow::{Result, Context};
-use thiserror::Error;
+use crate::error::{ClientError, Result};
+use crate::resource::{ResourceContent, ResourceInfo};
 use chrono::{DateTime, Utc};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio_rusqlite::Connection;
 use uuid::Uuid;
 
-/// Errors that can occur during cache operations
-#[derive(Error, Debug)]
-pub enum CacheError {
-    /// Database errors
-    #[error("Database error: {0}")]
-    Database(String),
-    
-    /// Serialization/deserialization errors
-    #[error("Serialization error: {0}")]
-    Serialization(String),
-    
-    /// Validation errors
-    #[error("Validation error: {0}")]
-    Validation(String),
-}
-
-/// Information about an MCP resource
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceInfo {
-    /// Resource URI identifier
-    pub uri: String,
-    /// Human-readable name
-    pub name: Option<String>,
-    /// Resource description
-    pub description: Option<String>,
-    /// MIME type of the resource
-    pub mime_type: Option<String>,
-    /// Additional metadata
-    pub metadata: HashMap<String, serde_json::Value>,
-}
-
-/// Content of a resource retrieved from MCP server
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceContent {
-    /// Resource metadata
-    pub info: ResourceInfo,
-    /// Raw content data
-    pub data: Vec<u8>,
-    /// Content encoding (if any)
-    pub encoding: Option<String>,
-}
 
 /// Configuration for the resource cache
 #[derive(Debug, Clone)]
@@ -68,6 +28,12 @@ pub struct CacheConfig {
     pub auto_cleanup: bool,
     /// Cleanup interval for expired resources
     pub cleanup_interval: Duration,
+    /// Minimum number of connections in the pool
+    pub pool_min_connections: Option<u32>,
+    /// Maximum number of connections in the pool
+    pub pool_max_connections: Option<u32>,
+    /// Connection timeout for pool operations
+    pub pool_connection_timeout: Option<Duration>,
 }
 
 impl Default for CacheConfig {
@@ -78,6 +44,9 @@ impl Default for CacheConfig {
             max_size_mb: 100,                       // 100 MB
             auto_cleanup: true,
             cleanup_interval: Duration::from_secs(300), // 5 minutes
+            pool_min_connections: Some(1),  // Minimum connections in pool
+            pool_max_connections: Some(10), // Maximum connections in pool
+            pool_connection_timeout: Some(Duration::from_secs(30)),
         }
     }
 }
@@ -128,24 +97,30 @@ pub struct CachedResource {
     pub size_bytes: u64,
 }
 
+/// Connection pool statistics
+#[derive(Debug, Clone)]
+pub struct PoolStats {
+    /// Maximum number of connections in the pool
+    pub max_connections: u32,
+    /// Current number of active connections
+    pub active_connections: u32,
+    /// Number of connections waiting in the pool
+    pub idle_connections: u32,
+}
+
 /// SQLite-powered resource cache
 pub struct ResourceCache {
-    /// SQLite database connection
-    connection: Connection,
     /// Cache configuration
     config: CacheConfig,
     /// Cache analytics
     analytics: CacheAnalytics,
+    /// Connection pool for all database operations
+    pool: Pool<SqliteConnectionManager>,
 }
 
 impl ResourceCache {
     /// Create a new resource cache with the given configuration
     pub async fn new(config: CacheConfig) -> Result<Self> {
-        // Open SQLite connection
-        let connection = Connection::open(&config.database_path)
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to open cache database: {}", e)))?;
-
         // Initialize analytics
         let analytics = CacheAnalytics {
             total_requests: 0,
@@ -158,10 +133,32 @@ impl ResourceCache {
             last_cleanup: Utc::now(),
         };
 
+        // Always create a connection pool
+        let manager = SqliteConnectionManager::file(&config.database_path);
+        let mut pool_builder = Pool::builder();
+
+        // Use provided settings or defaults
+        if let Some(min_size) = config.pool_min_connections {
+            pool_builder = pool_builder.min_idle(Some(min_size));
+        }
+        if let Some(max_size) = config.pool_max_connections {
+            pool_builder = pool_builder.max_size(max_size);
+        }
+        if let Some(timeout) = config.pool_connection_timeout {
+            pool_builder = pool_builder.connection_timeout(timeout);
+        }
+
+        // Set max lifetime to recycle long-lived connections and avoid stale WAL readers
+        pool_builder = pool_builder.max_lifetime(Some(Duration::from_secs(300))); // 5 minutes
+
+        let pool = pool_builder.build(manager).map_err(|e| {
+            ClientError::Pool(format!("Failed to create connection pool: {}", e))
+        })?;
+
         let cache = Self {
-            connection,
             config,
             analytics,
+            pool,
         };
 
         // Initialize database schema
@@ -170,76 +167,89 @@ impl ResourceCache {
         Ok(cache)
     }
 
+    /// Execute a function with a database connection from the pool
+    async fn with_connection<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> rusqlite::Result<R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let pool = self.pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| {
+                ClientError::Pool(format!("Failed to get pooled connection: {}", e))
+            })?;
+            f(&mut conn).map_err(|e| ClientError::Client(format!("Database operation failed: {}", e)))
+        })
+        .await
+        .map_err(|e| ClientError::Spawn(format!("Task execution failed: {}", e)))?
+    }
+
     /// Initialize the SQLite database schema
     async fn init_schema(&self) -> Result<()> {
-        self.connection
-            .call(|conn| {
-                // Enable WAL mode for better concurrent access
-                conn.pragma_update(None, "journal_mode", "WAL")?;
-                conn.pragma_update(None, "synchronous", "NORMAL")?;
-                conn.pragma_update(None, "cache_size", 10000)?;
-                conn.pragma_update(None, "temp_store", "memory")?;
+        self.with_connection(|conn| {
+            // Enable WAL mode for better concurrent access
+            conn.pragma_update(None, "journal_mode", "WAL")?;
+            conn.pragma_update(None, "synchronous", "NORMAL")?;
+            conn.pragma_update(None, "cache_size", 10000)?;
+            conn.pragma_update(None, "temp_store", "memory")?;
 
-                // Create resources table
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS resources (
-                        id TEXT PRIMARY KEY,
-                        uri TEXT UNIQUE NOT NULL,
-                        content BLOB NOT NULL,
-                        content_type TEXT,
-                        metadata_json TEXT,
-                        created_at INTEGER NOT NULL,
-                        accessed_at INTEGER NOT NULL,
-                        expires_at INTEGER,
-                        access_count INTEGER DEFAULT 0,
-                        size_bytes INTEGER NOT NULL
-                    )",
-                    [],
-                )?;
+            // Create resources table
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS resources (
+                    id TEXT PRIMARY KEY,
+                    uri TEXT UNIQUE NOT NULL,
+                    content BLOB NOT NULL,
+                    content_type TEXT,
+                    metadata_json TEXT,
+                    created_at INTEGER NOT NULL,
+                    accessed_at INTEGER NOT NULL,
+                    expires_at INTEGER,
+                    access_count INTEGER DEFAULT 0,
+                    size_bytes INTEGER NOT NULL
+                )",
+                [],
+            )?;
 
-                // Create indexes for performance
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri)",
-                    [],
-                )?;
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at)",
-                    [],
-                )?;
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at)",
-                    [],
-                )?;
+            // Create indexes for performance
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at)",
+                [],
+            )?;
 
-                // Create cache analytics table
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS cache_analytics (
-                        timestamp INTEGER PRIMARY KEY,
-                        hit_rate REAL,
-                        total_requests INTEGER,
-                        cache_size_mb REAL,
-                        eviction_count INTEGER
-                    )",
-                    [],
-                )?;
+            // Create cache analytics table
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS cache_analytics (
+                    timestamp INTEGER PRIMARY KEY,
+                    hit_rate REAL,
+                    total_requests INTEGER,
+                    cache_size_mb REAL,
+                    eviction_count INTEGER
+                )",
+                [],
+            )?;
 
-                // Create cleanup trigger for expired resources
-                conn.execute(
-                    "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
-                     AFTER INSERT ON resources
-                     BEGIN
-                         DELETE FROM resources 
-                         WHERE expires_at IS NOT NULL 
-                         AND expires_at < strftime('%s', 'now') * 1000;
-                     END",
-                    [],
-                )?;
+            // Create cleanup trigger for expired resources
+            conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
+                 AFTER INSERT ON resources
+                 BEGIN
+                     DELETE FROM resources 
+                     WHERE expires_at IS NOT NULL 
+                     AND expires_at < strftime('%s', 'now') * 1000;
+                 END",
+                [],
+            )?;
 
-                Ok(())
-            })
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to initialize cache schema: {}", e)))?;
-        Ok(())
+            Ok(())
+        }).await
     }
 
     /// Store a resource in the cache
@@ -261,12 +271,12 @@ impl ResourceCache {
         } else {
             Some(
                 now + chrono::Duration::from_std(ttl)
-                    .map_err(|_| CacheError::Validation("Invalid TTL duration".to_string()))?,
+                    .map_err(|_| ClientError::Validation("Invalid TTL duration".to_string()))?,
             )
         };
 
         let metadata_json = serde_json::to_string(&resource.info.metadata)
-            .map_err(|e| CacheError::Database(format!("Failed to serialize metadata: {}", e)))?;
+            .map_err(|e| ClientError::Client(format!("Failed to serialize metadata: {}", e)))?;
 
         let size_bytes = resource.data.len() as u64;
 
@@ -279,35 +289,32 @@ impl ResourceCache {
         let accessed_at = now.timestamp_millis();
         let expires_at_millis = expires_at.map(|t| t.timestamp_millis());
 
-        self.connection
-            .call(move |conn| {
-                // Use a transaction for ACID guarantees
-                let tx = conn.transaction()?;
+        self.with_connection(move |conn| {
+            // Use a transaction for ACID guarantees
+            let tx = conn.transaction()?;
 
-                tx.execute(
-                    "INSERT OR REPLACE INTO resources (
-                        id, uri, content, content_type, metadata_json,
-                        created_at, accessed_at, expires_at, access_count, size_bytes
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                    rusqlite::params![
-                        id_clone,
-                        uri,
-                        content,
-                        content_type,
-                        metadata_json,
-                        created_at,
-                        accessed_at,
-                        expires_at_millis,
-                        1, // Initial access count
-                        size_bytes as i64,
-                    ],
-                )?;
+            tx.execute(
+                "INSERT OR REPLACE INTO resources (
+                    id, uri, content, content_type, metadata_json,
+                    created_at, accessed_at, expires_at, access_count, size_bytes
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    id_clone,
+                    uri,
+                    content,
+                    content_type,
+                    metadata_json,
+                    created_at,
+                    accessed_at,
+                    expires_at_millis,
+                    1, // Initial access count
+                    size_bytes as i64,
+                ],
+            )?;
 
-                tx.commit()?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to store resource: {}", e)))?;
+            tx.commit()?;
+            Ok(())
+        }).await?;
 
         // Update analytics
         self.analytics.resource_count += 1;
@@ -322,8 +329,7 @@ impl ResourceCache {
         let now = Utc::now().timestamp_millis();
 
         let result = self
-            .connection
-            .call(move |conn| {
+            .with_connection(move |conn| {
                 // Check if resource exists and is not expired
                 let mut stmt = conn.prepare(
                     "SELECT id, uri, content, content_type, metadata_json, 
@@ -349,7 +355,7 @@ impl ResourceCache {
                 }) {
                     Ok(row) => row,
                     Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
-                    Err(e) => return Err(tokio_rusqlite::Error::Rusqlite(e)),
+                    Err(e) => return Err(e),
                 };
 
                 // Update access time and count
@@ -360,15 +366,14 @@ impl ResourceCache {
 
                 Ok(Some(row))
             })
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to retrieve resource: {}", e)))?;
+            .await?;
 
         match result {
             Some((_, uri, content, content_type, metadata_json, _, _, _, _, _)) => {
                 // Parse metadata
                 let metadata: HashMap<String, serde_json::Value> =
                     serde_json::from_str(&metadata_json).map_err(|e| {
-                        CacheError::Database(format!("Failed to parse metadata: {}", e))
+                        ClientError::Client(format!("Failed to parse metadata: {}", e))
                     })?;
 
                 // Construct ResourceInfo
@@ -414,9 +419,8 @@ impl ResourceCache {
     pub async fn list_cached_resources(&self) -> Result<Vec<CachedResource>> {
         let now = Utc::now().timestamp_millis();
 
-        self.connection
-            .call(move |conn| {
-                let mut stmt = conn.prepare(
+        self.with_connection(move |conn| {
+            let mut stmt = conn.prepare(
                     "SELECT id, uri, content, content_type, metadata_json,
                             created_at, accessed_at, expires_at, access_count, size_bytes
                      FROM resources
@@ -453,9 +457,7 @@ impl ResourceCache {
                 }
 
                 Ok(resources)
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to list cached resources: {}", e))
+        }).await
     }
 
     /// Check if a resource exists in the cache
@@ -463,17 +465,14 @@ impl ResourceCache {
         let uri = uri.to_string();
         let now = Utc::now().timestamp_millis();
 
-        self.connection
-            .call(move |conn| {
-                let count: i64 = conn.query_row(
-                    "SELECT COUNT(*) FROM resources WHERE uri = ?1 AND (expires_at IS NULL OR expires_at > ?2)",
-                    rusqlite::params![uri, now],
-                    |row| row.get(0),
-                )?;
-                Ok(count > 0)
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to check resource existence: {}", e))
+        self.with_connection(move |conn| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM resources WHERE uri = ?1 AND (expires_at IS NULL OR expires_at > ?2)",
+                rusqlite::params![uri, now],
+                |row| row.get(0),
+            )?;
+            Ok(count > 0)
+        }).await
     }
 
     /// Remove a resource from the cache
@@ -481,16 +480,14 @@ impl ResourceCache {
         let uri = uri.to_string();
 
         let removed = self
-            .connection
-            .call(move |conn| {
+            .with_connection(move |conn| {
                 let changes = conn.execute(
                     "DELETE FROM resources WHERE uri = ?1",
                     rusqlite::params![uri],
                 )?;
                 Ok(changes > 0)
             })
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to remove resource: {}", e)))?;
+            .await?;
 
         if removed {
             // Update analytics (we'll recalculate these properly in update_analytics)
@@ -502,14 +499,11 @@ impl ResourceCache {
 
     /// Clear all cached resources
     pub async fn clear(&mut self) -> Result<()> {
-        self.connection
-            .call(|conn| {
-                conn.execute("DELETE FROM resources", [])?;
-                conn.execute("DELETE FROM cache_analytics", [])?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to clear cache: {}", e)))?;
+        self.with_connection(|conn| {
+            conn.execute("DELETE FROM resources", [])?;
+            conn.execute("DELETE FROM cache_analytics", [])?;
+            Ok(())
+        }).await?;
 
         // Reset analytics
         self.analytics = CacheAnalytics {
@@ -531,18 +525,14 @@ impl ResourceCache {
         let now = Utc::now().timestamp_millis();
 
         let removed_count = self
-            .connection
-            .call(move |conn| {
+            .with_connection(move |conn| {
                 let changes = conn.execute(
                     "DELETE FROM resources WHERE expires_at IS NOT NULL AND expires_at <= ?1",
                     rusqlite::params![now],
                 )?;
                 Ok(changes as u64)
             })
-            .await
-            .map_err(|e| {
-                CacheError::Database(format!("Failed to cleanup expired resources: {}", e))
-            })?;
+            .await?;
 
         // Update analytics
         self.analytics.eviction_count += removed_count;
@@ -563,8 +553,7 @@ impl ResourceCache {
     /// Update cache analytics
     async fn update_analytics(&mut self) -> Result<()> {
         let (total_size, resource_count) = self
-            .connection
-            .call(|conn| {
+            .with_connection(|conn| {
                 let size: i64 = conn
                     .query_row(
                         "SELECT COALESCE(SUM(size_bytes), 0) FROM resources",
@@ -579,8 +568,7 @@ impl ResourceCache {
 
                 Ok((size as u64, count as u64))
             })
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to update analytics: {}", e)))?;
+            .await?;
 
         self.analytics.cache_size_bytes = total_size;
         self.analytics.resource_count = resource_count;
@@ -592,23 +580,20 @@ impl ResourceCache {
         let cache_size_mb = (self.analytics.cache_size_bytes as f64) / (1024.0 * 1024.0);
         let eviction_count = self.analytics.eviction_count as i64;
 
-        self.connection
-            .call(move |conn| {
-                conn.execute(
-                    "INSERT INTO cache_analytics (timestamp, hit_rate, total_requests, cache_size_mb, eviction_count)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    rusqlite::params![
-                        timestamp,
-                        hit_rate,
-                        total_requests,
-                        cache_size_mb,
-                        eviction_count,
-                    ],
-                )?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| CacheError::Database(format!("Failed to store analytics: {}", e)))?;
+        self.with_connection(move |conn| {
+            conn.execute(
+                "INSERT INTO cache_analytics (timestamp, hit_rate, total_requests, cache_size_mb, eviction_count)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    timestamp,
+                    hit_rate,
+                    total_requests,
+                    cache_size_mb,
+                    eviction_count,
+                ],
+            )?;
+            Ok(())
+        }).await?;
 
         Ok(())
     }
@@ -618,8 +603,7 @@ impl ResourceCache {
         let query = query.to_string();
         let now = Utc::now().timestamp_millis();
 
-        self.connection
-            .call(move |conn| {
+        self.with_connection(move |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT id, uri, content, content_type, metadata_json,
                             created_at, accessed_at, expires_at, access_count, size_bytes
@@ -659,35 +643,37 @@ impl ResourceCache {
                 }
 
                 Ok(resources)
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to search resources: {}", e))
+        }).await
     }
 
     /// Get cache size in bytes
     pub async fn get_cache_size(&self) -> Result<u64> {
-        self.connection
-            .call(|conn| {
-                let size: i64 = conn.query_row(
-                    "SELECT COALESCE(SUM(size_bytes), 0) FROM resources",
-                    [],
-                    |row| row.get(0),
-                )?;
-                Ok(size as u64)
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get cache size: {}", e))
+        self.with_connection(|conn| {
+            let size: i64 = conn.query_row(
+                "SELECT COALESCE(SUM(size_bytes), 0) FROM resources",
+                [],
+                |row| row.get(0),
+            )?;
+            Ok(size as u64)
+        }).await
     }
 
     /// Compact the database to reclaim space
     pub async fn compact(&mut self) -> Result<()> {
-        self.connection
-            .call(|conn| {
-                conn.execute("VACUUM", [])?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to compact database: {}", e))
+        self.with_connection(|conn| {
+            conn.execute("VACUUM", [])?;
+            Ok(())
+        }).await
+    }
+
+    /// Get connection pool statistics
+    pub fn get_pool_stats(&self) -> PoolStats {
+        let state = self.pool.state();
+        PoolStats {
+            max_connections: self.pool.max_size(),
+            active_connections: state.connections - state.idle_connections,
+            idle_connections: state.idle_connections,
+        }
     }
 }
 

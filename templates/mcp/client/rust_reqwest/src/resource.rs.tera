@@ -1,4 +1,4 @@
-//! Resource management for MCP client
+//! Resource management for {{ project_name | default(value="MCP Client") }}
 //!
 //! Provides APIs for discovering and accessing MCP resources using URI-based identification.
 
@@ -24,7 +24,7 @@ pub struct ResourceInfo {
 /// Client for MCP resource operations
 #[derive(Debug)]
 pub struct ResourceClient {
-    // Will be integrated with main AgenterraClient
+    // Will be integrated with main {{ project_name | default(value="MCP") }}Client
     _placeholder: (),
 }
 
@@ -79,7 +79,7 @@ mod tests {
     async fn test_list_resources_standalone_client() {
         let client = ResourceClient::new();
 
-        // Standalone ResourceClient should still fail (it needs integration with AgenterraClient)
+        // Standalone ResourceClient should still fail (it needs integration with {{ project_name | default(value="MCP") }}Client)
         let result = client.list_resources().await;
 
         assert!(result.is_err());
@@ -94,7 +94,7 @@ mod tests {
     async fn test_get_resource_standalone_client() {
         let client = ResourceClient::new();
 
-        // Standalone ResourceClient should still fail (it needs integration with AgenterraClient)
+        // Standalone ResourceClient should still fail (it needs integration with {{ project_name | default(value="MCP") }}Client)
         let result = client.get_resource("file:///test.txt").await;
 
         assert!(result.is_err());

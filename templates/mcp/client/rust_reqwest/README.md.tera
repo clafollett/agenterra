@@ -68,6 +68,21 @@ The client supports the following command-line options:
 - `--debug` - Enable debug logging
 - `--timeout <seconds>` - Connection timeout in seconds (default: 10)
 
+### Cache Configuration
+
+The client includes an SQLite-powered resource cache with connection pooling for optimal performance:
+
+- **Default pool settings**: 1 minimum, 10 maximum connections
+- **Connection lifetime**: 5 minutes (auto-recycled to avoid stale WAL readers)
+- **Cache location**: `data/{{ project_name | default(value="mcp_client") }}_cache.db` (next to executable)
+- **Pool statistics**: Available via `get_pool_stats()` method
+
+The cache provides:
+- Resource caching with TTL support
+- Analytics and performance metrics
+- Concurrent access via connection pooling
+- Automatic cleanup of expired resources
+
 ## Dependencies
 
 - **rmcp**: MCP protocol implementation
@@ -75,6 +90,9 @@ The client supports the following command-line options:
 - **rustyline**: Interactive command-line editing
 - **tokio**: Async runtime
 - **serde**: Serialization support
+- **rusqlite**: SQLite database engine for resource caching
+- **r2d2**: Connection pooling for database operations
+- **chrono**: Date and time handling for cache analytics
 
 ## Development
 

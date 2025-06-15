@@ -19,6 +19,12 @@ files:
   - source: "src/cache.rs.tera"
     destination: "src/cache.rs"
     
+  - source: "src/error.rs.tera"
+    destination: "src/error.rs"
+    
+  - source: "src/resource.rs.tera"
+    destination: "src/resource.rs"
+    
   - source: "README.md.tera"
     destination: "README.md"
 

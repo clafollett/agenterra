@@ -14,9 +14,9 @@
                 "mcp",
                 "server",
                 "--project-name",
-                "test_server",
+                "${input:serverName}",
                 "--output-dir",
-                "${workspaceFolder}/.agenterra/test_server",
+                "${workspaceFolder}/.agenterra/${input:serverName}",
                 "--schema-path",
                 "${workspaceFolder}/tests/fixtures/openapi/petstore.openapi.v3.json",
                 "--template",
@@ -26,6 +26,14 @@
             ],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "rust: cargo build"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "serverName",
+            "description": "Server project name",
+            "default": "test_server",
+            "type": "promptString"
         }
     ]
 }

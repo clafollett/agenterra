@@ -22,6 +22,7 @@ use super::{ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateOptions
 use serde::Serialize;
 use serde_json::{Map, Value as JsonValue, json};
 use tera::{Context, Tera};
+use tracing::{debug, error};
 
 /// Internal unified template kind for TemplateManager
 #[derive(Debug, Clone)]
@@ -123,12 +124,12 @@ impl TemplateManager {
 
         // Create Tera instance with the template directory
         let tera_pattern = format!("{}/**/*", template_dir_str);
-        eprintln!(
-            "[DEBUG] TemplateManager - Creating Tera with pattern: {}",
+        debug!(
+            "TemplateManager - Creating Tera with pattern: {}",
             tera_pattern
         );
         let tera = Tera::new(&tera_pattern).map_err(|e| {
-            eprintln!("[ERROR] Failed to create Tera instance: {}", e);
+            error!("Failed to create Tera instance: {}", e);
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Failed to parse templates: {}", e),
