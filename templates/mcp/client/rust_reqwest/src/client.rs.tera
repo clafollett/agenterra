@@ -1,7 +1,12 @@
 //! MCP client implementation using rmcp protocol
 
 use anyhow::{Result, Context};
-use rmcp::{Client, ClientResponse, ToolCall, ToolResult, Resource, Tool, Prompt};
+use rmcp::{
+    RoleClient,
+    model::{CallToolRequestParam, ReadResourceRequestParam, GetPromptRequestParam, CallToolResult},
+    service::{RunningService, ServiceExt},
+    transport::TokioChildProcess,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -9,19 +14,19 @@ use tokio::time;
 
 /// MCP client for tool discovery and invocation
 pub struct McpClient {
-    client: Option<Client>,
+    service: Option<RunningService<RoleClient, ()>>,
     server_url: String,
     timeout: Duration,
-    tools: HashMap<String, Tool>,
-    resources: Vec<Resource>,
-    prompts: Vec<Prompt>,
+    tools: HashMap<String, rmcp::model::Tool>,
+    resources: Vec<rmcp::model::Resource>,
+    prompts: Vec<rmcp::model::Prompt>,
 }
 
 impl McpClient {
     /// Create a new MCP client
     pub async fn new(server_url: &str, timeout_secs: u64) -> Result<Self> {
         Ok(Self {
-            client: None,
+            service: None,
             server_url: server_url.to_string(),
             timeout: Duration::from_secs(timeout_secs),
             tools: HashMap::new(),
@@ -30,20 +35,14 @@ impl McpClient {
         })
     }
 
-    /// Connect to the MCP server
-    pub async fn connect(&mut self) -> Result<()> {
-        tracing::info!("Connecting to MCP server at: {}", self.server_url);
+    /// Connect to the MCP server via stdio (subprocess)
+    pub async fn connect_stdio(&mut self, mut command: tokio::process::Command) -> Result<()> {
+        tracing::info!("Connecting to MCP server via stdio");
         
-        // Create rmcp client based on connection type
-        let client = if self.server_url == "stdio" {
-            // For stdio connection (subprocess)
-            Client::stdio().context("Failed to create stdio MCP client")?
-        } else {
-            // For other connection types, we'd implement HTTP/WebSocket here
-            return Err(anyhow::anyhow!("Only stdio connections are currently supported"));
-        };
+        let transport = TokioChildProcess::new(command).context("Failed to create child process transport")?;
+        let service = ().serve(transport).await.context("Failed to connect to MCP server")?;
 
-        self.client = Some(client);
+        self.service = Some(service);
         
         // Discover available tools, resources, and prompts
         self.discover_capabilities().await?;
@@ -51,19 +50,31 @@ impl McpClient {
         Ok(())
     }
 
+    /// Connect to the MCP server (legacy method for backwards compatibility)
+    pub async fn connect(&mut self) -> Result<()> {
+        if self.server_url == "stdio" {
+            // For backwards compatibility, create a simple echo command
+            let mut command = tokio::process::Command::new("echo");
+            command.arg("MCP server placeholder");
+            return Err(anyhow::anyhow!("Please use connect_stdio() with a proper command instead"));
+        } else {
+            return Err(anyhow::anyhow!("Only stdio connections are currently supported. Use connect_stdio() method."));
+        }
+    }
+
     /// Discover tools, resources, and prompts from the server
     async fn discover_capabilities(&mut self) -> Result<()> {
-        let client = self.client.as_mut().context("Client not connected")?;
+        let service = self.service.as_ref().context("Service not connected")?;
         
         tracing::info!("Discovering server capabilities...");
         
         // Discover tools
-        match time::timeout(self.timeout, client.list_tools()).await? {
-            Ok(tools) => {
+        match time::timeout(self.timeout, service.list_tools(Default::default())).await? {
+            Ok(tools_response) => {
                 self.tools.clear();
-                for tool in tools {
+                for tool in tools_response.tools {
                     tracing::debug!("Discovered tool: {}", tool.name);
-                    self.tools.insert(tool.name.clone(), tool);
+                    self.tools.insert(tool.name.to_string(), tool);
                 }
                 tracing::info!("Discovered {} tools", self.tools.len());
             }
@@ -71,7 +82,7 @@ impl McpClient {
         }
 
         // Discover resources
-        match time::timeout(self.timeout, client.list_resources()).await? {
+        match time::timeout(self.timeout, service.list_all_resources()).await? {
             Ok(resources) => {
                 self.resources = resources;
                 tracing::info!("Discovered {} resources", self.resources.len());
@@ -80,9 +91,9 @@ impl McpClient {
         }
 
         // Discover prompts
-        match time::timeout(self.timeout, client.list_prompts()).await? {
-            Ok(prompts) => {
-                self.prompts = prompts;
+        match time::timeout(self.timeout, service.list_prompts(Default::default())).await? {
+            Ok(prompts_response) => {
+                self.prompts = prompts_response.prompts;
                 tracing::info!("Discovered {} prompts", self.prompts.len());
             }
             Err(e) => tracing::warn!("Failed to discover prompts: {}", e),
@@ -92,32 +103,33 @@ impl McpClient {
     }
 
     /// Get list of available tools
-    pub fn get_tools(&self) -> &HashMap<String, Tool> {
+    pub fn get_tools(&self) -> &HashMap<String, rmcp::model::Tool> {
         &self.tools
     }
 
     /// Get list of available resources
-    pub fn get_resources(&self) -> &[Resource] {
+    pub fn get_resources(&self) -> &[rmcp::model::Resource] {
         &self.resources
     }
 
     /// Get list of available prompts
-    pub fn get_prompts(&self) -> &[Prompt] {
+    pub fn get_prompts(&self) -> &[rmcp::model::Prompt] {
         &self.prompts
     }
 
     /// Call a tool with given arguments
-    pub async fn call_tool(&mut self, tool_name: &str, arguments: Value) -> Result<ToolResult> {
-        let client = self.client.as_mut().context("Client not connected")?;
+    pub async fn call_tool(&mut self, tool_name: &str, arguments: Value) -> Result<CallToolResult> {
+        let service = self.service.as_ref().context("Service not connected")?;
         
         tracing::info!("Calling tool: {} with arguments: {}", tool_name, arguments);
         
-        let tool_call = ToolCall {
-            name: tool_name.to_string(),
-            arguments,
+        let arguments_object = arguments.as_object().cloned();
+        let request = CallToolRequestParam {
+            name: tool_name.to_string().into(),
+            arguments: arguments_object,
         };
 
-        let result = time::timeout(self.timeout, client.call_tool(tool_call))
+        let result = time::timeout(self.timeout, service.call_tool(request))
             .await?
             .context("Tool call failed")?;
 
@@ -127,40 +139,58 @@ impl McpClient {
 
     /// Get a resource by URI
     pub async fn get_resource(&mut self, uri: &str) -> Result<Value> {
-        let client = self.client.as_mut().context("Client not connected")?;
+        let service = self.service.as_ref().context("Service not connected")?;
         
         tracing::info!("Getting resource: {}", uri);
         
-        let result = time::timeout(self.timeout, client.read_resource(uri))
+        let request = ReadResourceRequestParam {
+            uri: uri.to_string(),
+        };
+        
+        let result = time::timeout(self.timeout, service.read_resource(request))
             .await?
             .context("Resource read failed")?;
 
-        Ok(result)
+        // Convert the result to JSON
+        let result_json = serde_json::to_value(&result)
+            .context("Failed to serialize resource result")?;
+
+        Ok(result_json)
     }
 
     /// Get a prompt by name with arguments
     pub async fn get_prompt(&mut self, name: &str, arguments: Option<Value>) -> Result<Value> {
-        let client = self.client.as_mut().context("Client not connected")?;
+        let service = self.service.as_ref().context("Service not connected")?;
         
         tracing::info!("Getting prompt: {} with arguments: {:?}", name, arguments);
         
-        let result = time::timeout(self.timeout, client.get_prompt(name, arguments))
+        let arguments_object = arguments.and_then(|v| v.as_object().cloned());
+        let request = rmcp::model::GetPromptRequestParam {
+            name: name.to_string().into(),
+            arguments: arguments_object,
+        };
+        
+        let result = time::timeout(self.timeout, service.get_prompt(request))
             .await?
             .context("Prompt get failed")?;
 
-        Ok(result)
+        // Convert the result to JSON
+        let result_json = serde_json::to_value(&result)
+            .context("Failed to serialize prompt result")?;
+
+        Ok(result_json)
     }
 
     /// Check if client is connected
     pub fn is_connected(&self) -> bool {
-        self.client.is_some()
+        self.service.is_some()
     }
 
     /// Disconnect from server
     pub async fn disconnect(&mut self) -> Result<()> {
-        if let Some(mut client) = self.client.take() {
+        if let Some(service) = self.service.take() {
             tracing::info!("Disconnecting from MCP server");
-            // rmcp client handles cleanup on drop
+            // rmcp service handles cleanup on drop
         }
         Ok(())
     }

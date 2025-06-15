@@ -37,6 +37,11 @@ impl SecureCredential {
         &self.value
     }
 
+    /// Get the credential type
+    pub fn credential_type(&self) -> &CredentialType {
+        &self.credential_type
+    }
+
     /// Validate credential format and security
     fn validate_credential(value: &str, cred_type: &CredentialType) -> Result<()> {
         // 1. Basic validation
@@ -510,7 +515,7 @@ mod tests {
     #[test]
     fn test_memory_security() {
         // Test that credentials are properly zeroized
-        let mut cred =
+        let cred =
             SecureCredential::new("secret_key_123".to_string(), CredentialType::ApiKey).unwrap();
         let _value = cred.expose_secret();
 

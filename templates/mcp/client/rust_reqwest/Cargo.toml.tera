@@ -9,8 +9,8 @@ name = "{{ project_name | default(value="mcp_client") }}"
 path = "src/main.rs"
 
 [dependencies]
-# MCP Protocol
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main" }
+# MCP Protocol SDK (official)
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", package = "rmcp", features = ["client", "transport-child-process"] }
 
 # HTTP Client
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }

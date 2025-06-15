@@ -116,7 +116,7 @@ impl ResourceCache {
             last_cleanup: Utc::now(),
         };
 
-        let mut cache = Self {
+        let cache = Self {
             connection,
             config,
             analytics,
@@ -505,6 +505,9 @@ impl ResourceCache {
         self.analytics.eviction_count += removed_count;
         self.analytics.last_cleanup = Utc::now();
         self.analytics.resource_count = self.analytics.resource_count.saturating_sub(removed_count);
+        
+        // Update analytics from database
+        self.update_analytics().await?;
 
         Ok(removed_count)
     }

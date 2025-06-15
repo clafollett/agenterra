@@ -2,7 +2,7 @@
 
 use std::{path::PathBuf, str::FromStr};
 
-use crate::templates::{ServerTemplateKind, ClientTemplateKind, TemplateManager, TemplateOptions};
+use crate::templates::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions};
 use agenterra_core::{config::Config, error::Result, openapi::OpenApiContext};
 
 /// Generates MCP server code from an OpenAPI specification.
@@ -112,11 +112,14 @@ pub struct ClientConfig {
 /// # Ok(())
 /// # }
 /// ```
-pub async fn generate_client(config: &ClientConfig, template_opts: Option<TemplateOptions>) -> Result<()> {
+pub async fn generate_client(
+    config: &ClientConfig,
+    template_opts: Option<TemplateOptions>,
+) -> Result<()> {
     // 1. Parse template kind
     let template_kind = ClientTemplateKind::from_str(&config.template_kind).unwrap_or_default();
     let template_dir = config.template_dir.as_ref().map(PathBuf::from);
-    
+
     // 2. Initialize template manager for client generation
     let template_manager = TemplateManager::new_client(template_kind, template_dir).await?;
 

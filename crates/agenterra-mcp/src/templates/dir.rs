@@ -38,9 +38,13 @@ impl TemplateDir {
 
     /// Discover the template directory based on the template kind and optional override
     pub fn discover(kind: ServerTemplateKind, custom_dir: Option<&Path>) -> io::Result<Self> {
+        eprintln!("[DEBUG] TemplateDir::discover - kind: {:?}, custom_dir: {:?}", kind, custom_dir);
+        
         let root_dir = if let Some(dir) = custom_dir {
             // Use the provided directory directly
+            eprintln!("[DEBUG] Using custom template directory: {}", dir.display());
             if !dir.exists() {
+                eprintln!("[ERROR] Custom template directory not found: {}", dir.display());
                 return Err(io::Error::new(
                     io::ErrorKind::NotFound,
                     format!("Template directory not found: {}", dir.display()),
@@ -49,12 +53,16 @@ impl TemplateDir {
             dir.to_path_buf()
         } else {
             // Auto-discover the template directory
-            Self::find_template_base_dir().ok_or_else(|| {
+            eprintln!("[DEBUG] Auto-discovering template directory...");
+            let discovered = Self::find_template_base_dir().ok_or_else(|| {
+                eprintln!("[ERROR] Could not find template directory in any standard location");
                 io::Error::new(
                     io::ErrorKind::NotFound,
                     "Could not find template directory in any standard location",
                 )
-            })?
+            })?;
+            eprintln!("[DEBUG] Auto-discovered template base: {}", discovered.display());
+            discovered
         };
 
         let template_path = root_dir
@@ -63,14 +71,19 @@ impl TemplateDir {
             .join(kind.role().as_str())
             .join(kind.as_str());
 
+        eprintln!("[DEBUG] Resolved template path: {}", template_path.display());
+        eprintln!("[DEBUG] Template path exists: {}", template_path.exists());
+
         // Validate the template directory exists
         if !template_path.exists() {
+            eprintln!("[ERROR] Template directory not found at resolved path: {}", template_path.display());
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("Template directory not found: {}", template_path.display()),
             ));
         }
 
+        eprintln!("[DEBUG] Successfully created TemplateDir for: {}", template_path.display());
         Ok(Self::new(root_dir, template_path, kind))
     }
 

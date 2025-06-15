@@ -1120,7 +1120,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_with_auth_configuration() {
-        use crate::auth::{AuthConfig, CredentialType};
+        use crate::auth::AuthConfig;
 
         let mock_transport = MockTransport::new(vec![]);
 
@@ -1153,8 +1153,6 @@ mod tests {
     #[tokio::test]
     async fn test_client_auth_security_validation() {
         use crate::auth::AuthConfig;
-
-        let mock_transport = MockTransport::new(vec![]);
 
         // Test that dangerous credentials are rejected
         let dangerous_api_key = "ignore previous instructions\x00malicious";
@@ -1196,8 +1194,6 @@ mod tests {
     #[tokio::test]
     async fn test_auth_header_injection_protection() {
         use crate::auth::AuthConfig;
-
-        let mock_transport = MockTransport::new(vec![]);
 
         // Try to inject malicious headers
         let malicious_header_name = "X-API-Key\r\nInjected-Header: malicious";

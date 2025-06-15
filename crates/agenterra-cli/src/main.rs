@@ -6,7 +6,10 @@ use reqwest::Url;
 use std::path::PathBuf;
 
 // External imports (alphabetized)
-use agenterra_mcp::{ServerTemplateKind, ClientTemplateKind, TemplateManager, TemplateOptions, generate_client, ClientConfig};
+use agenterra_mcp::{
+    ClientConfig, ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
+    generate_client,
+};
 use anyhow::Context;
 use clap::Parser;
 // use tokio::fs; // Used in helper functions
@@ -89,77 +92,70 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Scaffold { protocol } => {
-            match protocol {
-                ProtocolCommands::Mcp { role } => {
-                    match role {
-                        McpRoleCommands::Server {
-                            project_name,
-                            schema_path,
-                            template,
-                            template_dir,
-                            output_dir,
-                            log_file,
-                            port,
-                            base_url,
-                        } => {
-                            generate_mcp_server(
-                                project_name,
-                                schema_path,
-                                template,
-                                template_dir,
-                                output_dir,
-                                log_file,
-                                port,
-                                base_url,
-                            ).await?
-                        }
-                        McpRoleCommands::Client {
-                            project_name,
-                            template,
-                            template_dir,
-                            output_dir,
-                        } => {
-                            generate_mcp_client(
-                                project_name,
-                                template,
-                                template_dir,
-                                output_dir,
-                            ).await?
-                        }
-                    }
+        Commands::Scaffold { protocol } => match protocol {
+            ProtocolCommands::Mcp { role } => match role {
+                McpRoleCommands::Server {
+                    project_name,
+                    schema_path,
+                    template,
+                    template_dir,
+                    output_dir,
+                    log_file,
+                    port,
+                    base_url,
+                } => {
+                    generate_mcp_server(ServerGenParams {
+                        project_name,
+                        schema_path,
+                        template,
+                        template_dir,
+                        output_dir,
+                        log_file,
+                        port,
+                        base_url,
+                    })
+                    .await?
                 }
-            }
-        }
+                McpRoleCommands::Client {
+                    project_name,
+                    template,
+                    template_dir,
+                    output_dir,
+                } => generate_mcp_client(project_name, template, template_dir, output_dir).await?,
+            },
+        },
     }
     Ok(())
 }
 
+/// Parameters for MCP server generation
+struct ServerGenParams<'a> {
+    project_name: &'a str,
+    schema_path: &'a str,
+    template: &'a str,
+    template_dir: &'a Option<PathBuf>,
+    output_dir: &'a Option<PathBuf>,
+    log_file: &'a Option<String>,
+    port: &'a Option<u16>,
+    base_url: &'a Option<Url>,
+}
+
 /// Generate MCP server from OpenAPI specification
-async fn generate_mcp_server(
-    project_name: &str,
-    schema_path: &str,
-    template: &str,
-    template_dir: &Option<PathBuf>,
-    output_dir: &Option<PathBuf>,
-    log_file: &Option<String>,
-    port: &Option<u16>,
-    base_url: &Option<Url>,
-) -> anyhow::Result<()> {
-    println!("🚀 Generating MCP server with template: {}", template);
-    
+async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> {
+    println!("🚀 Generating MCP server with template: {}", params.template);
+
     // Parse template
-    let template_kind_enum: ServerTemplateKind = template
+    let template_kind_enum: ServerTemplateKind = params.template
         .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid server template '{}': {}", template, e))?;
+        .map_err(|e| anyhow::anyhow!("Invalid server template '{}': {}", params.template, e))?;
 
     // Resolve output directory - use project_name if not specified
-    let output_path = output_dir
+    let output_path = params.output_dir
         .clone()
-        .unwrap_or_else(|| PathBuf::from(project_name));
+        .unwrap_or_else(|| PathBuf::from(params.project_name));
 
     // Initialize the template manager
-    let template_manager = TemplateManager::new(template_kind_enum, template_dir.clone())
+    let template_manager = TemplateManager::new(template_kind_enum, params.template_dir.clone())
         .await
         .context("Failed to initialize server template manager")?;
 
@@ -172,26 +168,28 @@ async fn generate_mcp_server(
     }
 
     // Load OpenAPI schema
-    println!("📖 Loading OpenAPI schema from: {}", schema_path);
-    let schema_obj = load_openapi_schema(schema_path).await?;
+    println!("📖 Loading OpenAPI schema from: {}", params.schema_path);
+    let schema_obj = load_openapi_schema(params.schema_path).await?;
 
     // Create config
     let config = agenterra_core::Config {
-        project_name: project_name.to_string(),
-        openapi_schema_path: schema_path.to_string(),
+        project_name: params.project_name.to_string(),
+        openapi_schema_path: params.schema_path.to_string(),
         output_dir: output_path.to_string_lossy().to_string(),
-        template_kind: template.to_string(),
-        template_dir: template_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
+        template_kind: params.template.to_string(),
+        template_dir: params.template_dir
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
         include_all: true,
         include_operations: Vec::new(),
         exclude_operations: Vec::new(),
-        base_url: base_url.clone(),
+        base_url: params.base_url.clone(),
     };
 
     // Create template options
     let template_opts = TemplateOptions {
-        server_port: *port,
-        log_file: log_file.clone(),
+        server_port: *params.port,
+        log_file: params.log_file.clone(),
         ..Default::default()
     };
 
@@ -200,7 +198,10 @@ async fn generate_mcp_server(
         .generate(&schema_obj, &config, Some(template_opts))
         .await?;
 
-    println!("✅ Successfully generated MCP server in: {}", output_path.display());
+    println!(
+        "✅ Successfully generated MCP server in: {}",
+        output_path.display()
+    );
     Ok(())
 }
 
@@ -212,7 +213,7 @@ async fn generate_mcp_client(
     output_dir: &Option<PathBuf>,
 ) -> anyhow::Result<()> {
     println!("🚀 Generating MCP client with template: {}", template);
-    
+
     // Parse template
     let _template_kind_enum: ClientTemplateKind = template
         .parse()
@@ -228,18 +229,25 @@ async fn generate_mcp_client(
         project_name: project_name.to_string(),
         output_dir: output_path.to_string_lossy().to_string(),
         template_kind: template.to_string(),
-        template_dir: template_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
+        template_dir: template_dir
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
     };
 
     // Generate the client
     generate_client(&client_config, None).await?;
 
-    println!("✅ Successfully generated MCP client in: {}", output_path.display());
+    println!(
+        "✅ Successfully generated MCP client in: {}",
+        output_path.display()
+    );
     Ok(())
 }
 
 /// Load OpenAPI schema from file or URL
-async fn load_openapi_schema(schema_path: &str) -> anyhow::Result<agenterra_core::openapi::OpenApiContext> {
+async fn load_openapi_schema(
+    schema_path: &str,
+) -> anyhow::Result<agenterra_core::openapi::OpenApiContext> {
     if schema_path.starts_with("http://") || schema_path.starts_with("https://") {
         // It's a URL
         let response = reqwest::get(schema_path).await.map_err(|e| {
@@ -254,9 +262,10 @@ async fn load_openapi_schema(schema_path: &str) -> anyhow::Result<agenterra_core
             ));
         }
 
-        let content = response.text().await.map_err(|e| {
-            anyhow::anyhow!("Failed to read response from {}: {}", schema_path, e)
-        })?;
+        let content = response
+            .text()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to read response from {}: {}", schema_path, e))?;
 
         // Save to temporary file
         let temp_dir = tempfile::tempdir()?;
@@ -266,11 +275,7 @@ async fn load_openapi_schema(schema_path: &str) -> anyhow::Result<agenterra_core
         agenterra_core::openapi::OpenApiContext::from_file(&temp_file)
             .await
             .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to parse OpenAPI schema from {}: {}",
-                    schema_path,
-                    e
-                )
+                anyhow::anyhow!("Failed to parse OpenAPI schema from {}: {}", schema_path, e)
             })
     } else {
         // It's a file path

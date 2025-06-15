@@ -16,8 +16,8 @@ use crate::repl::McpRepl;
 #[command(name = "{{ project_name | default(value="mcp-client") }}")]
 #[command(about = "Interactive MCP client for tool discovery and invocation")]
 struct Cli {
-    /// MCP server URL to connect to
-    #[arg(short, long, default_value = "stdio")]
+    /// MCP server command to run (path to server binary)
+    #[arg(short, long)]
     server: String,
     
     /// Enable debug logging
@@ -47,8 +47,12 @@ async fn main() -> Result<()> {
     tracing::info!("Connecting to MCP server: {}", cli.server);
 
     // Create and connect MCP client
-    let mut client = McpClient::new(&cli.server, cli.timeout).await?;
-    client.connect().await?;
+    let mut client = McpClient::new("stdio", cli.timeout).await?;
+    
+    // Start the server process and connect via stdio
+    tracing::info!("Starting MCP server: {}", cli.server);
+    let command = tokio::process::Command::new(&cli.server);
+    client.connect_stdio(command).await?;
     
     tracing::info!("Connected to MCP server successfully");
     

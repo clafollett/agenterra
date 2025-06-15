@@ -59,7 +59,7 @@ pub async fn start(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (mode, _sse_mode) = {
         let cfg_guard = cfg.lock().await;
-        select_server_mode(&*cfg_guard)
+        select_server_mode(&cfg_guard)
     };
     let notify = Arc::new(Notify::new());
     let event = Arc::new(Mutex::new(None));
@@ -121,7 +121,7 @@ async fn run_sse_server(cfg: SseConfig) -> Result<(), Box<dyn std::error::Error>
         sse_keep_alive: cfg.keep_alive,
     };
     let (sse_server, router) = SseServer::new(sse_config);
-    let _ct = sse_server.with_service(move || McpServer::new());
+    let _ct = sse_server.with_service(McpServer::new);
     debug!("[{{ project_name }} MCP] Starting SSE/Axum server on {}...", cfg.addr);
     let listener = tokio::net::TcpListener::bind(cfg.addr).await?;
     axum::serve(listener, router).await?;
@@ -155,17 +155,17 @@ async fn signal_loop(notify: Arc<Notify>, event: Arc<Mutex<Option<SignalEvent>>>
         let mut ev = event.lock().await;
         match *ev {
             Some(SignalEvent::Reload) => {
-                info!(target: "signal", "Hot reload triggered – reloading config");
+                info!(target = "signal", "Hot reload triggered – reloading config");
                 dotenv().ok();
                 let new_cfg = Config::load();
                 {
                     let mut cfg_guard = cfg.lock().await;
                     *cfg_guard = new_cfg.clone();
-                    info!(target: "signal", "Config reloaded: {:?}", *cfg_guard);
+                    info!(target = "signal", "Config reloaded: {:?}", *cfg_guard);
                 }
             }
             Some(SignalEvent::Shutdown) => {
-                info!(target: "signal", "Shutdown signal received – shutting down gracefully");
+                info!(target = "signal", "Shutdown signal received – shutting down gracefully");
                 process::exit(0);
             }
             None => {}

@@ -9,5 +9,5 @@ pub mod manifest;
 pub mod templates;
 
 // Re-exports
-pub use generate::{generate, generate_client, ClientConfig};
-pub use templates::{ServerTemplateKind, ClientTemplateKind, TemplateManager, TemplateOptions};
+pub use generate::{ClientConfig, generate, generate_client};
+pub use templates::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions};

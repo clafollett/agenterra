@@ -16,7 +16,7 @@ use agenterra_core::{
     utils::to_snake_case,
 };
 
-use super::{ServerTemplateKind, ClientTemplateKind, TemplateDir, TemplateOptions};
+use super::{ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateOptions};
 
 // External imports (alphabetized)
 use serde::Serialize;
@@ -70,29 +70,11 @@ impl TemplateManager {
         template_kind: ServerTemplateKind,
         template_dir: Option<PathBuf>,
     ) -> Result<Self> {
-        // Convert PathBuf to TemplateDir
-        let template_dir = if let Some(dir) = template_dir {
-            // Check if the directory already ends with the template kind
-            if dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name == template_kind.as_str())
-                .unwrap_or(false)
-            {
-                // Directory already points to the specific template
-                TemplateDir::new(
-                    dir.parent().unwrap().to_path_buf(),
-                    dir.clone(),
-                    template_kind,
-                )
-            } else {
-                // Directory is the parent, need to append template kind
-                let template_path = dir.join(template_kind.as_str());
-                TemplateDir::new(dir, template_path, template_kind)
-            }
-        } else {
-            TemplateDir::discover(template_kind, None)?
-        };
+        // Convert PathBuf to TemplateDir using discover method
+        let template_dir = TemplateDir::discover(
+            template_kind,
+            template_dir.as_deref(),
+        )?;
 
         // Get the template path for Tera
         let template_path = template_dir.template_path();
@@ -143,7 +125,10 @@ impl TemplateManager {
         };
 
         // Create Tera instance with the template directory
-        let tera = Tera::new(&format!("{}/**/*", template_dir_str)).map_err(|e| {
+        let tera_pattern = format!("{}/**/*", template_dir_str);
+        eprintln!("[DEBUG] TemplateManager - Creating Tera with pattern: {}", tera_pattern);
+        let tera = Tera::new(&tera_pattern).map_err(|e| {
+            eprintln!("[ERROR] Failed to create Tera instance: {}", e);
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Failed to parse templates: {}", e),
@@ -174,7 +159,7 @@ impl TemplateManager {
     ) -> Result<Self> {
         // For client templates, we need to create a similar structure but for clients
         // For now, we'll reuse the existing logic but adapt the paths
-        
+
         // Convert ClientTemplateKind to ServerTemplateKind for TemplateDir compatibility
         // This is a temporary workaround - we should make TemplateDir generic later
         let server_kind = match template_kind {
@@ -183,39 +168,29 @@ impl TemplateManager {
             ClientTemplateKind::TypeScriptAxios => ServerTemplateKind::TypeScriptExpress, // Placeholder
             ClientTemplateKind::Custom => ServerTemplateKind::Custom,
         };
-        
-        let template_dir_path = if let Some(dir) = template_dir {
-            if dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name == template_kind.as_str())
-                .unwrap_or(false)
-            {
-                dir.clone()
-            } else {
-                dir.join(template_kind.as_str())
-            }
-        } else {
-            // Discover client template directory
+
+        // Use the same pattern as server templates - construct the full path
+        let base_dir = template_dir.unwrap_or_else(|| {
             TemplateDir::find_template_base_dir()
-                .ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "Could not find template directory in any standard location",
-                    )
-                })?
-                .join("templates")
-                .join("mcp")
-                .join("client")
-                .join(template_kind.as_str())
-        };
+                .expect("Could not find template directory")
+        });
+        
+        let template_dir_path = base_dir
+            .join("templates")
+            .join("mcp")
+            .join("client")
+            .join(template_kind.as_str());
 
         // Validate the template directory exists
         if !template_dir_path.exists() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                format!("Client template directory not found: {}", template_dir_path.display()),
-            ).into());
+                format!(
+                    "Client template directory not found: {}",
+                    template_dir_path.display()
+                ),
+            )
+            .into());
         }
 
         // Create TemplateDir (using server_kind as placeholder)
@@ -228,7 +203,7 @@ impl TemplateManager {
         // Load template manifest
         let yaml_manifest_path = template_dir_path.join("manifest.yaml");
         let toml_manifest_path = template_dir_path.join("manifest.toml");
-        
+
         let manifest = if yaml_manifest_path.exists() {
             TemplateManifest::load_from_dir(&template_dir_path).await?
         } else if toml_manifest_path.exists() {
@@ -250,7 +225,7 @@ impl TemplateManager {
                 "Template path contains invalid UTF-8",
             )
         })?;
-        
+
         let tera = Tera::new(&format!("{}/**/*", template_dir_str)).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -532,7 +507,7 @@ impl TemplateManager {
     }
 
     /// Generate client code without requiring OpenAPI specification
-    /// 
+    ///
     /// This method generates MCP client code that can discover tools at runtime.
     /// Unlike server generation, it doesn't require an OpenAPI schema.
     pub async fn generate_client(
@@ -549,22 +524,23 @@ impl TemplateManager {
 
         // Process each template file (client templates don't use for_each typically)
         for file in &self.manifest.files {
-            log::debug!("Processing client file: {} -> {}", file.source, file.destination);
-            
+            log::debug!(
+                "Processing client file: {} -> {}",
+                file.source,
+                file.destination
+            );
+
             // Client templates typically don't use for_each operations
             // since they don't depend on OpenAPI operations
             let output_path = output_dir.join(&file.destination);
-            
+
             // Generate file with base context
-            self.generate_with_context(
-                &file.source,
-                &base_context,
-                &output_path,
-            ).await?;
+            self.generate_with_context(&file.source, &base_context, &output_path)
+                .await?;
         }
 
         // TODO: Run post-generate hooks if needed
-        
+
         Ok(())
     }
 
@@ -579,7 +555,7 @@ impl TemplateManager {
         // Add basic project information
         base_map.insert("project_name".to_string(), json!(config.project_name));
         base_map.insert("output_dir".to_string(), json!(config.output_dir));
-        
+
         // Add template options if provided
         if let Some(opts) = template_opts {
             if let Some(port) = opts.server_port {
@@ -592,8 +568,11 @@ impl TemplateManager {
 
         // Add default values
         base_map.insert("version".to_string(), json!("0.1.0"));
-        base_map.insert("description".to_string(), json!(format!("MCP client for {}", config.project_name)));
-        
+        base_map.insert(
+            "description".to_string(),
+            json!(format!("MCP client for {}", config.project_name)),
+        );
+
         Ok(json!(base_map))
     }
 
@@ -606,17 +585,20 @@ impl TemplateManager {
     ) -> Result<(serde_json::Value, Vec<OpenApiOperation>)> {
         let mut base_map = serde_json::Map::new();
 
-        // Add project name from spec title
+        // Add project name from config (user-specified)
+        base_map.insert("project_name".to_string(), json!(config.project_name));
+        
+        // Add project title from spec for reference
         if let Some(title) = openapi_context
             .json
             .get("info")
             .and_then(|info| info.get("title"))
             .and_then(|t| t.as_str())
         {
-            // Sanitize the title to be a valid Rust package name
-            let sanitized_name = to_snake_case(title);
-            base_map.insert("project_name".to_string(), json!(sanitized_name));
             base_map.insert("project_title".to_string(), json!(title));
+            // Also add sanitized version for cases where we might need it
+            let sanitized_name = to_snake_case(title);
+            base_map.insert("project_name_from_spec".to_string(), json!(sanitized_name));
         }
 
         // Add API version from spec
