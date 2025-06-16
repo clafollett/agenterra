@@ -27,6 +27,9 @@ files:
     
   - source: "README.md.tera"
     destination: "README.md"
+    
+  - source: "LICENSE"
+    destination: "LICENSE"
 
 hooks:
   post_generate:

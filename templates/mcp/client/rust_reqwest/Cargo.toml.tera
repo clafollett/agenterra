@@ -3,6 +3,7 @@ name = "{{ project_name | default(value="mcp_client") }}"
 version = "0.1.0"
 edition = "2021"
 description = "MCP client for {{ project_name | default(value="agenterra") }}"
+license = "MIT"
 
 [[bin]]
 name = "{{ project_name | default(value="mcp_client") }}"
@@ -10,7 +11,10 @@ path = "src/main.rs"
 
 [dependencies]
 # MCP Protocol SDK (official)
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", package = "rmcp", features = ["client", "transport-child-process"] }
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
+    "client",
+    "transport-child-process"
+] }
 
 # HTTP Client
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
@@ -45,6 +49,12 @@ chrono = { version = "0.4", features = ["serde"] }
 # Connection pooling
 r2d2 = "0.8"
 r2d2_sqlite = "0.25"
+
+[patch.crates-io]
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main", features = [
+    "client",
+    "transport-child-process",
+] }
 
 [dev-dependencies]
 tempfile = "3.0"

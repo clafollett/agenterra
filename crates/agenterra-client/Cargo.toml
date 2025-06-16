@@ -3,11 +3,14 @@ name = "agenterra-client"
 version = "0.1.0"
 edition = "2024"
 description = "Ergonomic MCP client library for Agenterra"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [dependencies]
 # MCP Protocol SDK (official)
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", package = "rmcp", features = ["client", "transport-child-process"] }
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
+    "client",
+    "transport-child-process",
+] }
 
 # Core dependencies (mirroring agenterra-core)
 anyhow = "1.0"
@@ -21,7 +24,7 @@ thiserror = "1.0"
 zeroize = { version = "1.7", features = ["derive"] }
 tokio = { version = "1.0", features = [
     "fs",
-    "io-util", 
+    "io-util",
     "rt-multi-thread",
     "macros",
     "process",

@@ -23,6 +23,8 @@ files:
     destination: src/signal.rs
   - source: main.rs.tera
     destination: src/main.rs
+  - source: LICENSE
+    destination: LICENSE
 
 # Template variables that will be available during code generation
 template_variables:
