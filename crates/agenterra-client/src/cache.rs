@@ -12,7 +12,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool, atomic::Ordering};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -123,6 +123,8 @@ pub struct ResourceCache {
     analytics: CacheAnalytics,
     /// Connection pool for all database operations
     pool: Pool<SqliteConnectionManager>,
+    /// Per-instance schema initialization flag for in-memory databases
+    schema_initialized: Arc<AtomicBool>,
 }
 
 impl ResourceCache {
@@ -168,6 +170,7 @@ impl ResourceCache {
             config,
             analytics,
             pool,
+            schema_initialized: Arc::new(AtomicBool::new(false)),
         };
 
         // Initialize database schema
@@ -197,13 +200,18 @@ impl ResourceCache {
     /// Initialize the SQLite database schema with proper double-checked locking
     async fn init_schema(&self) -> Result<()> {
         let db_path = normalize_db_path(&self.config.database_path);
+        let is_memory_db = db_path == ":memory:";
 
-        // For file-based databases, use double-checked locking to prevent race conditions
-        // For in-memory databases (:memory:), skip global tracking as each is isolated
-        let use_global_tracking = db_path != ":memory:";
-
-        if use_global_tracking {
-            // First check: Has this database path already been initialized?
+        // For in-memory databases, use per-instance tracking since each is isolated
+        // For file-based databases, use global tracking to prevent race conditions
+        if is_memory_db {
+            // Check if this instance has already been initialized
+            if self.schema_initialized.load(Ordering::Acquire) {
+                tracing::debug!("Database schema already initialized for in-memory instance");
+                return Ok(());
+            }
+        } else {
+            // First check: Has this database path already been initialized globally?
             {
                 let tracker = get_db_tracker().lock().unwrap();
                 if tracker.contains_key(&db_path) {
@@ -213,6 +221,9 @@ impl ResourceCache {
             }
         }
 
+        // Clone the schema_initialized flag for use in the closure
+        let schema_initialized = self.schema_initialized.clone();
+
         // If not initialized, enter the critical section
         self.with_connection(move |conn| {
             tracing::debug!(
@@ -220,8 +231,17 @@ impl ResourceCache {
                 db_path
             );
 
-            if use_global_tracking {
-                // Double check: Has another thread initialized it while we were waiting?
+            // Double check pattern
+            if is_memory_db {
+                // For in-memory databases, check the per-instance flag
+                if schema_initialized.load(Ordering::Acquire) {
+                    tracing::debug!(
+                        "Database schema was initialized by another thread (in-memory)"
+                    );
+                    return Ok(());
+                }
+            } else {
+                // For file databases, check the global tracker
                 {
                     let tracker = get_db_tracker().lock().unwrap();
                     if tracker.contains_key(&db_path) {
@@ -301,8 +321,12 @@ impl ResourceCache {
             // Commit the transaction to ensure atomic schema creation
             match tx.commit() {
                 Ok(()) => {
-                    // Mark this database as initialized globally (only for file-based databases)
-                    if use_global_tracking {
+                    // Mark this database as initialized
+                    if is_memory_db {
+                        // For in-memory databases, mark the per-instance flag
+                        schema_initialized.store(true, Ordering::Release);
+                    } else {
+                        // For file-based databases, mark globally
                         let mut tracker = get_db_tracker().lock().unwrap();
                         tracker.insert(db_path.clone(), ());
                     }
@@ -316,8 +340,12 @@ impl ResourceCache {
                     // Check if this is a "table already exists" error due to concurrent creation
                     let error_msg = e.to_string().to_lowercase();
                     if error_msg.contains("already exists") || error_msg.contains("duplicate") {
-                        // Another thread beat us to it, mark as initialized (only for file-based databases)
-                        if use_global_tracking {
+                        // Another thread beat us to it, mark as initialized
+                        if is_memory_db {
+                            // For in-memory databases, mark the per-instance flag
+                            schema_initialized.store(true, Ordering::Release);
+                        } else {
+                            // For file-based databases, mark globally
                             let mut tracker = get_db_tracker().lock().unwrap();
                             tracker.insert(db_path.clone(), ());
                         }
