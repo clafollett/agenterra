@@ -151,7 +151,7 @@ impl ResourceCache {
         // Validate database path
         if config.database_path.is_empty() {
             return Err(ClientError::Validation(
-                "database_path cannot be empty".to_string()
+                "database_path cannot be empty".to_string(),
             ));
         }
 
@@ -268,7 +268,7 @@ impl ResourceCache {
             conn.pragma_update(None, "synchronous", "NORMAL")?;
             conn.pragma_update(None, "cache_size", 10000)?;
             conn.pragma_update(None, "temp_store", "memory")?;
-            
+
             // Set busy timeout to handle SQLITE_BUSY on slow filesystems
             conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
@@ -320,7 +320,7 @@ impl ResourceCache {
             )?;
 
             // Create cleanup trigger for expired resources on INSERT
-            // Note: This only handles cleanup on new inserts. Idle expired rows 
+            // Note: This only handles cleanup on new inserts. Idle expired rows
             // are handled by the explicit cleanup_expired() method
             tx.execute(
                 "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
@@ -662,7 +662,7 @@ impl ResourceCache {
     }
 
     /// Run cleanup to remove expired resources
-    /// This method handles all expired resources, including idle ones that 
+    /// This method handles all expired resources, including idle ones that
     /// wouldn't be caught by the INSERT trigger
     pub async fn cleanup_expired(&mut self) -> Result<u64> {
         let now = Utc::now().timestamp_millis();
@@ -856,7 +856,7 @@ fn parse_charset(content_type: &str) -> Option<String> {
 
 /// Normalize database path to prevent double-initialization due to path differences
 /// (e.g., "./db.sqlite" vs "db.sqlite" vs absolute paths)
-/// 
+///
 /// Note: Only provides lexical normalization for non-existent files. Symlinks
 /// are resolved only if the file already exists via canonicalize().
 fn normalize_db_path(db_path: &str) -> String {
