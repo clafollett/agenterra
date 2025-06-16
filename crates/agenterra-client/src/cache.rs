@@ -9,6 +9,7 @@ use crate::resource::{ResourceContent, ResourceInfo};
 use chrono::{DateTime, Utc};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite_migration::{M, Migrations};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -18,6 +19,54 @@ use uuid::Uuid;
 
 // Global tracking of initialized databases (double-checked locking pattern)
 static INITIALIZED_DATABASES: OnceLock<Mutex<HashMap<String, ()>>> = OnceLock::new();
+
+// Database migrations for schema versioning
+static MIGRATIONS: &[M] = &[
+    // v1: Initial schema with resources and analytics tables
+    M::up(
+        r#"
+        CREATE TABLE IF NOT EXISTS resources (
+            id TEXT PRIMARY KEY,
+            uri TEXT UNIQUE NOT NULL,
+            content BLOB NOT NULL,
+            content_type TEXT,
+            metadata_json TEXT,
+            created_at INTEGER NOT NULL,
+            accessed_at INTEGER NOT NULL,
+            expires_at INTEGER,
+            access_count INTEGER DEFAULT 0,
+            size_bytes INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri);
+        CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at);
+
+        CREATE TABLE IF NOT EXISTS cache_analytics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            hit_rate REAL,
+            total_requests INTEGER,
+            cache_size_mb REAL,
+            eviction_count INTEGER
+        );
+
+        CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
+         AFTER INSERT ON resources
+         BEGIN
+             DELETE FROM resources 
+             WHERE expires_at IS NOT NULL 
+             AND expires_at < strftime('%s', 'now') * 1000;
+         END;
+    "#,
+    )
+    .down(
+        r#"
+        DROP TABLE IF EXISTS cache_analytics;
+        DROP TABLE IF EXISTS resources;
+    "#,
+    ),
+];
 
 /// Configuration for the resource cache
 #[derive(Debug, Clone)]
@@ -272,81 +321,21 @@ impl ResourceCache {
             // Set busy timeout to handle SQLITE_BUSY on slow filesystems
             conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
-            // Use a regular transaction for atomic schema creation
-            let tx = conn.transaction()?;
-
-            // Create resources table with atomic transaction
-            tx.execute(
-                "CREATE TABLE IF NOT EXISTS resources (
-                    id TEXT PRIMARY KEY,
-                    uri TEXT UNIQUE NOT NULL,
-                    content BLOB NOT NULL,
-                    content_type TEXT,
-                    metadata_json TEXT,
-                    created_at INTEGER NOT NULL,
-                    accessed_at INTEGER NOT NULL,
-                    expires_at INTEGER,
-                    access_count INTEGER DEFAULT 0,
-                    size_bytes INTEGER NOT NULL
-                )",
-                [],
-            )?;
-
-            // Create indexes for performance
-            tx.execute(
-                "CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri)",
-                [],
-            )?;
-            tx.execute(
-                "CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at)",
-                [],
-            )?;
-            tx.execute(
-                "CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at)",
-                [],
-            )?;
-
-            // Create cache analytics table with auto-increment to avoid timestamp collisions
-            tx.execute(
-                "CREATE TABLE IF NOT EXISTS cache_analytics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp INTEGER NOT NULL,
-                    hit_rate REAL,
-                    total_requests INTEGER,
-                    cache_size_mb REAL,
-                    eviction_count INTEGER
-                )",
-                [],
-            )?;
-
-            // Create cleanup trigger for expired resources on INSERT
-            // Note: This only handles cleanup on new inserts. Idle expired rows
-            // are handled by the explicit cleanup_expired() method
-            tx.execute(
-                "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
-                 AFTER INSERT ON resources
-                 BEGIN
-                     DELETE FROM resources 
-                     WHERE expires_at IS NOT NULL 
-                     AND expires_at < strftime('%s', 'now') * 1000;
-                 END",
-                [],
-            )?;
-
-            // Commit the transaction to ensure atomic schema creation
-            match tx.commit() {
+            // Run migrations using rusqlite_migration
+            let migrations = Migrations::new(MIGRATIONS.to_vec());
+            match migrations.to_latest(conn) {
                 Ok(()) => {
                     // Mark this database as initialized globally
                     let mut tracker = get_db_tracker().lock().unwrap();
                     tracker.insert(db_path.clone(), ());
                     tracing::debug!(
-                        "Database schema initialization completed successfully for: {}",
+                        "Database migrations completed successfully for: {}",
                         db_path
                     );
                     Ok(())
                 }
                 Err(e) => {
-                    // Check if this is a "table already exists" error due to concurrent creation
+                    // Check if this is a concurrent initialization issue
                     let error_msg = e.to_string().to_lowercase();
                     if error_msg.contains("already exists") || error_msg.contains("duplicate") {
                         // Another thread beat us to it, mark as initialized
@@ -355,8 +344,12 @@ impl ResourceCache {
                         tracing::debug!("Schema already exists (concurrent creation), continuing");
                         Ok(())
                     } else {
-                        tracing::error!("Database schema initialization failed: {}", e);
-                        Err(e)
+                        tracing::error!("Database migration failed: {}", e);
+                        // Convert migration error to rusqlite error for this context
+                        Err(rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                            Some(format!("Migration failed: {}", e)),
+                        ))
                     }
                 }
             }
@@ -393,8 +386,7 @@ impl ResourceCache {
             metadata.insert("encoding".to_string(), serde_json::json!(encoding));
         }
 
-        let metadata_json = serde_json::to_string(&metadata)
-            .map_err(|e| ClientError::Client(format!("Failed to serialize metadata: {}", e)))?;
+        let metadata_json = serde_json::to_string(&metadata)?;
 
         let size_bytes = resource.data.len() as u64;
 
@@ -1929,5 +1921,59 @@ mod tests {
         };
 
         assert_eq!(hit_rate, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_migration_system_and_connection_pool() {
+        use std::time::Duration;
+
+        // Create cache with pool settings to test migration + pool integration
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let config = CacheConfig {
+            database_path: temp_file.path().to_string_lossy().to_string(),
+            default_ttl: Duration::from_secs(60),
+            max_size_mb: 100,
+            auto_cleanup: true,
+            cleanup_interval: Duration::from_secs(30),
+            pool_min_connections: Some(2),
+            pool_max_connections: Some(4),
+            pool_connection_timeout: Some(Duration::from_secs(5)),
+            pool_max_lifetime: Some(Duration::from_secs(300)),
+        };
+
+        // Test that migrations work with the connection pool
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        let test_resource = ResourceContent {
+            info: ResourceInfo {
+                uri: "test://migration/verification".to_string(),
+                name: Some("Migration Test".to_string()),
+                description: Some("Verify migration + pool work together".to_string()),
+                mime_type: Some("text/plain".to_string()),
+                metadata: std::collections::HashMap::new(),
+            },
+            data: b"migration test data".to_vec(),
+            encoding: None,
+        };
+
+        // Store and retrieve to verify the migrated schema works with pooled connections
+        let _id = cache.store_resource(&test_resource).await.unwrap();
+        let retrieved = cache.get_resource(&test_resource.info.uri).await.unwrap();
+
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().data, test_resource.data);
+
+        // Verify analytics table exists and works (created by migration)
+        let analytics = cache.get_analytics();
+        assert_eq!(analytics.total_requests, 1); // Should have 1 request from get_resource above
+
+        // Test basic pool functionality by accessing multiple resources sequentially
+        for i in 0..5 {
+            let uri = format!("test://pool/resource{}", i);
+            let result = cache.get_resource(&uri).await;
+            assert!(result.is_ok()); // Should succeed even for non-existent resources
+        }
+
+        println!("Migration system and connection pool integration test passed");
     }
 }

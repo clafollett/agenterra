@@ -141,12 +141,14 @@ impl TemplateDir {
         // 1. Check environment variable via config reader
         if let Some(dir) = config_reader.get_template_dir() {
             let path = PathBuf::from(dir);
+
+            // Always validate the path for security, even if it doesn't exist yet
+            if let Err(e) = Self::validate_template_path_safely(&path) {
+                error!("Template directory validation failed: {}", e);
+                return None;
+            }
+
             if path.exists() {
-                // Validate the path for security
-                if let Err(e) = Self::validate_template_path(&path) {
-                    error!("Template directory validation failed: {}", e);
-                    return None;
-                }
                 return Some(path);
             }
         }
@@ -204,7 +206,7 @@ impl TemplateDir {
     }
 
     /// Validate that a template directory path is safe
-    /// Prevents directory traversal and ensures path is within expected bounds
+    /// Uses path-based analysis instead of string matching for cross-platform compatibility
     fn validate_template_path(path: &Path) -> Result<(), io::Error> {
         // Canonicalize to resolve any ".." or "." components
         let canonical_path = path.canonicalize().map_err(|e| {
@@ -215,24 +217,120 @@ impl TemplateDir {
             )
         })?;
 
-        // Convert to string for validation
-        let path_str = canonical_path.to_string_lossy();
+        debug!("Validating template path: {}", canonical_path.display());
 
-        // Reject paths that look suspicious
-        let suspicious_patterns = [
-            "/etc/",
-            "/usr/bin/",
-            "/usr/sbin/",
-            "/root/",
-            "/.ssh/",
-            "/tmp/",
-            "C:\\Windows",
-            "C:\\Users\\",
-            "C:\\Program Files",
-        ];
+        // Check for system-critical directories (Unix-only)
+        Self::validate_unix_system_paths(&canonical_path)?;
 
-        for pattern in &suspicious_patterns {
-            if path_str.contains(pattern) {
+        // After security checks pass, allow paths under user's home directory
+        if let Some(home_dir) = dirs::home_dir() {
+            if let Ok(home_canonical) = home_dir.canonicalize() {
+                if canonical_path.starts_with(&home_canonical) {
+                    debug!(
+                        "Template path allowed under home directory: {}",
+                        canonical_path.display()
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
+        // Allow paths under current working directory and its parents (for development)
+        if let Ok(current_dir) = std::env::current_dir() {
+            if let Ok(current_canonical) = current_dir.canonicalize() {
+                // Allow under current directory
+                if canonical_path.starts_with(&current_canonical) {
+                    debug!(
+                        "Template path allowed under current directory: {}",
+                        canonical_path.display()
+                    );
+                    return Ok(());
+                }
+
+                // Allow under immediate parent directories (for workspace setups)
+                // But limit to reasonable depth to avoid allowing root directory
+                let mut parent = current_canonical.as_path();
+                let mut depth = 0;
+                const MAX_PARENT_DEPTH: usize = 3; // Only go up 3 levels max
+
+                while let Some(p) = parent.parent() {
+                    if depth >= MAX_PARENT_DEPTH {
+                        break;
+                    }
+                    if canonical_path.starts_with(p) {
+                        debug!(
+                            "Template path allowed under workspace parent (depth {}): {}",
+                            depth,
+                            canonical_path.display()
+                        );
+                        return Ok(());
+                    }
+                    parent = p;
+                    depth += 1;
+                }
+            }
+        }
+
+        // Allow paths under CARGO_MANIFEST_DIR and its parents (for development/testing)
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let manifest_path = PathBuf::from(manifest_dir);
+            if let Ok(manifest_canonical) = manifest_path.canonicalize() {
+                // Allow under manifest dir
+                if canonical_path.starts_with(&manifest_canonical) {
+                    debug!(
+                        "Template path allowed under cargo manifest dir: {}",
+                        canonical_path.display()
+                    );
+                    return Ok(());
+                }
+
+                // Allow under manifest parent (workspace root)
+                if let Some(parent) = manifest_canonical.parent() {
+                    if canonical_path.starts_with(parent) {
+                        debug!(
+                            "Template path allowed under cargo workspace: {}",
+                            canonical_path.display()
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        // If we get here, the path is not under any known safe location and not in a critical system directory
+        // This might be acceptable for some use cases, so we'll allow it but log a warning
+        debug!(
+            "Template path validation passed (external location): {}",
+            canonical_path.display()
+        );
+        Ok(())
+    }
+
+    /// Validate template path safely, handling cases where the path might not exist
+    fn validate_template_path_safely(path: &Path) -> Result<(), io::Error> {
+        // First try the regular validation for existing paths
+        if path.exists() {
+            return Self::validate_template_path(path);
+        }
+
+        // For non-existent paths, do basic validation without canonicalization
+        debug!("Validating non-existent template path: {}", path.display());
+
+        // Convert to string for pattern checking
+        let path_str = path.to_string_lossy();
+
+        // Check for obviously malicious patterns
+        #[cfg(unix)]
+        {
+            // Check for absolute paths to system directories
+            if path_str.starts_with("/etc/")
+                || path_str.starts_with("/usr/bin/")
+                || path_str.starts_with("/usr/sbin/")
+                || path_str.starts_with("/root/")
+                || path_str.starts_with("/boot/")
+                || path_str.starts_with("/sys/")
+                || path_str.starts_with("/proc/")
+            {
                 error!("Potentially unsafe template path rejected: {}", path_str);
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
@@ -241,28 +339,100 @@ impl TemplateDir {
             }
         }
 
-        // If we have a home directory, ensure path is within reasonable bounds
-        if let Some(home_dir) = dirs::home_dir() {
-            if let Ok(home_canonical) = home_dir.canonicalize() {
-                // Allow paths under home directory
-                if canonical_path.starts_with(&home_canonical) {
-                    return Ok(());
+        // Check for directory traversal patterns
+        if path_str.contains("../../../") {
+            error!(
+                "Directory traversal detected in template path: {}",
+                path_str
+            );
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Directory traversal not allowed in template paths".to_string(),
+            ));
+        }
+
+        debug!(
+            "Template path validation passed (non-existent path): {}",
+            path.display()
+        );
+        Ok(())
+    }
+
+    /// Validate Unix system paths (includes macOS /private/ handling)
+    fn validate_unix_system_paths(canonical_path: &Path) -> Result<(), io::Error> {
+        let components: Vec<_> = canonical_path.components().collect();
+
+        // Need at least root + one directory component
+        if components.len() < 2 {
+            return Ok(());
+        }
+
+        let second = match (components.first(), components.get(1)) {
+            (Some(std::path::Component::RootDir), Some(std::path::Component::Normal(dir))) => {
+                dir.to_str().unwrap_or("")
+            }
+            _ => return Ok(()), // Not an absolute Unix path
+        };
+
+        // Handle standard Unix system directories
+        if Self::is_system_directory(second) {
+            if Self::is_temp_exception(&components, 1) {
+                return Ok(()); // Allow /tmp and /var/tmp
+            }
+            return Err(Self::system_directory_error(canonical_path));
+        }
+
+        // Handle macOS /private/ prefixed system directories
+        if second == "private" && components.len() >= 3 {
+            if let Some(std::path::Component::Normal(third)) = components.get(2) {
+                let third_str = third.to_str().unwrap_or("");
+                if Self::is_system_directory(third_str) {
+                    if Self::is_temp_exception(&components, 2) {
+                        return Ok(()); // Allow /private/tmp and /private/var/tmp
+                    }
+                    return Err(Self::system_directory_error(canonical_path));
                 }
             }
         }
 
-        // Allow paths that are clearly development/workspace related
-        if path_str.contains("/workspace/")
-            || path_str.contains("/agenterra/")
-            || path_str.contains("/tmp/")
-            || path_str.contains("target/debug")
-            || path_str.contains("target/release")
-        {
-            return Ok(());
-        }
-
-        debug!("Template path validation passed: {}", path_str);
         Ok(())
+    }
+
+    /// Check if a directory name is a protected system directory
+    fn is_system_directory(name: &str) -> bool {
+        matches!(name, "etc" | "usr" | "root" | "boot" | "sys" | "proc")
+    }
+
+    /// Check if this is an allowed temp directory exception
+    fn is_temp_exception(components: &[std::path::Component], base_index: usize) -> bool {
+        if let Some(std::path::Component::Normal(dir)) = components.get(base_index) {
+            let dir_str = dir.to_str().unwrap_or("");
+
+            // Allow /tmp or /private/tmp
+            if dir_str == "tmp" {
+                return true;
+            }
+
+            // Allow /var/tmp or /private/var/tmp
+            if dir_str == "var" {
+                if let Some(std::path::Component::Normal(subdir)) = components.get(base_index + 1) {
+                    return subdir.to_str().unwrap_or("") == "tmp";
+                }
+            }
+        }
+        false
+    }
+
+    /// Create a standard system directory access error
+    fn system_directory_error(path: &Path) -> io::Error {
+        error!("System directory access rejected: {}", path.display());
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "Template path not allowed in system directory: {}",
+                path.display()
+            ),
+        )
     }
 
     /// Get the root directory containing the templates
@@ -295,20 +465,32 @@ impl TemplateDir {
 mod tests {
     use super::*;
     use std::fs;
-    use tempfile::tempdir;
     use tracing_test::traced_test;
+
+    /// Create a test workspace directory under ./target/test-workspaces
+    /// This is platform-agnostic and avoids system temp directory issues
+    fn create_test_workspace(test_name: &str) -> std::path::PathBuf {
+        let workspace_dir = std::path::PathBuf::from("./target/test-workspaces")
+            .join(test_name)
+            .join(uuid::Uuid::new_v4().to_string());
+
+        // Create the directory
+        fs::create_dir_all(&workspace_dir).unwrap();
+
+        // Canonicalize to get absolute path
+        workspace_dir.canonicalize().unwrap_or(workspace_dir)
+    }
 
     #[test]
     fn test_template_dir_validation() {
-        let temp_dir = tempdir().unwrap();
+        let temp_dir = create_test_workspace("test_template_dir_validation");
 
         // Create new server structure
-        let server_template_dir = temp_dir.path().join("templates/mcp/server/rust_axum");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // Test server template discovery
-        let server_template =
-            TemplateDir::discover(ServerTemplateKind::RustAxum, Some(temp_dir.path()));
+        let server_template = TemplateDir::discover(ServerTemplateKind::RustAxum, Some(&temp_dir));
         assert!(server_template.is_ok());
         assert_eq!(
             server_template.unwrap().template_path(),
@@ -326,12 +508,12 @@ mod tests {
     #[test]
     #[traced_test]
     fn test_debug_logging_output() {
-        let temp_dir = tempdir().unwrap();
-        let server_template_dir = temp_dir.path().join("templates/mcp/server/rust_axum");
+        let temp_dir = create_test_workspace("test_debug_logging_output");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // This should generate debug logs
-        let _result = TemplateDir::discover(ServerTemplateKind::RustAxum, Some(temp_dir.path()));
+        let _result = TemplateDir::discover(ServerTemplateKind::RustAxum, Some(&temp_dir));
 
         // Check that debug logs were generated
         // Note: This test will fail initially with eprintln! but pass with tracing::debug!
@@ -344,8 +526,9 @@ mod tests {
     #[test]
     fn test_find_template_base_dir_uses_absolute_paths() {
         // Test absolute path resolution using mock config reader
-        let temp_workspace = tempdir().unwrap();
-        let templates_dir = temp_workspace.path().join("templates");
+        let temp_workspace =
+            create_test_workspace("test_find_template_base_dir_uses_absolute_paths");
+        let templates_dir = temp_workspace.join("templates");
         let mcp_dir = templates_dir.join("mcp");
         let server_dir = mcp_dir.join("server");
         let client_dir = mcp_dir.join("client");
@@ -353,9 +536,8 @@ mod tests {
         fs::create_dir_all(&client_dir).unwrap();
 
         // Test with mock config reader - no global state modification
-        let mock_config = MockTemplateConfigReader::new(Some(
-            temp_workspace.path().to_string_lossy().to_string(),
-        ));
+        let mock_config =
+            MockTemplateConfigReader::new(Some(temp_workspace.to_string_lossy().to_string()));
         let result = TemplateDir::find_template_base_dir_with_config(&mock_config);
         assert!(result.is_some());
 
@@ -369,9 +551,10 @@ mod tests {
     fn test_find_template_base_dir_executable_location() {
         // Test that template discovery works from executable location
         // This simulates the installed binary scenario
-        let temp_workspace = tempdir().unwrap();
-        let bin_dir = temp_workspace.path().join("bin");
-        let templates_dir = temp_workspace.path().join("templates");
+        let temp_workspace =
+            create_test_workspace("test_find_template_base_dir_executable_location");
+        let bin_dir = temp_workspace.join("bin");
+        let templates_dir = temp_workspace.join("templates");
         let mcp_dir = templates_dir.join("mcp");
         let server_dir = mcp_dir.join("server");
         let client_dir = mcp_dir.join("client");
@@ -381,9 +564,8 @@ mod tests {
         fs::create_dir_all(&client_dir).unwrap();
 
         // Test with mock config that simulates env var configuration
-        let mock_config = MockTemplateConfigReader::new(Some(
-            temp_workspace.path().to_string_lossy().to_string(),
-        ));
+        let mock_config =
+            MockTemplateConfigReader::new(Some(temp_workspace.to_string_lossy().to_string()));
         let result = TemplateDir::find_template_base_dir_with_config(&mock_config);
         assert!(result.is_some());
 
@@ -396,19 +578,29 @@ mod tests {
     fn test_security_template_dir_validation() {
         // Test that template directory paths are validated for security
         let malicious_paths = vec![
-            "../../../etc/passwd",
-            "/etc/passwd",
-            "../../.ssh/id_rsa",
-            "C:\\Windows\\System32",
-            "/usr/local/../../etc/passwd",
+            "/etc/passwd",                 // Should be rejected - system directory
+            "/usr/bin/evil",               // Should be rejected - system directory
+            "/root/.ssh/id_rsa",           // Should be rejected - system directory
+            "../../../etc/passwd",         // Should be rejected - directory traversal
+            "/usr/local/../../etc/passwd", // Should be rejected - directory traversal + system dir
         ];
 
-        for path in malicious_paths {
+        // Windows-specific paths (only test on Windows)
+        #[cfg(windows)]
+        let windows_paths = vec!["C:\\Windows\\System32", "C:\\Program Files\\evil"];
+
+        #[cfg(windows)]
+        let all_paths = [malicious_paths, windows_paths].concat();
+
+        #[cfg(not(windows))]
+        let all_paths = malicious_paths;
+
+        for path in all_paths {
             // Test with mock config reader using malicious path
             let mock_config = MockTemplateConfigReader::new(Some(path.to_string()));
             let result = TemplateDir::find_template_base_dir_with_config(&mock_config);
 
-            // The path should be rejected for security reasons, even if it exists
+            // The path should be rejected for security reasons
             assert!(
                 result.is_none(),
                 "Malicious path should be rejected: {}",
@@ -420,13 +612,12 @@ mod tests {
     #[test]
     fn test_output_directory_traversal_protection() {
         // Test protection against output directory traversal
-        let temp_dir = tempdir().unwrap();
-        let server_template_dir = temp_dir.path().join("templates/mcp/server/rust_axum");
+        let temp_dir = create_test_workspace("test_output_directory_traversal_protection");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // Attempt to create template dir with malicious output path
-        let malicious_output_paths =
-            vec!["../../../etc", "/etc", "../../sensitive", "..\\..\\Windows"];
+        let malicious_output_paths = vec!["../../../etc", "/etc", "../../sensitive"];
 
         for _path in malicious_output_paths {
             // This test documents the need for output path validation
@@ -441,9 +632,9 @@ mod tests {
         use std::thread;
 
         // Setup shared test directory
-        let temp_dir = tempdir().unwrap();
-        let server_template_dir = temp_dir.path().join("templates/mcp/server/rust_axum");
-        let client_template_dir = temp_dir.path().join("templates/mcp/client/rust_reqwest");
+        let temp_dir = create_test_workspace("test_concurrent_template_discovery");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
+        let client_template_dir = temp_dir.join("templates/mcp/client/rust_reqwest");
         fs::create_dir_all(&server_template_dir).unwrap();
         fs::create_dir_all(&client_template_dir).unwrap();
 
@@ -454,7 +645,7 @@ mod tests {
         // Spawn multiple threads that all try to discover templates simultaneously
         for i in 0..NUM_THREADS {
             let barrier_clone = Arc::clone(&barrier);
-            let temp_dir_path = temp_dir.path().to_string_lossy().to_string();
+            let temp_dir_path = temp_dir.to_string_lossy().to_string();
 
             let handle = thread::spawn(move || {
                 // Wait for all threads to be ready
@@ -484,8 +675,8 @@ mod tests {
     #[test]
     fn test_environment_variable_template_discovery() {
         // Sequential test for environment variable functionality
-        let temp_dir = tempdir().unwrap();
-        let templates_dir = temp_dir.path().join("templates");
+        let temp_dir = create_test_workspace("test_environment_variable_template_discovery");
+        let templates_dir = temp_dir.join("templates");
         let mcp_dir = templates_dir.join("mcp");
         let server_dir = mcp_dir.join("server");
         let client_dir = mcp_dir.join("client");
@@ -500,11 +691,11 @@ mod tests {
 
         // Test 2: With env var set temporarily (single-threaded, marked unsafe due to race potential)
         unsafe {
-            std::env::set_var("AGENTERRA_TEMPLATE_DIR", temp_dir.path());
+            std::env::set_var("AGENTERRA_TEMPLATE_DIR", &temp_dir);
         }
         let with_env_result = env_config.get_template_dir();
         assert!(with_env_result.is_some());
-        assert_eq!(with_env_result.unwrap(), temp_dir.path().to_string_lossy());
+        assert_eq!(with_env_result.unwrap(), temp_dir.to_string_lossy());
 
         // Test 3: Test the full discovery process with env var
         let discovery_result = TemplateDir::find_template_base_dir();

@@ -36,3 +36,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3.0", features = ["env-filter"] }
 url = { version = "2.4", features = ["serde"] }
 tempfile = "3.10"
+uuid = { version = "1.0", features = ["v4"] }
