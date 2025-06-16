@@ -12,7 +12,6 @@ use agenterra_mcp::{
 };
 use anyhow::Context;
 use clap::Parser;
-// use tokio::fs; // Used in helper functions
 
 #[derive(Parser)]
 #[command(name = "agenterra")]

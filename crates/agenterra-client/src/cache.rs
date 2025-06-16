@@ -784,7 +784,7 @@ fn normalize_db_path(db_path: &str) -> String {
     if path.is_relative() {
         if let Ok(current_dir) = std::env::current_dir() {
             let absolute_path = current_dir.join(path);
-            // Normalize the path components to resolve "." and ".." 
+            // Normalize the path components to resolve "." and ".."
             return normalize_path_components(&absolute_path);
         }
     }
@@ -801,7 +801,7 @@ fn normalize_db_path(db_path: &str) -> String {
 /// Helper function to normalize path components (resolve "." and "..")
 fn normalize_path_components(path: &Path) -> String {
     let mut components = Vec::new();
-    
+
     for component in path.components() {
         match component {
             std::path::Component::CurDir => {
@@ -819,13 +819,13 @@ fn normalize_path_components(path: &Path) -> String {
             }
         }
     }
-    
+
     // Reconstruct the path
     let mut result = std::path::PathBuf::new();
     for component in components {
         result.push(component);
     }
-    
+
     result.to_string_lossy().to_string()
 }
 
@@ -847,19 +847,19 @@ mod tests {
         // Create a temporary file to test with existing files
         let temp_file = NamedTempFile::new().unwrap();
         let temp_path = temp_file.path().to_string_lossy().to_string();
-        
+
         // Normalizing an existing file should return its canonical path
         let normalized = normalize_db_path(&temp_path);
         assert!(!normalized.is_empty());
         assert!(Path::new(&normalized).is_absolute());
     }
 
-    #[test] 
+    #[test]
     fn test_normalize_db_path_relative_nonexistent() {
         // Test relative path that doesn't exist yet
         let relative_path = "./test_db.sqlite";
         let normalized = normalize_db_path(relative_path);
-        
+
         // Should be converted to absolute path
         assert!(Path::new(&normalized).is_absolute());
         assert!(normalized.ends_with("test_db.sqlite"));
@@ -872,9 +872,9 @@ mod tests {
         let current_dir = std::env::current_dir().unwrap();
         let absolute_path = current_dir.join("nonexistent_db.sqlite");
         let path_str = absolute_path.to_string_lossy().to_string();
-        
+
         let normalized = normalize_db_path(&path_str);
-        
+
         // Should remain the same since it's already absolute
         assert_eq!(normalized, path_str);
         assert!(Path::new(&normalized).is_absolute());
@@ -885,15 +885,15 @@ mod tests {
         // Test the specific case mentioned by o3 Marvin: "./db.sqlite" vs "db.sqlite"
         let dot_path = "./db.sqlite";
         let plain_path = "db.sqlite";
-        
+
         let normalized_dot = normalize_db_path(dot_path);
         let normalized_plain = normalize_db_path(plain_path);
-        
+
         // Both should normalize to the same absolute path
         assert_eq!(normalized_dot, normalized_plain);
         assert!(Path::new(&normalized_dot).is_absolute());
         assert!(normalized_dot.ends_with("db.sqlite"));
-        
+
         // Also verify they both resolve to current_dir + filename
         let current_dir = std::env::current_dir().unwrap();
         let expected = current_dir.join("db.sqlite").to_string_lossy().to_string();
@@ -907,7 +907,7 @@ mod tests {
         let test_path = "./test.db";
         let normalized1 = normalize_db_path(test_path);
         let normalized2 = normalize_db_path(test_path);
-        
+
         assert_eq!(normalized1, normalized2);
     }
 
@@ -915,20 +915,24 @@ mod tests {
     fn test_normalize_db_path_edge_cases() {
         let current_dir = std::env::current_dir().unwrap();
         let expected_current = current_dir.to_string_lossy().to_string();
-        
+
         // Test empty string - since it's relative, it becomes absolute current dir
         let normalized_empty = normalize_db_path("");
         assert_eq!(normalized_empty, expected_current);
-        
+
         // Test single dot - should become current directory
         let normalized_dot = normalize_db_path(".");
         assert!(Path::new(&normalized_dot).is_absolute());
         assert_eq!(normalized_dot, expected_current);
-        
+
         // Test double dot - should become parent directory
         let normalized_double_dot = normalize_db_path("..");
         assert!(Path::new(&normalized_double_dot).is_absolute());
-        let expected_parent = current_dir.parent().unwrap_or(&current_dir).to_string_lossy().to_string();
+        let expected_parent = current_dir
+            .parent()
+            .unwrap_or(&current_dir)
+            .to_string_lossy()
+            .to_string();
         assert_eq!(normalized_double_dot, expected_parent);
     }
 
