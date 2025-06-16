@@ -38,6 +38,8 @@ pub struct CacheConfig {
     pub pool_max_connections: Option<u32>,
     /// Connection timeout for pool operations
     pub pool_connection_timeout: Option<Duration>,
+    /// Maximum lifetime for pooled connections (prevents stale connections)
+    pub pool_max_lifetime: Option<Duration>,
 }
 
 impl Default for CacheConfig {
@@ -51,6 +53,7 @@ impl Default for CacheConfig {
             pool_min_connections: Some(1),              // Minimum connections in pool
             pool_max_connections: Some(10),             // Maximum connections in pool
             pool_connection_timeout: Some(Duration::from_secs(30)),
+            pool_max_lifetime: Some(Duration::from_secs(300)), // 5 minutes to recycle connections
         }
     }
 }
@@ -153,7 +156,9 @@ impl ResourceCache {
         }
 
         // Set max lifetime to recycle long-lived connections and avoid stale WAL readers
-        pool_builder = pool_builder.max_lifetime(Some(Duration::from_secs(300))); // 5 minutes
+        if let Some(max_lifetime) = config.pool_max_lifetime {
+            pool_builder = pool_builder.max_lifetime(Some(max_lifetime));
+        }
 
         let pool = pool_builder
             .build(manager)
@@ -351,7 +356,13 @@ impl ResourceCache {
             )
         };
 
-        let metadata_json = serde_json::to_string(&resource.info.metadata)
+        // Clone metadata and add encoding if present
+        let mut metadata = resource.info.metadata.clone();
+        if let Some(ref encoding) = resource.encoding {
+            metadata.insert("encoding".to_string(), serde_json::json!(encoding));
+        }
+
+        let metadata_json = serde_json::to_string(&metadata)
             .map_err(|e| ClientError::Client(format!("Failed to serialize metadata: {}", e)))?;
 
         let size_bytes = resource.data.len() as u64;
@@ -464,28 +475,42 @@ impl ResourceCache {
                         .get("description")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
-                    mime_type: content_type,
+                    mime_type: content_type.clone(),
                     metadata,
                 };
+
+                // Extract encoding from metadata or content_type
+                let encoding = info
+                    .metadata
+                    .get("encoding")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| content_type.as_ref().and_then(|ct| parse_charset(ct)));
 
                 // Update analytics
                 self.analytics.total_requests += 1;
                 self.analytics.cache_hits += 1;
-                self.analytics.hit_rate =
-                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                self.analytics.hit_rate = if self.analytics.total_requests > 0 {
+                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64
+                } else {
+                    0.0
+                };
 
                 Ok(Some(ResourceContent {
                     info,
                     data: content,
-                    encoding: None, // TODO: Handle encoding properly
+                    encoding,
                 }))
             }
             None => {
                 // Update analytics for cache miss
                 self.analytics.total_requests += 1;
                 self.analytics.cache_misses += 1;
-                self.analytics.hit_rate =
-                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                self.analytics.hit_rate = if self.analytics.total_requests > 0 {
+                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64
+                } else {
+                    0.0
+                };
 
                 Ok(None)
             }
@@ -508,7 +533,13 @@ impl ResourceCache {
             let rows = stmt.query_map(rusqlite::params![now], |row| {
                 let metadata_json: String = row.get(4)?;
                 let metadata: HashMap<String, serde_json::Value> =
-                    serde_json::from_str(&metadata_json).unwrap_or_default();
+                    match serde_json::from_str(&metadata_json) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            tracing::warn!("Failed to parse metadata JSON: {}", e);
+                            HashMap::new()
+                        }
+                    };
 
                 Ok(CachedResource {
                     id: row.get(0)?,
@@ -696,7 +727,13 @@ impl ResourceCache {
             let rows = stmt.query_map(rusqlite::params![search_pattern, now], |row| {
                 let metadata_json: String = row.get(4)?;
                 let metadata: HashMap<String, serde_json::Value> =
-                    serde_json::from_str(&metadata_json).unwrap_or_default();
+                    match serde_json::from_str(&metadata_json) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            tracing::warn!("Failed to parse metadata JSON in search: {}", e);
+                            HashMap::new()
+                        }
+                    };
 
                 Ok(CachedResource {
                     id: row.get(0)?,
@@ -762,6 +799,26 @@ impl ResourceCache {
 /// Get the global database initialization tracker
 fn get_db_tracker() -> &'static Mutex<HashMap<String, ()>> {
     INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Parse charset from content-type header
+///
+/// IMPORTANT: This function is duplicated in the template file at
+/// `templates/mcp/client/rust_reqwest/src/cache.rs.tera` and must be kept in sync.
+/// Any changes here should be applied to both locations.
+fn parse_charset(content_type: &str) -> Option<String> {
+    content_type.split(';').find_map(|part| {
+        let (key, value) = part.trim().split_once('=')?;
+        if key.trim().eq_ignore_ascii_case("charset") {
+            Some(
+                value
+                    .trim_matches(|c| c == '"' || c == '\'')
+                    .to_ascii_lowercase(),
+            )
+        } else {
+            None
+        }
+    })
 }
 
 /// Normalize database path to prevent double-initialization due to path differences
@@ -1549,5 +1606,238 @@ mod tests {
 
         // After drop, connections should be cleaned up
         // (We can't easily test this without exposing internals, but the pattern should work)
+    }
+
+    #[test]
+    fn test_parse_charset() {
+        // Basic charset parsing
+        assert_eq!(
+            parse_charset("text/html; charset=utf-8"),
+            Some("utf-8".to_string())
+        );
+        assert_eq!(
+            parse_charset("text/plain; charset=ISO-8859-1"),
+            Some("iso-8859-1".to_string())
+        );
+
+        // Edge cases
+        assert_eq!(parse_charset("text/plain"), None);
+        assert_eq!(parse_charset("application/octet-stream"), None);
+        assert_eq!(
+            parse_charset("text/html;charset=utf-8"),
+            Some("utf-8".to_string())
+        ); // no space
+        assert_eq!(
+            parse_charset("text/html; charset=UTF-8"),
+            Some("utf-8".to_string())
+        ); // uppercase
+        assert_eq!(parse_charset(""), None);
+        assert_eq!(
+            parse_charset("text/html; charset=utf-8; boundary=something"),
+            Some("utf-8".to_string())
+        );
+
+        // NEW ROBUSTNESS TESTS (should fail with current implementation)
+        // Quoted values
+        assert_eq!(
+            parse_charset("text/html; charset=\"utf-8\""),
+            Some("utf-8".to_string())
+        );
+        assert_eq!(
+            parse_charset("text/html; charset='iso-8859-1'"),
+            Some("iso-8859-1".to_string())
+        );
+
+        // Case insensitive key matching
+        assert_eq!(
+            parse_charset("text/html; Charset=UTF-8"),
+            Some("utf-8".to_string())
+        );
+        assert_eq!(
+            parse_charset("text/html; CHARSET=windows-1252"),
+            Some("windows-1252".to_string())
+        );
+
+        // Mixed case with quotes
+        assert_eq!(
+            parse_charset("text/html; Charset=\"UTF-8\""),
+            Some("utf-8".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_resource_with_encoding_from_metadata() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Create a resource with encoding in metadata
+        let mut metadata = HashMap::new();
+        metadata.insert("encoding".to_string(), serde_json::json!("utf-16"));
+
+        let resource = ResourceContent {
+            info: ResourceInfo {
+                uri: "test://encoded.txt".to_string(),
+                name: Some("encoded.txt".to_string()),
+                description: Some("Test resource with encoding".to_string()),
+                mime_type: Some("text/plain".to_string()),
+                metadata,
+            },
+            data: b"Hello, World!".to_vec(),
+            encoding: Some("utf-16".to_string()),
+        };
+
+        // Store the resource
+        cache.store_resource(&resource).await.unwrap();
+
+        // Retrieve and check encoding is preserved
+        let retrieved = cache.get_resource("test://encoded.txt").await.unwrap();
+        assert!(retrieved.is_some());
+        let retrieved_resource = retrieved.unwrap();
+        assert_eq!(retrieved_resource.encoding, Some("utf-16".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_resource_with_encoding_from_content_type() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Create a resource without encoding in metadata but with charset in content_type
+        let resource = ResourceContent {
+            info: ResourceInfo {
+                uri: "test://charset.html".to_string(),
+                name: Some("charset.html".to_string()),
+                description: Some("Test resource with charset in content type".to_string()),
+                mime_type: Some("text/html; charset=iso-8859-1".to_string()),
+                metadata: HashMap::new(),
+            },
+            data: b"<html>Hello</html>".to_vec(),
+            encoding: None, // No encoding specified
+        };
+
+        // Store the resource
+        cache.store_resource(&resource).await.unwrap();
+
+        // Retrieve and check encoding is extracted from content_type
+        let retrieved = cache.get_resource("test://charset.html").await.unwrap();
+        assert!(retrieved.is_some());
+        let retrieved_resource = retrieved.unwrap();
+        assert_eq!(retrieved_resource.encoding, Some("iso-8859-1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_store_and_retrieve_with_encoding() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Create a resource with encoding
+        let resource = ResourceContent {
+            info: ResourceInfo {
+                uri: "test://utf8.txt".to_string(),
+                name: Some("utf8.txt".to_string()),
+                description: Some("UTF-8 encoded text".to_string()),
+                mime_type: Some("text/plain".to_string()),
+                metadata: HashMap::new(),
+            },
+            data: "Hello, 世界! 🌍".as_bytes().to_vec(),
+            encoding: Some("utf-8".to_string()),
+        };
+
+        // Store the resource
+        cache.store_resource(&resource).await.unwrap();
+
+        // Retrieve and verify encoding is preserved
+        let retrieved = cache.get_resource("test://utf8.txt").await.unwrap();
+        assert!(retrieved.is_some());
+        let retrieved_resource = retrieved.unwrap();
+        assert_eq!(retrieved_resource.encoding, Some("utf-8".to_string()));
+        assert_eq!(retrieved_resource.data, "Hello, 世界! 🌍".as_bytes());
+    }
+
+    #[tokio::test]
+    async fn test_round_trip_encoding_with_quoted_charset() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Create resource with quoted charset in content-type (should work after fix)
+        let resource = ResourceContent {
+            info: ResourceInfo {
+                uri: "test://quoted-charset.html".to_string(),
+                name: Some("quoted-charset.html".to_string()),
+                description: Some("HTML with quoted charset".to_string()),
+                mime_type: Some("text/html; charset=\"windows-1252\"".to_string()),
+                metadata: HashMap::new(),
+            },
+            data: b"<html>Content with special chars</html>".to_vec(),
+            encoding: None, // No encoding specified - should extract from content-type
+        };
+
+        // Store the resource
+        cache.store_resource(&resource).await.unwrap();
+
+        // Retrieve and verify encoding was extracted from quoted content-type
+        let retrieved = cache
+            .get_resource("test://quoted-charset.html")
+            .await
+            .unwrap();
+        assert!(retrieved.is_some());
+        let retrieved_resource = retrieved.unwrap();
+        assert_eq!(
+            retrieved_resource.encoding,
+            Some("windows-1252".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_round_trip_encoding_with_case_insensitive_charset() {
+        let config = CacheConfig::default();
+        let mut cache = ResourceCache::new(config).await.unwrap();
+
+        // Create resource with uppercase Charset in content-type (should work after fix)
+        let resource = ResourceContent {
+            info: ResourceInfo {
+                uri: "test://uppercase-charset.xml".to_string(),
+                name: Some("uppercase-charset.xml".to_string()),
+                description: Some("XML with uppercase Charset".to_string()),
+                mime_type: Some("application/xml; Charset=UTF-8".to_string()),
+                metadata: HashMap::new(),
+            },
+            data: b"<?xml version=\"1.0\"?><root>data</root>".to_vec(),
+            encoding: None, // No encoding specified - should extract from content-type
+        };
+
+        // Store the resource
+        cache.store_resource(&resource).await.unwrap();
+
+        // Retrieve and verify encoding was extracted from uppercase Charset
+        let retrieved = cache
+            .get_resource("test://uppercase-charset.xml")
+            .await
+            .unwrap();
+        assert!(retrieved.is_some());
+        let retrieved_resource = retrieved.unwrap();
+        assert_eq!(retrieved_resource.encoding, Some("utf-8".to_string()));
+    }
+
+    #[test]
+    fn test_analytics_hit_rate_calculation_safety() {
+        let analytics = CacheAnalytics {
+            total_requests: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            hit_rate: 0.0,
+            cache_size_bytes: 0,
+            resource_count: 0,
+            eviction_count: 0,
+            last_cleanup: Utc::now(),
+        };
+
+        // Calculate hit rate with zero requests - should not panic
+        let hit_rate = if analytics.total_requests > 0 {
+            analytics.cache_hits as f64 / analytics.total_requests as f64
+        } else {
+            0.0
+        };
+
+        assert_eq!(hit_rate, 0.0);
     }
 }

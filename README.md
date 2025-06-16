@@ -26,6 +26,7 @@
 - **🔍 Built-in Validation** - Automatic OpenAPI schema validation
 - **🚀 Production Ready** - Includes logging, error handling, and configuration out of the box
 - **🔌 MCP Protocol Support** - Full compatibility with Model Context Protocol
+- **💾 SQLite Resource Caching** - Built-in resource caching with connection pooling for MCP clients
 - **📦 Binary Distribution** - Easy installation and deployment
 
 ## 🚀 Quick Start
@@ -208,6 +209,31 @@ Generated Rust MCP Server (Axum, etc.)
 - The generated server uses [Stdio](https://modelcontextprotocol.io/introduction) as the primary MCP protocol for agent integration, but can be extended for HTTP/SSE and other transports.
 - All code is idiomatic Rust, ready for further customization and production deployment.
 
+## 💾 Resource Caching
+
+Generated MCP clients include a sophisticated SQLite-powered resource caching system:
+
+**Features:**
+- **Connection Pooling** - r2d2 connection pool for concurrent access
+- **Character Encoding** - Automatic charset detection from HTTP headers
+- **TTL Support** - Configurable time-to-live for cache entries
+- **Analytics** - Built-in cache hit/miss tracking and performance metrics
+- **ACID Transactions** - Database integrity with rollback support
+- **Auto-cleanup** - Configurable expired resource cleanup
+
+**Configuration Options:**
+```rust
+let config = CacheConfig {
+    database_path: "cache.db".to_string(),
+    default_ttl: Duration::from_secs(3600),
+    max_size_mb: 100,
+    pool_max_connections: Some(10),
+    pool_max_lifetime: Some(Duration::from_secs(300)),
+    auto_cleanup: true,
+    ..Default::default()
+};
+```
+
 ---
 
 ## 🤝 Contributing
@@ -331,7 +357,7 @@ Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation.
 - `rust_axum` - Rust MCP server using Axum web framework
 
 **Built-in Client Templates:**
-- `rust_reqwest` - Rust MCP client with REPL interface
+- `rust_reqwest` - Rust MCP client with REPL interface and SQLite resource caching
 
 **Custom Templates:**
 - Create templates under `templates/mcp/server/` or `templates/mcp/client/`

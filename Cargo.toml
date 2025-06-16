@@ -5,6 +5,9 @@ members = [
     "crates/agenterra-cli",
     "crates/agenterra-client",
 ]
+exclude = [
+    ".agenterra/*"
+]
 resolver = "2"
 
 [workspace.dependencies]

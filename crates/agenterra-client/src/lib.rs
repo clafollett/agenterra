@@ -18,6 +18,6 @@ pub use cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
 pub use client::AgenterraClient;
 pub use error::{ClientError, Result};
 pub use registry::{ToolInfo, ToolRegistry};
-pub use resource::{ResourceClient, ResourceContent, ResourceInfo};
+pub use resource::{ResourceContent, ResourceInfo};
 pub use result::{ContentType, ToolResult};
 pub use transport::Transport;

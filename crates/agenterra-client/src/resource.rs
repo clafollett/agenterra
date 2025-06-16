@@ -1,8 +1,8 @@
-//! Resource management for MCP client
+//! Resource data structures for MCP client
 //!
-//! Provides APIs for discovering and accessing MCP resources using URI-based identification.
+//! Provides data structures for MCP resources. Resource functionality is available
+//! through the main client's `list_resources()` and `get_resource()` methods.
 
-use crate::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -21,38 +21,6 @@ pub struct ResourceInfo {
     pub metadata: HashMap<String, serde_json::Value>,
 }
 
-/// Client for MCP resource operations
-#[derive(Debug)]
-pub struct ResourceClient {
-    // Will be integrated with main AgenterraClient
-    _placeholder: (),
-}
-
-impl ResourceClient {
-    /// Create a new resource client
-    pub fn new() -> Self {
-        Self { _placeholder: () }
-    }
-
-    /// List all available resources from the MCP server
-    pub async fn list_resources(&self) -> Result<Vec<ResourceInfo>> {
-        // This will fail until we implement it
-        Err(ClientError::Client("Not implemented yet".to_string()))
-    }
-
-    /// Get a specific resource by URI
-    pub async fn get_resource(&self, _uri: &str) -> Result<ResourceContent> {
-        // This will fail until we implement it
-        Err(ClientError::Client("Not implemented yet".to_string()))
-    }
-}
-
-impl Default for ResourceClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Content of a resource retrieved from MCP server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceContent {
@@ -67,76 +35,6 @@ pub struct ResourceContent {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn test_resource_client_creation() {
-        let client = ResourceClient::new();
-        // Should be able to create client successfully
-        assert!(format!("{:?}", client).contains("ResourceClient"));
-    }
-
-    #[tokio::test]
-    async fn test_list_resources_standalone_client() {
-        let client = ResourceClient::new();
-
-        // Standalone ResourceClient should still fail (it needs integration with AgenterraClient)
-        let result = client.list_resources().await;
-
-        assert!(result.is_err());
-        if let Err(ClientError::Client(msg)) = result {
-            assert!(msg.contains("Not implemented yet"));
-        } else {
-            panic!("Expected ClientError::Client for standalone ResourceClient");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_get_resource_standalone_client() {
-        let client = ResourceClient::new();
-
-        // Standalone ResourceClient should still fail (it needs integration with AgenterraClient)
-        let result = client.get_resource("file:///test.txt").await;
-
-        assert!(result.is_err());
-        if let Err(ClientError::Client(msg)) = result {
-            assert!(msg.contains("Not implemented yet"));
-        } else {
-            panic!("Expected ClientError::Client for standalone ResourceClient");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_list_resources_expected_behavior() {
-        let client = ResourceClient::new();
-
-        // This test defines the expected behavior when implemented
-        let result = client.list_resources().await;
-
-        // Should fail for now, but when implemented should return Vec<ResourceInfo>
-        assert!(result.is_err());
-
-        // TODO: When implemented, this test should pass:
-        // assert!(result.is_ok());
-        // let resources = result.unwrap();
-        // assert!(resources.len() >= 0); // Could be empty or have resources
-    }
-
-    #[tokio::test]
-    async fn test_get_resource_expected_behavior() {
-        let client = ResourceClient::new();
-
-        // This test defines the expected behavior when implemented
-        let result = client.get_resource("file:///example.txt").await;
-
-        // Should fail for now, but when implemented should return ResourceContent
-        assert!(result.is_err());
-
-        // TODO: When implemented, this test should pass:
-        // assert!(result.is_ok());
-        // let content = result.unwrap();
-        // assert_eq!(content.info.uri, "file:///example.txt");
-        // assert!(!content.data.is_empty());
-    }
 
     #[test]
     fn test_resource_info_creation() {

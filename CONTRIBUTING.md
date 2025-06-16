@@ -112,7 +112,8 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 2. **Testing**
    - Write unit tests
-   - Add integration tests
+   - Add integration tests for both servers and clients
+   - Test cache configuration and connection pooling options
    - Test edge cases
 
 3. **Documentation**
@@ -138,7 +139,7 @@ agenterra/
 │       ├── server/          # MCP server templates
 │       │   └── rust_axum/   # Rust Axum server template
 │       └── client/          # MCP client templates
-│           └── rust_reqwest/ # Rust reqwest client template
+│           └── rust_reqwest/ # Rust reqwest client template with SQLite caching
 ├── tests/fixtures/          # Test OpenAPI specs
 └── plans/                   # Project planning docs
 ```

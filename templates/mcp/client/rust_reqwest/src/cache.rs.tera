@@ -109,6 +109,8 @@ pub struct CacheConfig {
     pub pool_max_connections: Option<u32>,
     /// Connection timeout for pool operations
     pub pool_connection_timeout: Option<Duration>,
+    /// Maximum lifetime for pooled connections (prevents stale connections)
+    pub pool_max_lifetime: Option<Duration>,
 }
 
 impl Default for CacheConfig {
@@ -122,6 +124,7 @@ impl Default for CacheConfig {
             pool_min_connections: Some(1),  // Minimum connections in pool
             pool_max_connections: Some(10), // Maximum connections in pool
             pool_connection_timeout: Some(Duration::from_secs(60)), // Increased from 30s for CI robustness
+            pool_max_lifetime: Some(Duration::from_secs(300)), // 5 minutes to recycle connections
         }
     }
 }
@@ -228,7 +231,9 @@ impl ResourceCache {
         }
 
         // Set max lifetime to recycle long-lived connections and avoid stale WAL readers
-        pool_builder = pool_builder.max_lifetime(Some(Duration::from_secs(300))); // 5 minutes
+        if let Some(max_lifetime) = config.pool_max_lifetime {
+            pool_builder = pool_builder.max_lifetime(Some(max_lifetime));
+        }
 
         let pool = pool_builder.build(manager).map_err(|e| {
             ClientError::Pool(format!("Failed to create connection pool: {}", e))
@@ -418,7 +423,13 @@ impl ResourceCache {
             )
         };
 
-        let metadata_json = serde_json::to_string(&resource.info.metadata)
+        // Clone metadata and add encoding if present
+        let mut metadata = resource.info.metadata.clone();
+        if let Some(ref encoding) = resource.encoding {
+            metadata.insert("encoding".to_string(), serde_json::json!(encoding));
+        }
+        
+        let metadata_json = serde_json::to_string(&metadata)
             .map_err(|e| ClientError::Client(format!("Failed to serialize metadata: {}", e)))?;
 
         let size_bytes = resource.data.len() as u64;
@@ -517,11 +528,19 @@ impl ResourceCache {
 
         match result {
             Some((_, uri, content, content_type, metadata_json, _, _, _, _, _)) => {
-                // Parse metadata
+                // Parse metadata with warning on failure
                 let metadata: HashMap<String, serde_json::Value> =
                     serde_json::from_str(&metadata_json).map_err(|e| {
+                        warn!("Failed to parse metadata JSON for resource {}: {}", uri, e);
                         ClientError::Client(format!("Failed to parse metadata: {}", e))
                     })?;
+                
+                // Extract encoding from metadata or content_type
+                let encoding = metadata
+                    .get("encoding")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| content_type.as_ref().and_then(|ct| parse_charset(ct)));
 
                 // Construct ResourceInfo
                 let info = ResourceInfo {
@@ -541,23 +560,29 @@ impl ResourceCache {
                 // Update analytics
                 self.analytics.total_requests += 1;
                 self.analytics.cache_hits += 1;
-                self.analytics.hit_rate =
-                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                self.analytics.hit_rate = if self.analytics.total_requests > 0 {
+                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64
+                } else {
+                    0.0
+                };
                 
                 debug!("Cache HIT for uri={}, hit_rate={:.2}", uri_for_logs, self.analytics.hit_rate);
 
                 Ok(Some(ResourceContent {
                     info,
                     data: content,
-                    encoding: None, // TODO: Handle encoding properly
+                    encoding,
                 }))
             }
             None => {
                 // Update analytics for cache miss
                 self.analytics.total_requests += 1;
                 self.analytics.cache_misses += 1;
-                self.analytics.hit_rate =
-                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                self.analytics.hit_rate = if self.analytics.total_requests > 0 {
+                    self.analytics.cache_hits as f64 / self.analytics.total_requests as f64
+                } else {
+                    0.0
+                };
                 
                 debug!("Cache MISS for uri={}, hit_rate={:.2}", uri_for_logs, self.analytics.hit_rate);
 
@@ -582,7 +607,10 @@ impl ResourceCache {
                 let rows = stmt.query_map(rusqlite::params![now], |row| {
                     let metadata_json: String = row.get(4)?;
                     let metadata: HashMap<String, serde_json::Value> =
-                        serde_json::from_str(&metadata_json).unwrap_or_default();
+                        serde_json::from_str(&metadata_json).unwrap_or_else(|e| {
+                            warn!("Failed to parse metadata JSON in list_cached_resources: {}", e);
+                            HashMap::new()
+                        });
 
                     Ok(CachedResource {
                         id: row.get(0)?,
@@ -775,7 +803,10 @@ impl ResourceCache {
                 let rows = stmt.query_map(rusqlite::params![search_pattern, now], |row| {
                     let metadata_json: String = row.get(4)?;
                     let metadata: HashMap<String, serde_json::Value> =
-                        serde_json::from_str(&metadata_json).unwrap_or_default();
+                        serde_json::from_str(&metadata_json).unwrap_or_else(|e| {
+                            warn!("Failed to parse metadata JSON in search_resources: {}", e);
+                            HashMap::new()
+                        });
 
                     Ok(CachedResource {
                         id: row.get(0)?,
@@ -833,6 +864,24 @@ impl ResourceCache {
             idle_connections: state.idle_connections,
         }
     }
+}
+
+/// Parse charset from content-type header
+/// 
+/// IMPORTANT: This function is duplicated from the main client cache implementation at 
+/// `crates/agenterra-client/src/cache.rs` and must be kept in sync.
+/// Any changes to the main implementation should be applied here as well.
+fn parse_charset(content_type: &str) -> Option<String> {
+    content_type.split(';')
+        .find_map(|part| {
+            let (key, value) = part.trim().split_once('=')?;
+            if key.trim().eq_ignore_ascii_case("charset") {
+                Some(value.trim_matches(|c| c == '"' || c == '\'')
+                          .to_ascii_lowercase())
+            } else { 
+                None 
+            }
+        })
 }
 
 #[cfg(test)]

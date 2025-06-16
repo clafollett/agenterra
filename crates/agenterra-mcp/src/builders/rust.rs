@@ -107,9 +107,9 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
             path: op.path.clone(),
             properties_type: to_upper_camel_case(&format!("{}_properties", op.id)),
             response_type: to_upper_camel_case(&format!("{}_response", op.id)),
-            envelope_properties: serde_json::json!({}), // TODO: Extract from op.responses if present
-            properties: vec![], // TODO: Extract properties from op.responses and map to RustPropertyInfo
-            properties_for_handler: vec![],
+            envelope_properties: extract_envelope_properties(op),
+            properties: extract_response_properties(op),
+            properties_for_handler: extract_handler_properties(op),
             parameters: op
                 .parameters
                 .clone()
@@ -132,10 +132,10 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
             summary: op.summary.clone().unwrap_or_default(),
             description: op.description.clone().unwrap_or_default(),
             tags: op.tags.clone().unwrap_or_default(),
-            properties_schema: serde_json::Map::new(), // TODO: Extract from op.responses
-            response_schema: serde_json::json!({}),    // TODO: Extract from op.responses
-            spec_file_name: None,                      // TODO: Set if available
-            valid_fields: vec![],                      // TODO: Populate with valid fields
+            properties_schema: extract_properties_schema(op),
+            response_schema: extract_response_schema(op),
+            spec_file_name: extract_spec_file_name(op),
+            valid_fields: extract_valid_fields(op),
         };
 
         // Convert to JSON
@@ -177,4 +177,193 @@ fn map_openapi_schema_to_rust_type(schema: Option<&JsonValue>) -> String {
     } else {
         "String".to_string()
     }
+}
+
+/// Extracts envelope properties from OpenAPI operation responses
+fn extract_envelope_properties(op: &OpenApiOperation) -> JsonValue {
+    // Look for successful response (200, 201, etc.)
+    for (status_code, response) in &op.responses {
+        if status_code.starts_with('2') {
+            if let Some(content) = response.content.as_ref() {
+                if let Some(json_content) = content.get("application/json") {
+                    if let Some(schema) = json_content.get("schema") {
+                        return extract_schema_envelope_properties(schema);
+                    }
+                }
+            }
+        }
+    }
+    serde_json::json!({})
+}
+
+/// Extracts properties from schema and maps them to RustPropertyInfo
+fn extract_response_properties(op: &OpenApiOperation) -> Vec<RustPropertyInfo> {
+    let mut properties = Vec::new();
+
+    // Look for successful response (200, 201, etc.)
+    for (status_code, response) in &op.responses {
+        if status_code.starts_with('2') {
+            if let Some(content) = response.content.as_ref() {
+                if let Some(json_content) = content.get("application/json") {
+                    if let Some(schema) = json_content.get("schema") {
+                        properties.extend(extract_schema_properties_as_rust(schema));
+                    }
+                }
+            }
+        }
+    }
+
+    properties
+}
+
+/// Extracts property names for handler functions
+fn extract_handler_properties(op: &OpenApiOperation) -> Vec<String> {
+    extract_response_properties(op)
+        .into_iter()
+        .map(|prop| prop.name)
+        .collect()
+}
+
+/// Helper to extract envelope properties from a schema
+fn extract_schema_envelope_properties(schema: &JsonValue) -> JsonValue {
+    // Handle $ref references
+    if let Some(_ref_str) = schema.get("$ref").and_then(JsonValue::as_str) {
+        // For now, return empty object for $ref schemas
+        // In a full implementation, we'd resolve the reference
+        return serde_json::json!({});
+    }
+
+    // Handle direct properties
+    if let Some(properties) = schema.get("properties") {
+        return properties.clone();
+    }
+
+    // Handle array responses
+    if schema.get("type").and_then(JsonValue::as_str) == Some("array") {
+        if let Some(items) = schema.get("items") {
+            return extract_schema_envelope_properties(items);
+        }
+    }
+
+    serde_json::json!({})
+}
+
+/// Helper to extract schema properties and convert to RustPropertyInfo
+fn extract_schema_properties_as_rust(schema: &JsonValue) -> Vec<RustPropertyInfo> {
+    let mut rust_properties = Vec::new();
+
+    // Handle $ref references
+    if let Some(_ref_str) = schema.get("$ref").and_then(JsonValue::as_str) {
+        // For now, return empty for $ref schemas
+        // In a full implementation, we'd resolve the reference
+        return rust_properties;
+    }
+
+    // Handle direct properties
+    if let Some(properties) = schema.get("properties").and_then(JsonValue::as_object) {
+        for (prop_name, prop_schema) in properties {
+            let rust_type = map_openapi_schema_to_rust_type(Some(prop_schema));
+            let title = prop_schema
+                .get("title")
+                .and_then(JsonValue::as_str)
+                .map(String::from);
+            let description = prop_schema
+                .get("description")
+                .and_then(JsonValue::as_str)
+                .map(String::from);
+            let example = prop_schema.get("example").cloned();
+
+            rust_properties.push(RustPropertyInfo {
+                name: to_snake_case(prop_name),
+                rust_type,
+                title,
+                description,
+                example,
+            });
+        }
+    }
+
+    // Handle array responses - extract properties from items
+    if schema.get("type").and_then(JsonValue::as_str) == Some("array") {
+        if let Some(items) = schema.get("items") {
+            rust_properties.extend(extract_schema_properties_as_rust(items));
+        }
+    }
+
+    rust_properties
+}
+
+/// Extracts properties schema as a JSON Map from OpenAPI operation responses
+fn extract_properties_schema(op: &OpenApiOperation) -> JsonMap<String, JsonValue> {
+    // Look for successful response (200, 201, etc.)
+    for (status_code, response) in &op.responses {
+        if status_code.starts_with('2') {
+            if let Some(content) = response.content.as_ref() {
+                if let Some(json_content) = content.get("application/json") {
+                    if let Some(schema) = json_content.get("schema") {
+                        if let Some(properties) = extract_schema_properties_map(schema) {
+                            return properties;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    JsonMap::new()
+}
+
+/// Extracts response schema from OpenAPI operation responses  
+fn extract_response_schema(op: &OpenApiOperation) -> JsonValue {
+    // Look for successful response (200, 201, etc.)
+    for (status_code, response) in &op.responses {
+        if status_code.starts_with('2') {
+            if let Some(content) = response.content.as_ref() {
+                if let Some(json_content) = content.get("application/json") {
+                    if let Some(schema) = json_content.get("schema") {
+                        return schema.clone();
+                    }
+                }
+            }
+        }
+    }
+    serde_json::json!({})
+}
+
+/// Extracts spec file name from operation (currently not available in operation context)
+fn extract_spec_file_name(_op: &OpenApiOperation) -> Option<String> {
+    // The OpenApiOperation doesn't contain file name information
+    // This would need to be passed in from the calling context
+    None
+}
+
+/// Extracts valid field names from operation responses
+fn extract_valid_fields(op: &OpenApiOperation) -> Vec<String> {
+    extract_response_properties(op)
+        .into_iter()
+        .map(|prop| prop.name)
+        .collect()
+}
+
+/// Helper to extract properties as a JSON Map from a schema
+fn extract_schema_properties_map(schema: &JsonValue) -> Option<JsonMap<String, JsonValue>> {
+    // Handle $ref references
+    if let Some(_ref_str) = schema.get("$ref").and_then(JsonValue::as_str) {
+        // For now, return None for $ref schemas
+        // In a full implementation, we'd resolve the reference
+        return None;
+    }
+
+    // Handle direct properties
+    if let Some(properties) = schema.get("properties").and_then(JsonValue::as_object) {
+        return Some(properties.clone());
+    }
+
+    // Handle array responses - extract properties from items
+    if schema.get("type").and_then(JsonValue::as_str) == Some("array") {
+        if let Some(items) = schema.get("items") {
+            return extract_schema_properties_map(items);
+        }
+    }
+
+    None
 }

@@ -1307,6 +1307,7 @@ mod tests {
             pool_min_connections: None,
             pool_max_connections: None,
             pool_connection_timeout: None,
+            pool_max_lifetime: None,
         };
 
         let client = AgenterraClient::new(Box::new(mock_transport))
