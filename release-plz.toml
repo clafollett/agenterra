@@ -12,3 +12,18 @@ publish = false
 name = "agenterra-core"
 release = false
 publish = false
+
+[[package]]
+name = "agenterra-mcp"
+release = false
+publish = false
+
+[[package]]
+name = "agenterra-cli"
+release = false
+publish = false
+
+[[package]]
+name = "agenterra-client"
+release = false
+publish = false
