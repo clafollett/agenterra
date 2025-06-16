@@ -12,6 +12,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 
@@ -46,7 +47,7 @@ impl Default for CacheConfig {
             cleanup_interval: Duration::from_secs(300), // 5 minutes
             pool_min_connections: Some(1),  // Minimum connections in pool
             pool_max_connections: Some(10), // Maximum connections in pool
-            pool_connection_timeout: Some(Duration::from_secs(30)),
+            pool_connection_timeout: Some(Duration::from_secs(60)), // Increased from 30s for CI robustness
         }
     }
 }
@@ -121,6 +122,10 @@ pub struct ResourceCache {
 impl ResourceCache {
     /// Create a new resource cache with the given configuration
     pub async fn new(config: CacheConfig) -> Result<Self> {
+        info!("Initializing resource cache with database: {}", config.database_path);
+        debug!("Cache config: max_size_mb={}, default_ttl={:?}, auto_cleanup={}", 
+               config.max_size_mb, config.default_ttl, config.auto_cleanup);
+        
         // Initialize analytics
         let analytics = CacheAnalytics {
             total_requests: 0,
@@ -163,7 +168,8 @@ impl ResourceCache {
 
         // Initialize database schema
         cache.init_schema().await?;
-
+        
+        info!("Resource cache initialized successfully");
         Ok(cache)
     }
 
@@ -264,6 +270,8 @@ impl ResourceCache {
         resource: &ResourceContent,
         ttl: Duration,
     ) -> Result<String> {
+        debug!("Storing resource: uri={}, size={} bytes, ttl={:?}", 
+               resource.info.uri, resource.data.len(), ttl);
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let expires_at = if ttl.is_zero() {
@@ -319,13 +327,17 @@ impl ResourceCache {
         // Update analytics
         self.analytics.resource_count += 1;
         self.analytics.cache_size_bytes += size_bytes;
-
+        
+        info!("Successfully stored resource: uri={}, id={}, size={} bytes", 
+              resource.info.uri, id, size_bytes);
         Ok(id)
     }
 
     /// Get a resource from the cache by URI
     pub async fn get_resource(&mut self, uri: &str) -> Result<Option<ResourceContent>> {
+        debug!("Retrieving resource from cache: uri={}", uri);
         let uri = uri.to_string();
+        let uri_for_logs = uri.clone(); // Clone for logging outside the closure
         let now = Utc::now().timestamp_millis();
 
         let result = self
@@ -396,6 +408,8 @@ impl ResourceCache {
                 self.analytics.cache_hits += 1;
                 self.analytics.hit_rate =
                     self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                
+                debug!("Cache HIT for uri={}, hit_rate={:.2}", uri_for_logs, self.analytics.hit_rate);
 
                 Ok(Some(ResourceContent {
                     info,
@@ -409,6 +423,8 @@ impl ResourceCache {
                 self.analytics.cache_misses += 1;
                 self.analytics.hit_rate =
                     self.analytics.cache_hits as f64 / self.analytics.total_requests as f64;
+                
+                debug!("Cache MISS for uri={}, hit_rate={:.2}", uri_for_logs, self.analytics.hit_rate);
 
                 Ok(None)
             }
@@ -522,6 +538,7 @@ impl ResourceCache {
 
     /// Run cleanup to remove expired resources
     pub async fn cleanup_expired(&mut self) -> Result<u64> {
+        debug!("Running cleanup for expired resources");
         let now = Utc::now().timestamp_millis();
 
         let removed_count = self
@@ -541,6 +558,12 @@ impl ResourceCache {
         
         // Update analytics from database
         self.update_analytics().await?;
+        
+        if removed_count > 0 {
+            info!("Cleanup completed: removed {} expired resources", removed_count);
+        } else {
+            debug!("Cleanup completed: no expired resources found");
+        }
 
         Ok(removed_count)
     }

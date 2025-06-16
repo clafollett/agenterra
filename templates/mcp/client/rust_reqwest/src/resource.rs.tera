@@ -5,6 +5,7 @@
 use crate::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::{debug, error, info, warn};
 
 /// Information about an MCP resource
 #[derive(Debug, Clone, Serialize, Deserialize)]

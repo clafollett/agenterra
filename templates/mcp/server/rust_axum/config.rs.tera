@@ -4,6 +4,7 @@
 use std::env;
 use std::path::PathBuf;
 use std::time::Duration;
+use tracing::{debug, info};
 
 /// Server configuration
 #[derive(Clone, Debug)]
@@ -23,6 +24,7 @@ pub struct Config {
 impl Config {
     /// Load configuration from environment variables
     pub fn load() -> Self {
+        debug!("Loading server configuration from environment variables");
         let log_dir = env::var("LOG_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -45,7 +47,8 @@ impl Config {
         let sse_addr = env::var("SSE_ADDR")
             .unwrap_or_else(|_| "127.0.0.1:{{ server_port | default(value=8080) }}".to_string())
             .parse()
-            .unwrap_or_else(|_| "127.0.0.1:{{ server_port | default(value=8080) }}".parse().unwrap());
+            .unwrap_or_else(|_| "127.0.0.1:{{ server_port | default(value=8080) }}".parse()
+                .expect("Default SSE address should be valid"));
             
         let sse_keep_alive = env::var("SSE_KEEP_ALIVE")
             .ok()
@@ -53,13 +56,17 @@ impl Config {
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(30));
             
-        Self {
+        let config = Self {
             log_dir,
             api_url,
             transport,
             sse_addr,
             sse_keep_alive,
-        }
+        };
+        
+        info!("Server configuration loaded: api_url={}, transport={}, sse_addr={}", 
+              config.api_url, config.transport, config.sse_addr);
+        config
     }
 }
 
@@ -79,7 +86,8 @@ impl Default for Config {
             log_dir,
             api_url: "{{ base_api_url }}".to_string(),
             transport: "stdio".to_string(),
-            sse_addr: "127.0.0.1:{{ server_port | default(value=8080) }}".parse().unwrap(),
+            sse_addr: "127.0.0.1:{{ server_port | default(value=8080) }}".parse()
+                .expect("Default SSE address should be valid"),
             sse_keep_alive: Duration::from_secs(30),
         }
     }

@@ -91,7 +91,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 3. **Running Tests**
    ```bash
    cargo test                                        # All tests
-   cargo test -p agenterra-cli --test integration_test  # Integration tests
+   cargo test -p agenterra --test e2e_mcp_test  # Integration tests
    ```
 
 4. **Test Agenterra CLI**

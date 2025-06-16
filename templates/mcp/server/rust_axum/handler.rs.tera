@@ -10,7 +10,7 @@ use rmcp::model::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use utoipa::ToSchema;
 
 /// Auto-generated parameters struct for `/{{ endpoint }}` endpoint.
@@ -110,7 +110,10 @@ pub async fn {{ endpoint }}_handler(config: &Config, params: &{{ parameters_type
         endpoint = "{{ endpoint }}",
         method = "GET",
         path = "{{ path }}",
-        params = serde_json::to_string(params).unwrap()
+        params = serde_json::to_string(params).unwrap_or_else(|e| {
+            warn!("Failed to serialize request params: {}", e);
+            "{}".to_string()
+        })
     );
     debug!(target = "handler", event = "before_api_call", endpoint = "{{ endpoint }}");
     let resp = get_endpoint_response::<_, {{ response_type }}>(config, params).await;
@@ -144,7 +147,7 @@ mod tests {
             {{ p.name }}: None,
             {% endfor %}
         };
-        let _ = serde_json::to_string(&params).unwrap();
+        let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");
     }
 
     #[test]
@@ -154,6 +157,6 @@ mod tests {
             {{ prop.name | lower }}: None,
             {% endfor %}
         };
-        let _ = serde_json::to_string(&props).unwrap();
+        let _ = serde_json::to_string(&props).expect("Serializing test properties should not fail");
     }
 }

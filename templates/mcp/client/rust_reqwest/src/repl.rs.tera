@@ -5,6 +5,7 @@ use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, Result as RustylineResult};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use tracing::{debug, error, info, warn};
 
 use crate::client::McpClient;
 
@@ -48,7 +49,7 @@ impl McpRepl {
                             }
                         }
                         Err(e) => {
-                            eprintln!("Error: {}", e);
+                            error!("REPL command failed: {}", e);
                         }
                     }
                 }
@@ -59,7 +60,7 @@ impl McpRepl {
                     break;
                 }
                 Err(err) => {
-                    eprintln!("Error: {:?}", err);
+                    error!("Readline error: {:?}", err);
                     break;
                 }
             }
@@ -231,7 +232,7 @@ impl McpRepl {
                 println!();
             }
             Err(e) => {
-                eprintln!("Failed to call tool '{}': {}", tool_name, e);
+                error!("Failed to call tool '{}': {}", tool_name, e);
             }
         }
         Ok(())
@@ -246,7 +247,7 @@ impl McpRepl {
                 println!();
             }
             Err(e) => {
-                eprintln!("Failed to get resource '{}': {}", uri, e);
+                error!("Failed to get resource '{}': {}", uri, e);
             }
         }
         Ok(())
@@ -261,7 +262,7 @@ impl McpRepl {
                 println!();
             }
             Err(e) => {
-                eprintln!("Failed to get prompt '{}': {}", name, e);
+                error!("Failed to get prompt '{}': {}", name, e);
             }
         }
         Ok(())

@@ -50,11 +50,5 @@ chrono = { version = "0.4", features = ["serde"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.25"
 
-[patch.crates-io]
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main", features = [
-    "client",
-    "transport-child-process",
-] }
-
 [dev-dependencies]
 tempfile = "3.0"
