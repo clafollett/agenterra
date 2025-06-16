@@ -12,7 +12,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool, atomic::Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -28,11 +28,6 @@ fn get_db_tracker() -> &'static Mutex<HashMap<String, ()>> {
 /// Normalize database path to prevent double-initialization due to path differences
 /// (e.g., "./db.sqlite" vs "db.sqlite" vs absolute paths)
 fn normalize_db_path(db_path: &str) -> String {
-    // Handle in-memory databases specially
-    if db_path == ":memory:" {
-        return db_path.to_string();
-    }
-
     let path = Path::new(db_path);
 
     // First try canonicalize (resolves symlinks and relative components)
@@ -93,7 +88,7 @@ fn normalize_path_components(path: &Path) -> String {
 /// Configuration for the resource cache
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
-    /// Database file path (or ":memory:" for in-memory cache)
+    /// Database file path for SQLite cache
     pub database_path: String,
     /// Default TTL for cached resources
     pub default_ttl: Duration,
@@ -115,8 +110,16 @@ pub struct CacheConfig {
 
 impl Default for CacheConfig {
     fn default() -> Self {
+        // Get cache directory path for client {{ project_name }}
+        let cache_path = if let Some(home) = dirs::home_dir() {
+            home.join(".agenterra").join("{{ project_name }}_cache.db")
+        } else {
+            // Fallback to current directory if home not found
+            std::path::PathBuf::from("./{{ project_name }}_cache.db")
+        };
+        
         Self {
-            database_path: ":memory:".to_string(),
+            database_path: cache_path.to_string_lossy().to_string(),
             default_ttl: Duration::from_secs(3600), // 1 hour
             max_size_mb: 100,                       // 100 MB
             auto_cleanup: true,
@@ -194,8 +197,6 @@ pub struct ResourceCache {
     analytics: CacheAnalytics,
     /// Connection pool for all database operations
     pool: Pool<SqliteConnectionManager>,
-    /// Per-instance schema initialization flag for in-memory databases
-    schema_initialized: Arc<AtomicBool>,
 }
 
 impl ResourceCache {
@@ -216,6 +217,23 @@ impl ResourceCache {
             eviction_count: 0,
             last_cleanup: Utc::now(),
         };
+
+        // Validate database path
+        if config.database_path.is_empty() {
+            return Err(ClientError::Validation(
+                "database_path cannot be empty".to_string()
+            ));
+        }
+
+        // Validate pool configuration
+        if let (Some(min), Some(max)) = (config.pool_min_connections, config.pool_max_connections) {
+            if min > max {
+                return Err(ClientError::Validation(format!(
+                    "pool_min_connections ({}) must be ≤ pool_max_connections ({})",
+                    min, max
+                )));
+            }
+        }
 
         // Always create a connection pool
         let manager = SqliteConnectionManager::file(&config.database_path);
@@ -245,7 +263,6 @@ impl ResourceCache {
             config,
             analytics,
             pool,
-            schema_initialized: Arc::new(AtomicBool::new(false)),
         };
 
         // Initialize database schema
@@ -262,43 +279,32 @@ impl ResourceCache {
         R: Send + 'static,
     {
         let pool = self.pool.clone();
+        
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get().map_err(|e| {
                 ClientError::Pool(format!("Failed to get pooled connection: {}", e))
             })?;
+            
             f(&mut conn).map_err(|e| ClientError::Client(format!("Database operation failed: {}", e)))
         })
         .await
         .map_err(|e| ClientError::Spawn(format!("Task execution failed: {}", e)))?
     }
 
+
     /// Initialize the SQLite database schema with proper double-checked locking
     async fn init_schema(&self) -> Result<()> {
         let db_path = normalize_db_path(&self.config.database_path);
-        let is_memory_db = db_path == ":memory:";
 
-        // For in-memory databases, use per-instance tracking since each is isolated
-        // For file-based databases, use global tracking to prevent race conditions
-        if is_memory_db {
-            // Check if this instance has already been initialized
-            if self.schema_initialized.load(Ordering::Acquire) {
-                tracing::debug!("Database schema already initialized for in-memory instance");
+        // First check: Has this database path already been initialized globally?
+        {
+            let tracker = get_db_tracker().lock().unwrap();
+            if tracker.contains_key(&db_path) {
+                tracing::debug!("Database schema already initialized for: {}", db_path);
                 return Ok(());
-            }
-        } else {
-            // First check: Has this database path already been initialized globally?
-            {
-                let tracker = get_db_tracker().lock().unwrap();
-                if tracker.contains_key(&db_path) {
-                    tracing::debug!("Database schema already initialized for: {}", db_path);
-                    return Ok(());
-                }
             }
         }
 
-        // Clone the schema_initialized flag for use in the closure
-        let schema_initialized = self.schema_initialized.clone();
-        
         // If not initialized, enter the critical section
         self.with_connection(move |conn| {
             tracing::debug!(
@@ -306,34 +312,38 @@ impl ResourceCache {
                 db_path
             );
 
-            // Double check pattern
-            if is_memory_db {
-                // For in-memory databases, check the per-instance flag
-                if schema_initialized.load(Ordering::Acquire) {
-                    tracing::debug!("Database schema was initialized by another thread (in-memory)");
+            // Double check pattern - check the global tracker again
+            {
+                let tracker = get_db_tracker().lock().unwrap();
+                if tracker.contains_key(&db_path) {
+                    tracing::debug!(
+                        "Database schema was initialized by another thread: {}",
+                        db_path
+                    );
                     return Ok(());
-                }
-            } else {
-                // For file databases, check the global tracker
-                {
-                    let tracker = get_db_tracker().lock().unwrap();
-                    if tracker.contains_key(&db_path) {
-                        tracing::debug!(
-                            "Database schema was initialized by another thread: {}",
-                            db_path
-                        );
-                        return Ok(());
-                    }
                 }
             }
 
-            // Enable WAL mode for better concurrent access (must be outside transaction)
-            conn.pragma_update(None, "journal_mode", "WAL").ok(); // Ignore errors for in-memory DBs
+            // Create parent directory if it doesn't exist
+            if let Some(parent) = std::path::Path::new(&db_path).parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+                        Some(format!("Failed to create directory: {}", e)),
+                    )
+                })?;
+            }
+
+            // Enable WAL mode for better concurrent access
+            conn.pragma_update(None, "journal_mode", "WAL")?;
             conn.pragma_update(None, "synchronous", "NORMAL")?;
             conn.pragma_update(None, "cache_size", 10000)?;
             conn.pragma_update(None, "temp_store", "memory")?;
             
-            // Use a regular transaction with retry logic for concurrent access
+            // Set busy timeout to handle SQLITE_BUSY on slow filesystems
+            conn.busy_timeout(std::time::Duration::from_secs(5))?;
+
+            // Use a regular transaction for atomic schema creation
             let tx = conn.transaction()?;
 
             // Create resources table with atomic transaction
@@ -367,10 +377,11 @@ impl ResourceCache {
                 [],
             )?;
 
-            // Create cache analytics table
+            // Create cache analytics table with auto-increment to avoid timestamp collisions
             tx.execute(
                 "CREATE TABLE IF NOT EXISTS cache_analytics (
-                    timestamp INTEGER PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp INTEGER NOT NULL,
                     hit_rate REAL,
                     total_requests INTEGER,
                     cache_size_mb REAL,
@@ -379,7 +390,9 @@ impl ResourceCache {
                 [],
             )?;
 
-            // Create cleanup trigger for expired resources
+            // Create cleanup trigger for expired resources on INSERT
+            // Note: This only handles cleanup on new inserts. Idle expired rows 
+            // are handled by the explicit cleanup_expired() method
             tx.execute(
                 "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
                  AFTER INSERT ON resources
@@ -394,15 +407,9 @@ impl ResourceCache {
             // Commit the transaction to ensure atomic schema creation
             match tx.commit() {
                 Ok(()) => {
-                    // Mark this database as initialized
-                    if is_memory_db {
-                        // For in-memory databases, mark the per-instance flag
-                        schema_initialized.store(true, Ordering::Release);
-                    } else {
-                        // For file-based databases, mark globally
-                        let mut tracker = get_db_tracker().lock().unwrap();
-                        tracker.insert(db_path.clone(), ());
-                    }
+                    // Mark this database as initialized globally
+                    let mut tracker = get_db_tracker().lock().unwrap();
+                    tracker.insert(db_path.clone(), ());
                     tracing::debug!(
                         "Database schema initialization completed successfully for: {}",
                         db_path
@@ -414,14 +421,8 @@ impl ResourceCache {
                     let error_msg = e.to_string().to_lowercase();
                     if error_msg.contains("already exists") || error_msg.contains("duplicate") {
                         // Another thread beat us to it, mark as initialized
-                        if is_memory_db {
-                            // For in-memory databases, mark the per-instance flag
-                            schema_initialized.store(true, Ordering::Release);
-                        } else {
-                            // For file-based databases, mark globally
-                            let mut tracker = get_db_tracker().lock().unwrap();
-                            tracker.insert(db_path.clone(), ());
-                        }
+                        let mut tracker = get_db_tracker().lock().unwrap();
+                        tracker.insert(db_path.clone(), ());
                         tracing::debug!("Schema already exists (concurrent creation), continuing");
                         Ok(())
                     } else {
@@ -430,7 +431,8 @@ impl ResourceCache {
                     }
                 }
             }
-        }).await
+        })
+        .await
     }
 
     /// Store a resource in the cache
@@ -1301,7 +1303,7 @@ mod tests {
     #[test]
     fn test_cache_config_defaults() {
         let config = CacheConfig::default();
-        assert_eq!(config.database_path, ":memory:");
+        assert!(config.database_path.contains("{{ project_name }}_cache.db"));
         assert_eq!(config.default_ttl, Duration::from_secs(3600));
         assert_eq!(config.max_size_mb, 100);
         assert!(config.auto_cleanup);

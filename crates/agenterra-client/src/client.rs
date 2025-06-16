@@ -486,6 +486,17 @@ mod tests {
     use super::*;
     use crate::transport::MockTransport;
     use serde_json::json;
+    use uuid::Uuid;
+
+    fn create_test_cache_config() -> (crate::cache::CacheConfig, tempfile::TempDir) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join(format!("test_{}.db", Uuid::new_v4()));
+        let config = crate::cache::CacheConfig {
+            database_path: db_path.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        (config, temp_dir)
+    }
 
     // Integration test with a real MCP server process
     #[tokio::test]
@@ -1227,7 +1238,7 @@ mod tests {
         assert!(client.cache_analytics().is_none());
 
         // Enable cache
-        let cache_config = crate::cache::CacheConfig::default();
+        let (cache_config, _temp_dir) = create_test_cache_config();
         let client = client.with_cache(cache_config).await.unwrap();
 
         // Should have cache analytics now
@@ -1244,7 +1255,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_operations() {
         let mock_transport = MockTransport::new(vec![]);
-        let cache_config = crate::cache::CacheConfig::default();
+        let (cache_config, _temp_dir) = create_test_cache_config();
         let mut client = AgenterraClient::new(Box::new(mock_transport))
             .with_cache(cache_config)
             .await
@@ -1270,7 +1281,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_analytics_tracking() {
         let mock_transport = MockTransport::new(vec![]);
-        let cache_config = crate::cache::CacheConfig::default();
+        let (cache_config, _temp_dir) = create_test_cache_config();
         let mut client = AgenterraClient::new(Box::new(mock_transport))
             .with_cache(cache_config)
             .await

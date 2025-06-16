@@ -41,6 +41,8 @@ chrono = { version = "0.4", features = ["serde"] }
 # Connection pooling
 r2d2 = "0.8"
 r2d2_sqlite = "0.25"
+# Directory utilities
+dirs = "5.0"
 
 [dev-dependencies]
 tempfile = "3.3"

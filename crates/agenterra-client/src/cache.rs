@@ -12,7 +12,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool, atomic::Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -22,7 +22,7 @@ static INITIALIZED_DATABASES: OnceLock<Mutex<HashMap<String, ()>>> = OnceLock::n
 /// Configuration for the resource cache
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
-    /// Database file path (or ":memory:" for in-memory cache)
+    /// Database file path for SQLite cache
     pub database_path: String,
     /// Default TTL for cached resources
     pub default_ttl: Duration,
@@ -44,8 +44,16 @@ pub struct CacheConfig {
 
 impl Default for CacheConfig {
     fn default() -> Self {
+        // Get cache directory path
+        let cache_path = if let Some(home) = dirs::home_dir() {
+            home.join(".agenterra").join("cache.db")
+        } else {
+            // Fallback to current directory if home not found
+            std::path::PathBuf::from("./agenterra_cache.db")
+        };
+
         Self {
-            database_path: ":memory:".to_string(),
+            database_path: cache_path.to_string_lossy().to_string(),
             default_ttl: Duration::from_secs(3600), // 1 hour
             max_size_mb: 100,                       // 100 MB
             auto_cleanup: true,
@@ -123,8 +131,6 @@ pub struct ResourceCache {
     analytics: CacheAnalytics,
     /// Connection pool for all database operations
     pool: Pool<SqliteConnectionManager>,
-    /// Per-instance schema initialization flag for in-memory databases
-    schema_initialized: Arc<AtomicBool>,
 }
 
 impl ResourceCache {
@@ -141,6 +147,23 @@ impl ResourceCache {
             eviction_count: 0,
             last_cleanup: Utc::now(),
         };
+
+        // Validate database path
+        if config.database_path.is_empty() {
+            return Err(ClientError::Validation(
+                "database_path cannot be empty".to_string()
+            ));
+        }
+
+        // Validate pool configuration
+        if let (Some(min), Some(max)) = (config.pool_min_connections, config.pool_max_connections) {
+            if min > max {
+                return Err(ClientError::Validation(format!(
+                    "pool_min_connections ({}) must be ≤ pool_max_connections ({})",
+                    min, max
+                )));
+            }
+        }
 
         // Always create a connection pool
         let manager = SqliteConnectionManager::file(&config.database_path);
@@ -170,7 +193,6 @@ impl ResourceCache {
             config,
             analytics,
             pool,
-            schema_initialized: Arc::new(AtomicBool::new(false)),
         };
 
         // Initialize database schema
@@ -186,10 +208,12 @@ impl ResourceCache {
         R: Send + 'static,
     {
         let pool = self.pool.clone();
+
         tokio::task::spawn_blocking(move || {
             let mut conn = pool.get().map_err(|e| {
                 ClientError::Pool(format!("Failed to get pooled connection: {}", e))
             })?;
+
             f(&mut conn)
                 .map_err(|e| ClientError::Client(format!("Database operation failed: {}", e)))
         })
@@ -200,29 +224,15 @@ impl ResourceCache {
     /// Initialize the SQLite database schema with proper double-checked locking
     async fn init_schema(&self) -> Result<()> {
         let db_path = normalize_db_path(&self.config.database_path);
-        let is_memory_db = db_path == ":memory:";
 
-        // For in-memory databases, use per-instance tracking since each is isolated
-        // For file-based databases, use global tracking to prevent race conditions
-        if is_memory_db {
-            // Check if this instance has already been initialized
-            if self.schema_initialized.load(Ordering::Acquire) {
-                tracing::debug!("Database schema already initialized for in-memory instance");
+        // First check: Has this database path already been initialized globally?
+        {
+            let tracker = get_db_tracker().lock().unwrap();
+            if tracker.contains_key(&db_path) {
+                tracing::debug!("Database schema already initialized for: {}", db_path);
                 return Ok(());
             }
-        } else {
-            // First check: Has this database path already been initialized globally?
-            {
-                let tracker = get_db_tracker().lock().unwrap();
-                if tracker.contains_key(&db_path) {
-                    tracing::debug!("Database schema already initialized for: {}", db_path);
-                    return Ok(());
-                }
-            }
         }
-
-        // Clone the schema_initialized flag for use in the closure
-        let schema_initialized = self.schema_initialized.clone();
 
         // If not initialized, enter the critical section
         self.with_connection(move |conn| {
@@ -231,36 +241,38 @@ impl ResourceCache {
                 db_path
             );
 
-            // Double check pattern
-            if is_memory_db {
-                // For in-memory databases, check the per-instance flag
-                if schema_initialized.load(Ordering::Acquire) {
+            // Double check pattern - check the global tracker again
+            {
+                let tracker = get_db_tracker().lock().unwrap();
+                if tracker.contains_key(&db_path) {
                     tracing::debug!(
-                        "Database schema was initialized by another thread (in-memory)"
+                        "Database schema was initialized by another thread: {}",
+                        db_path
                     );
                     return Ok(());
                 }
-            } else {
-                // For file databases, check the global tracker
-                {
-                    let tracker = get_db_tracker().lock().unwrap();
-                    if tracker.contains_key(&db_path) {
-                        tracing::debug!(
-                            "Database schema was initialized by another thread: {}",
-                            db_path
-                        );
-                        return Ok(());
-                    }
-                }
             }
 
-            // Enable WAL mode for better concurrent access (must be outside transaction)
-            conn.pragma_update(None, "journal_mode", "WAL").ok(); // Ignore errors for in-memory DBs
+            // Create parent directory if it doesn't exist
+            if let Some(parent) = std::path::Path::new(&db_path).parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+                        Some(format!("Failed to create directory: {}", e)),
+                    )
+                })?;
+            }
+
+            // Enable WAL mode for better concurrent access
+            conn.pragma_update(None, "journal_mode", "WAL")?;
             conn.pragma_update(None, "synchronous", "NORMAL")?;
             conn.pragma_update(None, "cache_size", 10000)?;
             conn.pragma_update(None, "temp_store", "memory")?;
+            
+            // Set busy timeout to handle SQLITE_BUSY on slow filesystems
+            conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
-            // Use a regular transaction with retry logic for concurrent access
+            // Use a regular transaction for atomic schema creation
             let tx = conn.transaction()?;
 
             // Create resources table with atomic transaction
@@ -294,10 +306,11 @@ impl ResourceCache {
                 [],
             )?;
 
-            // Create cache analytics table
+            // Create cache analytics table with auto-increment to avoid timestamp collisions
             tx.execute(
                 "CREATE TABLE IF NOT EXISTS cache_analytics (
-                    timestamp INTEGER PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp INTEGER NOT NULL,
                     hit_rate REAL,
                     total_requests INTEGER,
                     cache_size_mb REAL,
@@ -306,7 +319,9 @@ impl ResourceCache {
                 [],
             )?;
 
-            // Create cleanup trigger for expired resources
+            // Create cleanup trigger for expired resources on INSERT
+            // Note: This only handles cleanup on new inserts. Idle expired rows 
+            // are handled by the explicit cleanup_expired() method
             tx.execute(
                 "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
                  AFTER INSERT ON resources
@@ -321,15 +336,9 @@ impl ResourceCache {
             // Commit the transaction to ensure atomic schema creation
             match tx.commit() {
                 Ok(()) => {
-                    // Mark this database as initialized
-                    if is_memory_db {
-                        // For in-memory databases, mark the per-instance flag
-                        schema_initialized.store(true, Ordering::Release);
-                    } else {
-                        // For file-based databases, mark globally
-                        let mut tracker = get_db_tracker().lock().unwrap();
-                        tracker.insert(db_path.clone(), ());
-                    }
+                    // Mark this database as initialized globally
+                    let mut tracker = get_db_tracker().lock().unwrap();
+                    tracker.insert(db_path.clone(), ());
                     tracing::debug!(
                         "Database schema initialization completed successfully for: {}",
                         db_path
@@ -341,14 +350,8 @@ impl ResourceCache {
                     let error_msg = e.to_string().to_lowercase();
                     if error_msg.contains("already exists") || error_msg.contains("duplicate") {
                         // Another thread beat us to it, mark as initialized
-                        if is_memory_db {
-                            // For in-memory databases, mark the per-instance flag
-                            schema_initialized.store(true, Ordering::Release);
-                        } else {
-                            // For file-based databases, mark globally
-                            let mut tracker = get_db_tracker().lock().unwrap();
-                            tracker.insert(db_path.clone(), ());
-                        }
+                        let mut tracker = get_db_tracker().lock().unwrap();
+                        tracker.insert(db_path.clone(), ());
                         tracing::debug!("Schema already exists (concurrent creation), continuing");
                         Ok(())
                     } else {
@@ -659,6 +662,8 @@ impl ResourceCache {
     }
 
     /// Run cleanup to remove expired resources
+    /// This method handles all expired resources, including idle ones that 
+    /// wouldn't be caught by the INSERT trigger
     pub async fn cleanup_expired(&mut self) -> Result<u64> {
         let now = Utc::now().timestamp_millis();
 
@@ -851,15 +856,13 @@ fn parse_charset(content_type: &str) -> Option<String> {
 
 /// Normalize database path to prevent double-initialization due to path differences
 /// (e.g., "./db.sqlite" vs "db.sqlite" vs absolute paths)
+/// 
+/// Note: Only provides lexical normalization for non-existent files. Symlinks
+/// are resolved only if the file already exists via canonicalize().
 fn normalize_db_path(db_path: &str) -> String {
-    // Handle in-memory databases specially
-    if db_path == ":memory:" {
-        return db_path.to_string();
-    }
-
     let path = Path::new(db_path);
 
-    // First try canonicalize (resolves symlinks and relative components)
+    // First try canonicalize (resolves symlinks and relative components for existing files)
     if let Ok(canonical) = path.canonicalize() {
         return canonical.to_string_lossy().to_string();
     }
@@ -921,11 +924,8 @@ mod tests {
     use std::collections::HashMap;
     use tempfile::NamedTempFile;
 
-    #[test]
-    fn test_normalize_db_path_memory() {
-        // In-memory databases should remain unchanged
-        assert_eq!(normalize_db_path(":memory:"), ":memory:");
-    }
+    // Test helper constants
+    const POOL_TIMEOUT: Duration = Duration::from_secs(30);
 
     #[test]
     fn test_normalize_db_path_existing_file() {
@@ -1001,7 +1001,7 @@ mod tests {
         let current_dir = std::env::current_dir().unwrap();
         let expected_current = current_dir.to_string_lossy().to_string();
 
-        // Test empty string - since it's relative, it becomes absolute current dir
+        // Test empty string - note: empty paths should be caught by validation before reaching normalize_db_path
         let normalized_empty = normalize_db_path("");
         assert_eq!(normalized_empty, expected_current);
 
@@ -1019,6 +1019,17 @@ mod tests {
             .to_string_lossy()
             .to_string();
         assert_eq!(normalized_double_dot, expected_parent);
+    }
+
+    /// Create a test cache config with a unique temporary database file
+    fn create_test_cache_config() -> (CacheConfig, tempfile::TempDir) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join(format!("test_{}.db", Uuid::new_v4()));
+        let config = CacheConfig {
+            database_path: db_path.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+        (config, temp_dir)
     }
 
     fn create_test_resource() -> ResourceContent {
@@ -1044,15 +1055,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cache_creation_in_memory() {
-        let config = CacheConfig::default();
+    async fn test_cache_creation_with_temp_file() {
+        let (config, _temp_dir) = create_test_cache_config();
         let result = ResourceCache::new(config).await;
 
-        // Should succeed now that it's implemented
+        // Should succeed with file-based database
         assert!(result.is_ok());
         let cache = result.unwrap();
         assert_eq!(cache.get_analytics().resource_count, 0);
         assert_eq!(cache.get_analytics().cache_size_bytes, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cache_persistence_across_sessions() {
+        let (config, _temp_dir) = create_test_cache_config();
+        let db_path = config.database_path.clone();
+
+        // Session 1: Store a resource
+        {
+            let mut cache = ResourceCache::new(config.clone()).await.unwrap();
+            let resource = create_test_resource();
+            cache.store_resource(&resource).await.unwrap();
+        }
+
+        // Session 2: Resource should still be there
+        {
+            let config = CacheConfig {
+                database_path: db_path,
+                ..Default::default()
+            };
+            let mut cache = ResourceCache::new(config).await.unwrap();
+            let retrieved = cache.get_resource("test://example.txt").await.unwrap();
+            assert!(
+                retrieved.is_some(),
+                "Resource should persist across sessions"
+            );
+            assert_eq!(retrieved.unwrap().data, b"Hello, World!");
+        }
     }
 
     #[tokio::test]
@@ -1073,7 +1112,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_and_retrieve_resource() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
         let resource = create_test_resource();
 
@@ -1095,7 +1134,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_resource_with_custom_ttl() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
         let resource = create_test_resource();
         let ttl = Duration::from_secs(60);
@@ -1112,9 +1151,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_cached_resources() {
+        let (config, _temp_dir) = create_test_cache_config();
         let config = CacheConfig {
-            pool_connection_timeout: Some(Duration::from_secs(30)),
-            ..Default::default()
+            pool_connection_timeout: Some(POOL_TIMEOUT),
+            ..config
         };
         let mut cache = ResourceCache::new(config).await.unwrap();
 
@@ -1150,7 +1190,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let config = CacheConfig {
             database_path: temp_file.path().to_string_lossy().to_string(),
-            pool_connection_timeout: Some(Duration::from_secs(30)),
+            pool_connection_timeout: Some(POOL_TIMEOUT),
             ..Default::default()
         };
         let mut cache = ResourceCache::new(config).await.unwrap();
@@ -1172,7 +1212,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_remove_resource() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Add resource
@@ -1193,7 +1233,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clear_cache() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Add some resources
@@ -1216,7 +1256,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_expired_resources() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Add resource that expires immediately
@@ -1241,7 +1281,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_analytics() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Initial analytics
@@ -1271,7 +1311,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_resources() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Initially empty
@@ -1299,7 +1339,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_cache_size() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Initially empty
@@ -1321,7 +1361,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_database_compaction() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Add and remove some resources to create fragmentation
@@ -1336,10 +1376,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_ttl_expiration() {
-        let config = CacheConfig {
-            default_ttl: Duration::from_millis(100), // Very short TTL for testing
-            ..Default::default()
-        };
+        let (mut config, _temp_dir) = create_test_cache_config();
+        config.default_ttl = Duration::from_millis(100); // Very short TTL for testing
         let mut cache = ResourceCache::new(config).await.unwrap();
         let resource = create_test_resource();
 
@@ -1356,10 +1394,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_access() {
-        let config = CacheConfig::default();
+        let (config, temp_dir) = create_test_cache_config();
         let cache = std::sync::Arc::new(tokio::sync::Mutex::new(
             ResourceCache::new(config).await.unwrap(),
         ));
+        let _temp_dir = std::sync::Arc::new(temp_dir); // Keep temp dir alive
 
         let resource = create_test_resource();
         let tasks = (0..10).map(|i| {
@@ -1389,7 +1428,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_acid_transactions() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
         let resource = create_test_resource();
 
@@ -1414,11 +1453,45 @@ mod tests {
     #[test]
     fn test_cache_config_defaults() {
         let config = CacheConfig::default();
-        assert_eq!(config.database_path, ":memory:");
+        // Should default to file-based database, not :memory:
+        assert!(config.database_path.ends_with("cache.db"));
+        assert!(!config.database_path.contains(":memory:"));
         assert_eq!(config.default_ttl, Duration::from_secs(3600));
         assert_eq!(config.max_size_mb, 100);
         assert!(config.auto_cleanup);
         assert_eq!(config.cleanup_interval, Duration::from_secs(300));
+    }
+
+    #[tokio::test]
+    async fn test_empty_database_path_validation() {
+        let config = CacheConfig {
+            database_path: String::new(),
+            ..Default::default()
+        };
+
+        let result = ResourceCache::new(config).await;
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("database_path cannot be empty"));
+        } else {
+            panic!("Expected Validation error for empty database path");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_invalid_pool_configuration() {
+        let (mut config, _temp_dir) = create_test_cache_config();
+        config.pool_min_connections = Some(10);
+        config.pool_max_connections = Some(5); // min > max
+
+        let result = ResourceCache::new(config).await;
+        assert!(result.is_err());
+        if let Err(ClientError::Validation(msg)) = result {
+            assert!(msg.contains("pool_min_connections"));
+            assert!(msg.contains("pool_max_connections"));
+        } else {
+            panic!("Expected Validation error for invalid pool configuration");
+        }
     }
 
     #[test]
@@ -1456,7 +1529,7 @@ mod tests {
         for _ in 0..5 {
             let config = CacheConfig {
                 database_path: db_path.clone(),
-                pool_connection_timeout: Some(Duration::from_secs(30)),
+                pool_connection_timeout: Some(POOL_TIMEOUT),
                 ..Default::default()
             };
             let cache = ResourceCache::new(config).await.unwrap();
@@ -1498,13 +1571,10 @@ mod tests {
     #[tokio::test]
     async fn test_connection_pool_configuration() {
         // Test that CacheConfig supports connection pool settings
-        let config = CacheConfig {
-            database_path: ":memory:".to_string(),
-            pool_min_connections: Some(2),
-            pool_max_connections: Some(10),
-            pool_connection_timeout: Some(Duration::from_secs(30)),
-            ..Default::default()
-        };
+        let (mut config, _temp_dir) = create_test_cache_config();
+        config.pool_min_connections = Some(2);
+        config.pool_max_connections = Some(10);
+        config.pool_connection_timeout = Some(POOL_TIMEOUT);
 
         let result = ResourceCache::new(config).await;
         assert!(result.is_ok());
@@ -1519,12 +1589,10 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_cache_operations_with_pool() {
         // Test that multiple operations can run truly concurrently with a connection pool
-        let config = CacheConfig {
-            database_path: ":memory:".to_string(),
-            pool_min_connections: Some(3),
-            pool_max_connections: Some(5),
-            ..Default::default()
-        };
+        let (mut config, temp_dir) = create_test_cache_config();
+        config.pool_min_connections = Some(3);
+        config.pool_max_connections = Some(5);
+        let _temp_dir = std::sync::Arc::new(temp_dir); // Keep temp dir alive
 
         let cache = std::sync::Arc::new(tokio::sync::Mutex::new(
             ResourceCache::new(config).await.unwrap(),
@@ -1567,13 +1635,10 @@ mod tests {
     #[tokio::test]
     async fn test_pool_exhaustion_handling() {
         // Test behavior when all connections in pool are exhausted
-        let config = CacheConfig {
-            database_path: ":memory:".to_string(),
-            pool_min_connections: Some(1),
-            pool_max_connections: Some(2), // Very small pool to force exhaustion
-            pool_connection_timeout: Some(Duration::from_millis(100)), // Short timeout
-            ..Default::default()
-        };
+        let (mut config, _temp_dir) = create_test_cache_config();
+        config.pool_min_connections = Some(1);
+        config.pool_max_connections = Some(2); // Very small pool to force exhaustion
+        config.pool_connection_timeout = Some(Duration::from_millis(100)); // Short timeout
 
         let mut cache = ResourceCache::new(config).await.unwrap();
 
@@ -1590,12 +1655,9 @@ mod tests {
     #[tokio::test]
     async fn test_connection_reuse_in_pool() {
         // Test that connections are properly reused from the pool
-        let config = CacheConfig {
-            database_path: ":memory:".to_string(),
-            pool_min_connections: Some(2),
-            pool_max_connections: Some(3),
-            ..Default::default()
-        };
+        let (mut config, _temp_dir) = create_test_cache_config();
+        config.pool_min_connections = Some(2);
+        config.pool_max_connections = Some(3);
 
         let mut cache = ResourceCache::new(config).await.unwrap();
         let resource = create_test_resource();
@@ -1695,7 +1757,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_resource_with_encoding_from_metadata() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Create a resource with encoding in metadata
@@ -1726,7 +1788,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_resource_with_encoding_from_content_type() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Create a resource without encoding in metadata but with charset in content_type
@@ -1754,7 +1816,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_and_retrieve_with_encoding() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Create a resource with encoding
@@ -1783,7 +1845,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_round_trip_encoding_with_quoted_charset() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Create resource with quoted charset in content-type (should work after fix)
@@ -1817,7 +1879,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_round_trip_encoding_with_case_insensitive_charset() {
-        let config = CacheConfig::default();
+        let (config, _temp_dir) = create_test_cache_config();
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Create resource with uppercase Charset in content-type (should work after fix)
