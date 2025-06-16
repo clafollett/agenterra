@@ -346,7 +346,11 @@ mod tests {
         // Test absolute path resolution using mock config reader
         let temp_workspace = tempdir().unwrap();
         let templates_dir = temp_workspace.path().join("templates");
-        fs::create_dir_all(&templates_dir).unwrap();
+        let mcp_dir = templates_dir.join("mcp");
+        let server_dir = mcp_dir.join("server");
+        let client_dir = mcp_dir.join("client");
+        fs::create_dir_all(&server_dir).unwrap();
+        fs::create_dir_all(&client_dir).unwrap();
 
         // Test with mock config reader - no global state modification
         let mock_config = MockTemplateConfigReader::new(Some(
@@ -368,9 +372,13 @@ mod tests {
         let temp_workspace = tempdir().unwrap();
         let bin_dir = temp_workspace.path().join("bin");
         let templates_dir = temp_workspace.path().join("templates");
+        let mcp_dir = templates_dir.join("mcp");
+        let server_dir = mcp_dir.join("server");
+        let client_dir = mcp_dir.join("client");
 
         fs::create_dir_all(&bin_dir).unwrap();
-        fs::create_dir_all(&templates_dir).unwrap();
+        fs::create_dir_all(&server_dir).unwrap();
+        fs::create_dir_all(&client_dir).unwrap();
 
         // Test with mock config that simulates env var configuration
         let mock_config = MockTemplateConfigReader::new(Some(
@@ -435,7 +443,9 @@ mod tests {
         // Setup shared test directory
         let temp_dir = tempdir().unwrap();
         let server_template_dir = temp_dir.path().join("templates/mcp/server/rust_axum");
+        let client_template_dir = temp_dir.path().join("templates/mcp/client/rust_reqwest");
         fs::create_dir_all(&server_template_dir).unwrap();
+        fs::create_dir_all(&client_template_dir).unwrap();
 
         const NUM_THREADS: usize = 10;
         let barrier = Arc::new(Barrier::new(NUM_THREADS));
@@ -476,7 +486,11 @@ mod tests {
         // Sequential test for environment variable functionality
         let temp_dir = tempdir().unwrap();
         let templates_dir = temp_dir.path().join("templates");
-        fs::create_dir_all(&templates_dir).unwrap();
+        let mcp_dir = templates_dir.join("mcp");
+        let server_dir = mcp_dir.join("server");
+        let client_dir = mcp_dir.join("client");
+        fs::create_dir_all(&server_dir).unwrap();
+        fs::create_dir_all(&client_dir).unwrap();
 
         // Test 1: Without env var set (should return None for env var path)
         let env_config = EnvTemplateConfigReader;
