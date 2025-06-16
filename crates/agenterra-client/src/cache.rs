@@ -11,8 +11,13 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use uuid::Uuid;
+
+// Global tracking of initialized databases (double-checked locking pattern)
+static INITIALIZED_DATABASES: OnceLock<Mutex<HashMap<String, ()>>> = OnceLock::new();
 
 /// Configuration for the resource cache
 #[derive(Debug, Clone)]
@@ -45,7 +50,7 @@ impl Default for CacheConfig {
             cleanup_interval: Duration::from_secs(300), // 5 minutes
             pool_min_connections: Some(1),              // Minimum connections in pool
             pool_max_connections: Some(10),             // Maximum connections in pool
-            pool_connection_timeout: Some(Duration::from_secs(30)), // Increased from 30s for CI robustness
+            pool_connection_timeout: Some(Duration::from_secs(30)),
         }
     }
 }
@@ -184,17 +189,57 @@ impl ResourceCache {
         .map_err(|e| ClientError::Spawn(format!("Task execution failed: {}", e)))?
     }
 
-    /// Initialize the SQLite database schema
+    /// Initialize the SQLite database schema with proper double-checked locking
     async fn init_schema(&self) -> Result<()> {
-        self.with_connection(|conn| {
-            // Enable WAL mode for better concurrent access
-            conn.pragma_update(None, "journal_mode", "WAL")?;
+        let db_path = normalize_db_path(&self.config.database_path);
+
+        // For file-based databases, use double-checked locking to prevent race conditions
+        // For in-memory databases (:memory:), skip global tracking as each is isolated
+        let use_global_tracking = db_path != ":memory:";
+
+        if use_global_tracking {
+            // First check: Has this database path already been initialized?
+            {
+                let tracker = get_db_tracker().lock().unwrap();
+                if tracker.contains_key(&db_path) {
+                    tracing::debug!("Database schema already initialized for: {}", db_path);
+                    return Ok(());
+                }
+            }
+        }
+
+        // If not initialized, enter the critical section
+        self.with_connection(move |conn| {
+            tracing::debug!(
+                "Entering critical section for database schema initialization: {}",
+                db_path
+            );
+
+            if use_global_tracking {
+                // Double check: Has another thread initialized it while we were waiting?
+                {
+                    let tracker = get_db_tracker().lock().unwrap();
+                    if tracker.contains_key(&db_path) {
+                        tracing::debug!(
+                            "Database schema was initialized by another thread: {}",
+                            db_path
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Enable WAL mode for better concurrent access (must be outside transaction)
+            conn.pragma_update(None, "journal_mode", "WAL").ok(); // Ignore errors for in-memory DBs
             conn.pragma_update(None, "synchronous", "NORMAL")?;
             conn.pragma_update(None, "cache_size", 10000)?;
             conn.pragma_update(None, "temp_store", "memory")?;
 
-            // Create resources table
-            conn.execute(
+            // Use a regular transaction with retry logic for concurrent access
+            let tx = conn.transaction()?;
+
+            // Create resources table with atomic transaction
+            tx.execute(
                 "CREATE TABLE IF NOT EXISTS resources (
                     id TEXT PRIMARY KEY,
                     uri TEXT UNIQUE NOT NULL,
@@ -211,21 +256,21 @@ impl ResourceCache {
             )?;
 
             // Create indexes for performance
-            conn.execute(
+            tx.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri)",
                 [],
             )?;
-            conn.execute(
+            tx.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at)",
                 [],
             )?;
-            conn.execute(
+            tx.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at)",
                 [],
             )?;
 
             // Create cache analytics table
-            conn.execute(
+            tx.execute(
                 "CREATE TABLE IF NOT EXISTS cache_analytics (
                     timestamp INTEGER PRIMARY KEY,
                     hit_rate REAL,
@@ -237,7 +282,7 @@ impl ResourceCache {
             )?;
 
             // Create cleanup trigger for expired resources
-            conn.execute(
+            tx.execute(
                 "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
                  AFTER INSERT ON resources
                  BEGIN
@@ -248,7 +293,37 @@ impl ResourceCache {
                 [],
             )?;
 
-            Ok(())
+            // Commit the transaction to ensure atomic schema creation
+            match tx.commit() {
+                Ok(()) => {
+                    // Mark this database as initialized globally (only for file-based databases)
+                    if use_global_tracking {
+                        let mut tracker = get_db_tracker().lock().unwrap();
+                        tracker.insert(db_path.clone(), ());
+                    }
+                    tracing::debug!(
+                        "Database schema initialization completed successfully for: {}",
+                        db_path
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    // Check if this is a "table already exists" error due to concurrent creation
+                    let error_msg = e.to_string().to_lowercase();
+                    if error_msg.contains("already exists") || error_msg.contains("duplicate") {
+                        // Another thread beat us to it, mark as initialized (only for file-based databases)
+                        if use_global_tracking {
+                            let mut tracker = get_db_tracker().lock().unwrap();
+                            tracker.insert(db_path.clone(), ());
+                        }
+                        tracing::debug!("Schema already exists (concurrent creation), continuing");
+                        Ok(())
+                    } else {
+                        tracing::error!("Database schema initialization failed: {}", e);
+                        Err(e)
+                    }
+                }
+            }
         })
         .await
     }
@@ -684,12 +759,178 @@ impl ResourceCache {
     }
 }
 
+/// Get the global database initialization tracker
+fn get_db_tracker() -> &'static Mutex<HashMap<String, ()>> {
+    INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Normalize database path to prevent double-initialization due to path differences
+/// (e.g., "./db.sqlite" vs "db.sqlite" vs absolute paths)
+fn normalize_db_path(db_path: &str) -> String {
+    // Handle in-memory databases specially
+    if db_path == ":memory:" {
+        return db_path.to_string();
+    }
+
+    let path = Path::new(db_path);
+
+    // First try canonicalize (resolves symlinks and relative components)
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical.to_string_lossy().to_string();
+    }
+
+    // If canonicalize fails (file doesn't exist yet), make relative paths absolute
+    // and normalize path components (remove "." and resolve "..")
+    if path.is_relative() {
+        if let Ok(current_dir) = std::env::current_dir() {
+            let absolute_path = current_dir.join(path);
+            // Normalize the path components to resolve "." and ".." 
+            return normalize_path_components(&absolute_path);
+        }
+    }
+
+    // For absolute paths that don't exist, try to normalize components
+    if path.is_absolute() {
+        return normalize_path_components(path);
+    }
+
+    // Fallback to original path if all else fails
+    db_path.to_string()
+}
+
+/// Helper function to normalize path components (resolve "." and "..")
+fn normalize_path_components(path: &Path) -> String {
+    let mut components = Vec::new();
+    
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {
+                // Skip "." components
+                continue;
+            }
+            std::path::Component::ParentDir => {
+                // Pop the last component for ".."
+                if !components.is_empty() {
+                    components.pop();
+                }
+            }
+            _ => {
+                components.push(component);
+            }
+        }
+    }
+    
+    // Reconstruct the path
+    let mut result = std::path::PathBuf::new();
+    for component in components {
+        result.push(component);
+    }
+    
+    result.to_string_lossy().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::resource::ResourceInfo;
     use std::collections::HashMap;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_normalize_db_path_memory() {
+        // In-memory databases should remain unchanged
+        assert_eq!(normalize_db_path(":memory:"), ":memory:");
+    }
+
+    #[test]
+    fn test_normalize_db_path_existing_file() {
+        // Create a temporary file to test with existing files
+        let temp_file = NamedTempFile::new().unwrap();
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+        
+        // Normalizing an existing file should return its canonical path
+        let normalized = normalize_db_path(&temp_path);
+        assert!(!normalized.is_empty());
+        assert!(Path::new(&normalized).is_absolute());
+    }
+
+    #[test] 
+    fn test_normalize_db_path_relative_nonexistent() {
+        // Test relative path that doesn't exist yet
+        let relative_path = "./test_db.sqlite";
+        let normalized = normalize_db_path(relative_path);
+        
+        // Should be converted to absolute path
+        assert!(Path::new(&normalized).is_absolute());
+        assert!(normalized.ends_with("test_db.sqlite"));
+        assert_ne!(normalized, relative_path);
+    }
+
+    #[test]
+    fn test_normalize_db_path_absolute_nonexistent() {
+        // Test absolute path that doesn't exist
+        let current_dir = std::env::current_dir().unwrap();
+        let absolute_path = current_dir.join("nonexistent_db.sqlite");
+        let path_str = absolute_path.to_string_lossy().to_string();
+        
+        let normalized = normalize_db_path(&path_str);
+        
+        // Should remain the same since it's already absolute
+        assert_eq!(normalized, path_str);
+        assert!(Path::new(&normalized).is_absolute());
+    }
+
+    #[test]
+    fn test_normalize_db_path_dot_prefix() {
+        // Test the specific case mentioned by o3 Marvin: "./db.sqlite" vs "db.sqlite"
+        let dot_path = "./db.sqlite";
+        let plain_path = "db.sqlite";
+        
+        let normalized_dot = normalize_db_path(dot_path);
+        let normalized_plain = normalize_db_path(plain_path);
+        
+        // Both should normalize to the same absolute path
+        assert_eq!(normalized_dot, normalized_plain);
+        assert!(Path::new(&normalized_dot).is_absolute());
+        assert!(normalized_dot.ends_with("db.sqlite"));
+        
+        // Also verify they both resolve to current_dir + filename
+        let current_dir = std::env::current_dir().unwrap();
+        let expected = current_dir.join("db.sqlite").to_string_lossy().to_string();
+        assert_eq!(normalized_dot, expected);
+        assert_eq!(normalized_plain, expected);
+    }
+
+    #[test]
+    fn test_normalize_db_path_consistency() {
+        // Test that multiple calls with the same path return the same result
+        let test_path = "./test.db";
+        let normalized1 = normalize_db_path(test_path);
+        let normalized2 = normalize_db_path(test_path);
+        
+        assert_eq!(normalized1, normalized2);
+    }
+
+    #[test]
+    fn test_normalize_db_path_edge_cases() {
+        let current_dir = std::env::current_dir().unwrap();
+        let expected_current = current_dir.to_string_lossy().to_string();
+        
+        // Test empty string - since it's relative, it becomes absolute current dir
+        let normalized_empty = normalize_db_path("");
+        assert_eq!(normalized_empty, expected_current);
+        
+        // Test single dot - should become current directory
+        let normalized_dot = normalize_db_path(".");
+        assert!(Path::new(&normalized_dot).is_absolute());
+        assert_eq!(normalized_dot, expected_current);
+        
+        // Test double dot - should become parent directory
+        let normalized_double_dot = normalize_db_path("..");
+        assert!(Path::new(&normalized_double_dot).is_absolute());
+        let expected_parent = current_dir.parent().unwrap_or(&current_dir).to_string_lossy().to_string();
+        assert_eq!(normalized_double_dot, expected_parent);
+    }
 
     fn create_test_resource() -> ResourceContent {
         let mut metadata = HashMap::new();
@@ -783,7 +1024,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_cached_resources() {
         let config = CacheConfig {
-            pool_connection_timeout: Some(Duration::from_secs(60)), // Increase timeout for CI
+            pool_connection_timeout: Some(Duration::from_secs(30)),
             ..Default::default()
         };
         let mut cache = ResourceCache::new(config).await.unwrap();
@@ -817,12 +1058,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_contains_resource() {
-        let config = CacheConfig::default();
+        let temp_file = NamedTempFile::new().unwrap();
+        let config = CacheConfig {
+            database_path: temp_file.path().to_string_lossy().to_string(),
+            pool_connection_timeout: Some(Duration::from_secs(30)),
+            ..Default::default()
+        };
         let mut cache = ResourceCache::new(config).await.unwrap();
 
         // Initially should not contain resource
         let result = cache.contains_resource("test://example.txt").await;
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Initial contains_resource should succeed");
         assert!(!result.unwrap());
 
         // Add resource
@@ -831,7 +1077,7 @@ mod tests {
 
         // Should now contain resource
         let result = cache.contains_resource("test://example.txt").await;
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Second contains_resource should succeed");
         assert!(result.unwrap());
     }
 
@@ -1105,6 +1351,57 @@ mod tests {
         assert_eq!(cached_resource.content, b"Hello, World!");
         assert_eq!(cached_resource.size_bytes, 13);
         assert!(cached_resource.expires_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_cache_creation_shared_database() {
+        // Test that multiple cache instances can safely use the same database file
+        // This simulates the real-world scenario where multiple connections access a shared database
+        use tempfile::NamedTempFile;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let db_path = temp_file.path().to_string_lossy().to_string();
+
+        // Create multiple cache instances pointing to the same database file
+        let mut caches = Vec::new();
+        for _ in 0..5 {
+            let config = CacheConfig {
+                database_path: db_path.clone(),
+                pool_connection_timeout: Some(Duration::from_secs(30)),
+                ..Default::default()
+            };
+            let cache = ResourceCache::new(config).await.unwrap();
+            caches.push(cache);
+        }
+
+        // All caches should be able to operate on the shared database
+        for (i, cache) in caches.iter_mut().enumerate() {
+            let resource = create_test_resource();
+            let mut test_resource = resource.clone();
+            test_resource.info.uri = format!("test://shared-{}.txt", i);
+
+            // Store resource
+            cache.store_resource(&test_resource).await.unwrap();
+
+            // Verify it exists
+            assert!(
+                cache
+                    .contains_resource(&test_resource.info.uri)
+                    .await
+                    .unwrap()
+            );
+        }
+
+        // Verify all resources are accessible from any cache instance
+        let first_cache = &caches[0];
+        for i in 0..5 {
+            let uri = format!("test://shared-{}.txt", i);
+            assert!(
+                first_cache.contains_resource(&uri).await.unwrap(),
+                "Resource {} should be accessible from any cache instance",
+                i
+            );
+        }
     }
 
     // ========== CONNECTION POOLING TESTS (TDD - These should FAIL initially) ==========

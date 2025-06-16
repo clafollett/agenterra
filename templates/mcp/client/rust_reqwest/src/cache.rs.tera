@@ -11,10 +11,84 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+// Global tracking of initialized databases (double-checked locking pattern)
+static INITIALIZED_DATABASES: OnceLock<Mutex<HashMap<String, ()>>> = OnceLock::new();
+
+/// Get the global database initialization tracker
+fn get_db_tracker() -> &'static Mutex<HashMap<String, ()>> {
+    INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Normalize database path to prevent double-initialization due to path differences
+/// (e.g., "./db.sqlite" vs "db.sqlite" vs absolute paths)
+fn normalize_db_path(db_path: &str) -> String {
+    // Handle in-memory databases specially
+    if db_path == ":memory:" {
+        return db_path.to_string();
+    }
+
+    let path = Path::new(db_path);
+
+    // First try canonicalize (resolves symlinks and relative components)
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical.to_string_lossy().to_string();
+    }
+
+    // If canonicalize fails (file doesn't exist yet), make relative paths absolute
+    // and normalize path components (remove "." and resolve "..")
+    if path.is_relative() {
+        if let Ok(current_dir) = std::env::current_dir() {
+            let absolute_path = current_dir.join(path);
+            // Normalize the path components to resolve "." and ".." 
+            return normalize_path_components(&absolute_path);
+        }
+    }
+
+    // For absolute paths that don't exist, try to normalize components
+    if path.is_absolute() {
+        return normalize_path_components(path);
+    }
+
+    // Fallback to original path if all else fails
+    db_path.to_string()
+}
+
+/// Helper function to normalize path components (resolve "." and "..")
+fn normalize_path_components(path: &Path) -> String {
+    let mut components = Vec::new();
+    
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {
+                // Skip "." components
+                continue;
+            }
+            std::path::Component::ParentDir => {
+                // Pop the last component for ".."
+                if !components.is_empty() {
+                    components.pop();
+                }
+            }
+            _ => {
+                components.push(component);
+            }
+        }
+    }
+    
+    // Reconstruct the path
+    let mut result = std::path::PathBuf::new();
+    for component in components {
+        result.push(component);
+    }
+    
+    result.to_string_lossy().to_string()
+}
 
 /// Configuration for the resource cache
 #[derive(Debug, Clone)]
@@ -190,17 +264,51 @@ impl ResourceCache {
         .map_err(|e| ClientError::Spawn(format!("Task execution failed: {}", e)))?
     }
 
-    /// Initialize the SQLite database schema
+    /// Initialize the SQLite database schema with proper double-checked locking
     async fn init_schema(&self) -> Result<()> {
-        self.with_connection(|conn| {
-            // Enable WAL mode for better concurrent access
-            conn.pragma_update(None, "journal_mode", "WAL")?;
+        let db_path = normalize_db_path(&self.config.database_path);
+        
+        // For file-based databases, use double-checked locking to prevent race conditions
+        // For in-memory databases (:memory:), skip global tracking as each is isolated
+        let use_global_tracking = db_path != ":memory:";
+        
+        if use_global_tracking {
+            // First check: Has this database path already been initialized?
+            {
+                let tracker = get_db_tracker().lock().unwrap();
+                if tracker.contains_key(&db_path) {
+                    tracing::debug!("Database schema already initialized for: {}", db_path);
+                    return Ok(());
+                }
+            }
+        }
+        
+        // If not initialized, enter the critical section
+        self.with_connection(move |conn| {
+            tracing::debug!("Entering critical section for database schema initialization: {}", db_path);
+            
+            if use_global_tracking {
+                // Double check: Has another thread initialized it while we were waiting?
+                {
+                    let tracker = get_db_tracker().lock().unwrap();
+                    if tracker.contains_key(&db_path) {
+                        tracing::debug!("Database schema was initialized by another thread: {}", db_path);
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Enable WAL mode for better concurrent access (must be outside transaction)
+            conn.pragma_update(None, "journal_mode", "WAL").ok(); // Ignore errors for in-memory DBs
             conn.pragma_update(None, "synchronous", "NORMAL")?;
             conn.pragma_update(None, "cache_size", 10000)?;
             conn.pragma_update(None, "temp_store", "memory")?;
+            
+            // Use a regular transaction with retry logic for concurrent access
+            let tx = conn.transaction()?;
 
-            // Create resources table
-            conn.execute(
+            // Create resources table with atomic transaction
+            tx.execute(
                 "CREATE TABLE IF NOT EXISTS resources (
                     id TEXT PRIMARY KEY,
                     uri TEXT UNIQUE NOT NULL,
@@ -217,21 +325,21 @@ impl ResourceCache {
             )?;
 
             // Create indexes for performance
-            conn.execute(
+            tx.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri)",
                 [],
             )?;
-            conn.execute(
+            tx.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at)",
                 [],
             )?;
-            conn.execute(
+            tx.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at)",
                 [],
             )?;
 
             // Create cache analytics table
-            conn.execute(
+            tx.execute(
                 "CREATE TABLE IF NOT EXISTS cache_analytics (
                     timestamp INTEGER PRIMARY KEY,
                     hit_rate REAL,
@@ -243,7 +351,7 @@ impl ResourceCache {
             )?;
 
             // Create cleanup trigger for expired resources
-            conn.execute(
+            tx.execute(
                 "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
                  AFTER INSERT ON resources
                  BEGIN
@@ -254,7 +362,34 @@ impl ResourceCache {
                 [],
             )?;
 
-            Ok(())
+            // Commit the transaction to ensure atomic schema creation
+            match tx.commit() {
+                Ok(()) => {
+                    // Mark this database as initialized globally (only for file-based databases)
+                    if use_global_tracking {
+                        let mut tracker = get_db_tracker().lock().unwrap();
+                        tracker.insert(db_path.clone(), ());
+                    }
+                    tracing::debug!("Database schema initialization completed successfully for: {}", db_path);
+                    Ok(())
+                }
+                Err(e) => {
+                    // Check if this is a "table already exists" error due to concurrent creation
+                    let error_msg = e.to_string().to_lowercase();
+                    if error_msg.contains("already exists") || error_msg.contains("duplicate") {
+                        // Another thread beat us to it, mark as initialized (only for file-based databases)
+                        if use_global_tracking {
+                            let mut tracker = get_db_tracker().lock().unwrap();
+                            tracker.insert(db_path.clone(), ());
+                        }
+                        tracing::debug!("Schema already exists (concurrent creation), continuing");
+                        Ok(())
+                    } else {
+                        tracing::error!("Database schema initialization failed: {}", e);
+                        Err(e)
+                    }
+                }
+            }
         }).await
     }
 
