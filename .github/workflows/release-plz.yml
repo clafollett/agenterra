@@ -30,7 +30,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run release-plz release
-        uses: release-plz/release-plz-action@v0
+        uses: release-plz/action@v0.5.107
         with:
           command: release
         env:
@@ -62,7 +62,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run release-plz PR
-        uses: release-plz/release-plz-action@v0
+        uses: release-plz/action@v0.5.107
         with:
           command: release-pr
         env:
