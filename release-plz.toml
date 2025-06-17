@@ -2,6 +2,8 @@
 changelog_update = true
 git_release_enable = true
 features_always_increment_minor = false
+release_always = false
+publish = false
 
 [[package]]
 name = "agenterra"

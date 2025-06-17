@@ -1,9 +1,9 @@
 [package]
 name = "agenterra-client"
-version = "0.1.0"
-edition = "2024"
 description = "Ergonomic MCP client library for Agenterra"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 # MCP Protocol SDK (official)

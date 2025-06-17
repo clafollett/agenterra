@@ -1,0 +1,70 @@
+name: Release-plz
+
+permissions:
+  pull-requests: write
+  contents: write
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release-plz-release:
+    name: Release-plz release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
+
+      - name: Run release-plz release
+        uses: release-plz/action@v0.5.107
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Note: CARGO_REGISTRY_TOKEN not needed since publish = false
+
+  release-plz-pr:
+    name: Release-plz PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
+
+      - name: Run release-plz PR
+        uses: release-plz/action@v0.5.107
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Note: CARGO_REGISTRY_TOKEN not needed since publish = false
