@@ -4,6 +4,7 @@ git_release_enable = true
 features_always_increment_minor = false
 release_always = false
 publish = false
+git_tag_name = "agenterra-v{{ version }}"
 
 [[package]]
 name = "agenterra"
