@@ -2,7 +2,9 @@ name: Release-plz PR Update
 run-name: "🚀 Release-plz PR Update (main)"
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -16,8 +18,8 @@ env:
 jobs:
   release-plz-pr:
     name: Release-plz PR
-    # Skip commits coming from the bot itself to avoid loops
-    if: github.actor != 'release-plz[bot]'
+    # Only run if CI workflow succeeded and not from release-plz bot
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.actor.login != 'release-plz[bot]'
     runs-on: ubuntu-latest
     concurrency:
       group: release-plz-pr
