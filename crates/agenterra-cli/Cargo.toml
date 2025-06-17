@@ -1,9 +1,9 @@
 [package]
 name = "agenterra"
-version = "0.1.1"
-edition = "2024"
 description = "CLI for generating MCP servers from OpenAPI specs with Agenterra"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 agenterra-core = { path = "../agenterra-core" }

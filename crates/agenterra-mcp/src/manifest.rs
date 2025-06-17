@@ -67,7 +67,7 @@ impl Default for TemplateManifest {
         Self {
             name: String::from("default"),
             description: String::from("Default template"),
-            version: String::from("0.1.0"),
+            version: env!("CARGO_PKG_VERSION").to_string(),
             language: String::from("rust"),
             files: Vec::new(),
             hooks: TemplateHooks::default(),

@@ -566,8 +566,8 @@ impl TemplateManager {
             }
         }
 
-        // Add default values
-        base_map.insert("version".to_string(), json!("0.1.0"));
+        // Add default values - use workspace version
+        base_map.insert("version".to_string(), json!(env!("CARGO_PKG_VERSION")));
         base_map.insert(
             "description".to_string(),
             json!(format!("MCP client for {}", config.project_name)),
@@ -1285,7 +1285,7 @@ mod tests {
         let manifest = TemplateManifest {
             name: "test".to_string(),
             description: "Test template".to_string(),
-            version: "0.1.0".to_string(),
+            version: "0.1.1".to_string(),
             language: "rust".to_string(),
             files: vec![],
             hooks: TemplateHooks::default(),

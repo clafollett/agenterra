@@ -280,7 +280,7 @@ const TEMPLATE_MANIFEST: &str = r#"
 name: test-template
 description: Test template for integration tests
 author: Agenterra Tests
-version: 0.1.0
+version: 0.1.1
 files:
   - source: main.rs.tera
     destination: src/main.rs
