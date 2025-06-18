@@ -1,6 +1,6 @@
 //! Transport abstraction layer for MCP communication
 
-use crate::error::Result;
+use crate::mcp::client::error::Result;
 use async_trait::async_trait;
 
 /// Abstraction over different MCP transport mechanisms
@@ -34,7 +34,7 @@ impl MockTransport {
 #[async_trait]
 impl Transport for MockTransport {
     async fn send(&mut self, _message: serde_json::Value) -> Result<serde_json::Value> {
-        use crate::error::ClientError;
+        use crate::mcp::client::error::ClientError;
 
         if self.call_count >= self.responses.len() {
             return Err(ClientError::Transport("No more mock responses".to_string()));

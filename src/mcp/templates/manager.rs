@@ -8,13 +8,13 @@ use std::{
 };
 use tokio::task;
 
-use crate::{builders::EndpointContext, manifest::TemplateManifest};
-use agenterra_core::{
+use crate::core::{
     config::Config,
     error::Result,
     openapi::{OpenApiContext, OpenApiOperation},
     utils::to_snake_case,
 };
+use crate::mcp::{builders::EndpointContext, manifest::TemplateManifest};
 
 use super::{ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateOptions};
 
@@ -332,11 +332,11 @@ impl TemplateManager {
 
         // First validate required context variables
         let context_value = serde_json::to_value(context).map_err(|e| {
-            agenterra_core::Error::Template(format!("Failed to serialize context: {}", e))
+            crate::core::Error::Template(format!("Failed to serialize context: {}", e))
         })?;
 
         let context_map = context_value.as_object().ok_or_else(|| {
-            agenterra_core::Error::Template("Context must be a JSON object".to_string())
+            crate::core::Error::Template("Context must be a JSON object".to_string())
         })?;
 
         // Define required variables per template type
@@ -367,10 +367,7 @@ impl TemplateManager {
         // Verify template exists
         log::debug!("Checking if template exists: {}", template_name);
         self.tera.get_template(template_name).map_err(|e| {
-            agenterra_core::Error::Template(format!(
-                "Template not found: {} - {}",
-                template_name, e
-            ))
+            crate::core::Error::Template(format!("Template not found: {} - {}", template_name, e))
         })?;
 
         log::debug!("Found template: {}", template_name);
@@ -396,7 +393,7 @@ impl TemplateManager {
                     "Available context keys: {:?}",
                     context_map.keys().collect::<Vec<_>>()
                 );
-                return Err(agenterra_core::Error::Template(format!(
+                return Err(crate::core::Error::Template(format!(
                     "Failed to render template '{}': {}\nTemplate source:\n{}",
                     template_name, e, template_source
                 )));
@@ -418,7 +415,7 @@ impl TemplateManager {
         log::debug!("Ensuring parent directory exists: {}", parent.display());
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
             log::error!("Failed to create directory: {}", e);
-            return Err(agenterra_core::Error::Io(e));
+            return Err(crate::core::Error::Io(e));
         }
 
         // Write the output file
@@ -485,7 +482,7 @@ impl TemplateManager {
                         .await?;
                     }
                     _ => {
-                        return Err(agenterra_core::Error::Template(format!(
+                        return Err(crate::core::Error::Template(format!(
                             "Unknown for_each directive: {}",
                             for_each
                         )));
@@ -665,20 +662,20 @@ impl TemplateManager {
                     let trimmed = base_str.trim_end_matches('/');
                     format!("{}{}", trimmed, spec_url)
                 } else {
-                    return Err(agenterra_core::Error::Template(format!(
+                    return Err(crate::core::Error::Template(format!(
                         "OpenAPI spec contains a relative server URL '{}', but no --base-url was provided. Please provide a base URL (e.g., --base-url https://api.example.com)",
                         spec_url
                     )));
                 }
             } else {
-                return Err(agenterra_core::Error::Template(format!(
+                return Err(crate::core::Error::Template(format!(
                     "Invalid server URL format in OpenAPI spec: '{}'. URL must be either a fully qualified URL (https://api.example.com/v1) or a relative path (/api/v1)",
                     spec_url
                 )));
             };
             base_map.insert("base_api_url".to_string(), json!(final_url));
         } else {
-            return Err(agenterra_core::Error::Template(
+            return Err(crate::core::Error::Template(
                 "No server URL found in OpenAPI spec. Please define at least one server in the 'servers' section (OpenAPI 3.0+) or 'host' field (Swagger 2.0) of your OpenAPI specification".to_string()
             ));
         }
@@ -693,7 +690,7 @@ impl TemplateManager {
     /// Process a single template file
     async fn process_single_file(
         &self,
-        file: &crate::manifest::TemplateFile,
+        file: &crate::mcp::manifest::TemplateFile,
         base_context: &serde_json::Value,
         output_path: &Path,
     ) -> Result<()> {
@@ -786,7 +783,7 @@ impl TemplateManager {
                 log::error!("Tera error kind: {:?}", e.kind);
                 log::error!("Full error chain: {:#}", e);
 
-                return Err(agenterra_core::Error::Template(format!(
+                return Err(crate::core::Error::Template(format!(
                     "Failed to render template '{}': {}",
                     file.source, e
                 )));
@@ -797,7 +794,7 @@ impl TemplateManager {
         log::debug!("Writing rendered content to: {}", output_path.display());
         tokio::fs::write(output_path, rendered).await.map_err(|e| {
             log::error!("Failed to write file {}: {}", output_path.display(), e);
-            agenterra_core::Error::Io(e)
+            crate::core::Error::Io(e)
         })?;
 
         log::debug!("Successfully processed file: {}", output_path.display());
@@ -807,7 +804,7 @@ impl TemplateManager {
     /// Process a template file for each operation
     async fn process_operation_file(
         &self,
-        file: &crate::manifest::TemplateFile,
+        file: &crate::mcp::manifest::TemplateFile,
         base_context: &Context,
         output_path: &Path,
         operations: &[OpenApiOperation],
@@ -1106,7 +1103,7 @@ impl TemplateManager {
         template: &str,
         context: &Map<String, JsonValue>,
         required_vars: &[&str],
-    ) -> agenterra_core::Result<()> {
+    ) -> crate::core::error::Result<()> {
         let mut missing = Vec::new();
 
         for var in required_vars {
@@ -1116,7 +1113,7 @@ impl TemplateManager {
         }
 
         if !missing.is_empty() {
-            return Err(agenterra_core::Error::Template(format!(
+            return Err(crate::core::Error::Template(format!(
                 "Missing required context variables for template '{}': {}",
                 template,
                 missing.join(", ")
@@ -1129,7 +1126,7 @@ impl TemplateManager {
     pub async fn execute_post_generation_hooks(
         &self,
         output_path: &std::path::Path,
-    ) -> agenterra_core::Result<()> {
+    ) -> crate::core::error::Result<()> {
         use tokio::process::Command as AsyncCommand;
 
         if !self.manifest.hooks.post_generate.is_empty() {
@@ -1167,8 +1164,8 @@ impl TemplateManager {
     pub fn create_file_context(
         &self,
         base_context: &serde_json::Value,
-        file: &crate::manifest::TemplateFile,
-    ) -> agenterra_core::Result<serde_json::Value> {
+        file: &crate::mcp::manifest::TemplateFile,
+    ) -> crate::core::error::Result<serde_json::Value> {
         let mut context = if let serde_json::Value::Object(file_ctx) = &file.context {
             file_ctx.clone()
         } else {
@@ -1230,7 +1227,7 @@ impl TemplateManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::TemplateHooks;
+    use crate::mcp::manifest::TemplateHooks;
     use serde_json::{Map, json};
     use tempfile;
     use tokio;

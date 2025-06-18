@@ -1,6 +1,6 @@
 //! Tool registry for managing MCP tool metadata and validation
 
-use crate::error::{ClientError, Result};
+use crate::mcp::client::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

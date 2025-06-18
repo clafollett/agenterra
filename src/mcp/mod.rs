@@ -4,6 +4,7 @@
 //! servers and clients from OpenAPI specifications.
 
 pub mod builders;
+pub mod client;
 pub mod generate;
 pub mod manifest;
 pub mod templates;

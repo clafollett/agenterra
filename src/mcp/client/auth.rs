@@ -6,7 +6,7 @@
 //! - Header injection
 //! - Memory exposure
 
-use crate::error::{ClientError, Result};
+use crate::mcp::client::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use zeroize::Zeroize;

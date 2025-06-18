@@ -7,8 +7,8 @@
 
 pub mod rust;
 
-use crate::templates::ServerTemplateKind;
-use agenterra_core::openapi::OpenApiOperation;
+use crate::core::openapi::OpenApiOperation;
+use crate::mcp::templates::ServerTemplateKind;
 use serde_json::Value as JsonValue;
 
 /// Trait for converting an OpenApiOperation into a language-specific context.
@@ -33,7 +33,7 @@ pub trait EndpointContextBuilder {
     ///
     /// # Errors
     /// Returns an error if the operation cannot be converted to the target language context
-    fn build(&self, op: &OpenApiOperation) -> agenterra_core::Result<JsonValue>;
+    fn build(&self, op: &OpenApiOperation) -> crate::core::error::Result<JsonValue>;
 }
 
 /// Factory for creating and managing endpoint context builders.
@@ -76,7 +76,7 @@ impl EndpointContext {
     pub fn transform_endpoints(
         template: ServerTemplateKind,
         operations: Vec<OpenApiOperation>,
-    ) -> agenterra_core::Result<Vec<JsonValue>> {
+    ) -> crate::core::error::Result<Vec<JsonValue>> {
         let builder = Self::get_builder(template);
         let mut contexts = Vec::new();
         for op in operations {

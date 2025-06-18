@@ -1,6 +1,6 @@
 //! Tool result processing and content type handling
 
-use crate::error::{ClientError, Result};
+use crate::mcp::client::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 
 /// Types of content that MCP tools can return

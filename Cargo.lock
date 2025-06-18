@@ -21,105 +21,41 @@ checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 name = "agenterra"
 version = "0.1.1"
 dependencies = [
- "agenterra-core",
- "agenterra-mcp",
- "anyhow",
- "clap",
- "lazy_static",
- "log",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "agenterra-client"
-version = "0.1.1"
-dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "clap",
  "dirs",
  "futures",
+ "lazy_static",
  "log",
+ "once_cell",
+ "openapiv3",
  "r2d2",
  "r2d2_sqlite",
+ "regex",
+ "reqwest",
  "rmcp",
  "rusqlite",
  "rusqlite_migration",
  "serde",
+ "serde-value",
  "serde_json",
+ "serde_yaml",
  "tempfile",
+ "tera",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
- "tracing",
- "url",
- "uuid",
- "wiremock",
- "zeroize",
-]
-
-[[package]]
-name = "agenterra-core"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "clap",
- "dirs",
- "futures",
- "log",
- "once_cell",
- "openapiv3",
- "regex",
- "reqwest",
- "serde",
- "serde-value",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tera",
- "thiserror 1.0.69",
- "tokio",
- "toml",
- "url",
-]
-
-[[package]]
-name = "agenterra-mcp"
-version = "0.1.1"
-dependencies = [
- "agenterra-core",
- "anyhow",
- "clap",
- "dirs",
- "futures",
- "log",
- "once_cell",
- "openapiv3",
- "regex",
- "reqwest",
- "serde",
- "serde-value",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tera",
- "thiserror 1.0.69",
- "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
  "url",
  "uuid",
+ "wiremock",
+ "zeroize",
 ]
 
 [[package]]
@@ -1804,7 +1740,7 @@ dependencies = [
 [[package]]
 name = "rmcp"
 version = "0.1.5"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#73188eff6fcc8fc152949ac1d5df0439607ba3ad"
+source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#d1884fe598cd4c524ff6e0101859a60d4b4c8b8f"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1825,7 +1761,7 @@ dependencies = [
 [[package]]
 name = "rmcp-macros"
 version = "0.1.5"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#73188eff6fcc8fc152949ac1d5df0439607ba3ad"
+source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#d1884fe598cd4c524ff6e0101859a60d4b4c8b8f"
 dependencies = [
  "proc-macro2",
  "quote",

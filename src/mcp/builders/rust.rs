@@ -11,9 +11,9 @@
 //! - Generating type names for structs, enums, and functions
 
 use super::EndpointContextBuilder;
-use crate::templates::{ParameterKind, TemplateParameterInfo};
-use agenterra_core::openapi::OpenApiOperation;
-use agenterra_core::utils::{to_snake_case, to_upper_camel_case};
+use crate::core::openapi::OpenApiOperation;
+use crate::core::utils::{to_snake_case, to_upper_camel_case};
+use crate::mcp::templates::{ParameterKind, TemplateParameterInfo};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
@@ -97,7 +97,7 @@ pub struct RustEndpointContext {
 pub struct RustEndpointContextBuilder;
 
 impl EndpointContextBuilder for RustEndpointContextBuilder {
-    fn build(&self, op: &OpenApiOperation) -> agenterra_core::Result<JsonValue> {
+    fn build(&self, op: &OpenApiOperation) -> crate::core::error::Result<JsonValue> {
         let context = RustEndpointContext {
             fn_name: to_snake_case(&op.id),
             parameters_type: to_upper_camel_case(&format!("{}_params", op.id)),

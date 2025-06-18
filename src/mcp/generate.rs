@@ -2,8 +2,10 @@
 
 use std::{path::PathBuf, str::FromStr};
 
-use crate::templates::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions};
-use agenterra_core::{config::Config, error::Result, openapi::OpenApiContext};
+use crate::core::{config::Config, error::Result, openapi::OpenApiContext};
+use crate::mcp::templates::{
+    ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
+};
 
 /// Generates MCP server code from an OpenAPI specification.
 ///
@@ -124,7 +126,7 @@ pub async fn generate_client(
     let template_manager = TemplateManager::new_client(template_kind, template_dir).await?;
 
     // 3. Create core config for client generation (no OpenAPI needed)
-    let core_config = agenterra_core::Config {
+    let core_config = crate::core::config::Config {
         project_name: config.project_name.clone(),
         openapi_schema_path: String::new(), // Not needed for client generation
         output_dir: config.output_dir.clone(),

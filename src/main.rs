@@ -1,17 +1,20 @@
 //! agenterra CLI entrypoint
 //! Parses command-line arguments and dispatches to the core generator.
+mod core;
+mod mcp;
 
 // Internal imports (std, crate)
 use reqwest::Url;
 use std::path::PathBuf;
 
 // External imports (alphabetized)
-use agenterra_mcp::{
+use anyhow::Context;
+use clap::Parser;
+use mcp::{
     ClientConfig, ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
     generate_client,
 };
-use anyhow::Context;
-use clap::Parser;
+use tempfile::tempdir;
 
 #[derive(Parser)]
 #[command(name = "agenterra")]
@@ -176,7 +179,7 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
     let schema_obj = load_openapi_schema(params.schema_path).await?;
 
     // Create config
-    let config = agenterra_core::Config {
+    let config = crate::core::config::Config {
         project_name: params.project_name.to_string(),
         openapi_schema_path: params.schema_path.to_string(),
         output_dir: output_path.to_string_lossy().to_string(),
@@ -252,7 +255,7 @@ async fn generate_mcp_client(
 /// Load OpenAPI schema from file or URL
 async fn load_openapi_schema(
     schema_path: &str,
-) -> anyhow::Result<agenterra_core::openapi::OpenApiContext> {
+) -> anyhow::Result<crate::core::openapi::OpenApiContext> {
     if schema_path.starts_with("http://") || schema_path.starts_with("https://") {
         // It's a URL
         let response = reqwest::get(schema_path).await.map_err(|e| {
@@ -273,18 +276,18 @@ async fn load_openapi_schema(
             .map_err(|e| anyhow::anyhow!("Failed to read response from {}: {}", schema_path, e))?;
 
         // Save to temporary file
-        let temp_dir = tempfile::tempdir()?;
+        let temp_dir = tempdir()?;
         let temp_file = temp_dir.path().join("openapi_schema.json");
         tokio::fs::write(&temp_file, &content).await?;
 
-        agenterra_core::openapi::OpenApiContext::from_file(&temp_file)
+        crate::core::openapi::OpenApiContext::from_file(&temp_file)
             .await
             .map_err(|e| {
                 anyhow::anyhow!("Failed to parse OpenAPI schema from {}: {}", schema_path, e)
             })
     } else {
         // It's a file path
-        agenterra_core::openapi::OpenApiContext::from_file(schema_path)
+        crate::core::openapi::OpenApiContext::from_file(schema_path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to load OpenAPI schema: {}", e))
     }

@@ -28,7 +28,7 @@
 // Internal imports (std, crate)
 use std::path::Path;
 
-use crate::Error;
+use crate::core::Error;
 
 // External imports (alphabetized)
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ pub struct OpenApiContext {
 
 impl OpenApiContext {
     /// Create a new OpenAPISpec from a file or URL (supports both YAML and JSON)
-    pub async fn from_file_or_url<P: AsRef<str>>(location: P) -> crate::Result<Self> {
+    pub async fn from_file_or_url<P: AsRef<str>>(location: P) -> crate::core::error::Result<Self> {
         let location = location.as_ref();
 
         // Check if the input looks like a URL
@@ -58,11 +58,11 @@ impl OpenApiContext {
     }
 
     /// Create a new OpenAPISpec from a file (supports both YAML and JSON)
-    pub async fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
+    pub async fn from_file<P: AsRef<Path>>(path: P) -> crate::core::error::Result<Self> {
         let path = path.as_ref();
         let content = fs::read_to_string(path).await?;
         Self::parse_content(&content).map_err(|e| {
-            crate::Error::openapi(format!(
+            crate::core::Error::openapi(format!(
                 "Failed to parse OpenAPI spec at {}: {}",
                 path.display(),
                 e
@@ -71,13 +71,13 @@ impl OpenApiContext {
     }
 
     /// Create a new OpenAPISpec from a URL (supports both YAML and JSON)
-    async fn from_url(url: &str) -> crate::Result<Self> {
+    async fn from_url(url: &str) -> crate::core::error::Result<Self> {
         let response = reqwest::get(url).await.map_err(|e| {
-            crate::Error::openapi(format!("Failed to fetch OpenAPI spec from {}: {}", url, e))
+            crate::core::Error::openapi(format!("Failed to fetch OpenAPI spec from {}: {}", url, e))
         })?;
 
         if !response.status().is_success() {
-            return Err(crate::Error::openapi(format!(
+            return Err(crate::core::Error::openapi(format!(
                 "Failed to fetch OpenAPI spec from {}: HTTP {}",
                 url,
                 response.status()
@@ -85,11 +85,11 @@ impl OpenApiContext {
         }
 
         let content = response.text().await.map_err(|e| {
-            crate::Error::openapi(format!("Failed to read response from {}: {}", url, e))
+            crate::core::Error::openapi(format!("Failed to read response from {}: {}", url, e))
         })?;
 
         Self::parse_content(&content).map_err(|e| {
-            crate::Error::openapi(format!("Failed to parse OpenAPI spec from {}: {}", url, e))
+            crate::core::Error::openapi(format!("Failed to parse OpenAPI spec from {}: {}", url, e))
         })
     }
 
@@ -184,7 +184,7 @@ impl OpenApiContext {
     }
 
     /// Parse all endpoints into structured contexts for template rendering
-    pub async fn parse_operations(&self) -> crate::Result<Vec<OpenApiOperation>> {
+    pub async fn parse_operations(&self) -> crate::core::error::Result<Vec<OpenApiOperation>> {
         let mut operations = Vec::new();
         // Expect 'paths' object
         let paths = self
@@ -459,7 +459,7 @@ impl OpenApiContext {
     fn extract_schema_properties(
         &self,
         schema: &JsonValue,
-    ) -> crate::Result<(JsonValue, Option<String>)> {
+    ) -> crate::core::error::Result<(JsonValue, Option<String>)> {
         // Handle null or non-object schemas
         let schema_obj = match schema.as_object() {
             Some(obj) => obj,
@@ -535,7 +535,7 @@ impl OpenApiContext {
     pub fn extract_request_body_properties(
         &self,
         operation: &OpenApiOperation,
-    ) -> crate::Result<(JsonValue, Option<String>)> {
+    ) -> crate::core::error::Result<(JsonValue, Option<String>)> {
         // If there's no request body, return empty properties
         let Some(request_body) = &operation.request_body else {
             return Ok((serde_json::json!({}), None));
@@ -749,7 +749,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_from_file() -> crate::Result<()> {
+    async fn test_from_file() -> crate::core::error::Result<()> {
         let dir = tempdir()?;
         let file_path = dir.path().join("openapi_async.json");
         let json_content = r#"

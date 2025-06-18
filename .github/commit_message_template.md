@@ -1,4 +1,4 @@
-#{issue-number} Short summary of changes (50 chars or less)
+# {semver_commit_type}: Short summary of changes (#{issue-number})
 
 # NOTE: The below section is optional and can be left blank if your commit is small and self-explanatory
 # ### Why is this change necessary?

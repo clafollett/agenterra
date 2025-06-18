@@ -4,8 +4,8 @@
 //! that goes beyond simple key-value storage to offer a full-featured resource database
 //! with structured storage, rich queries, ACID transactions, and built-in analytics.
 
-use crate::error::{ClientError, Result};
-use crate::resource::{ResourceContent, ResourceInfo};
+use crate::mcp::client::error::{ClientError, Result};
+use crate::mcp::client::resource::{ResourceContent, ResourceInfo};
 use chrono::{DateTime, Utc};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -912,7 +912,7 @@ fn normalize_path_components(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resource::ResourceInfo;
+    use crate::mcp::client::resource::ResourceInfo;
     use std::collections::HashMap;
     use tempfile::NamedTempFile;
 

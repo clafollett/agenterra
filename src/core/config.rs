@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use agenterra_core::config::Config;
+//! use config::Config;
 //!
 //! // Create a new config programmatically
 //! let mut config = Config::new("my-project", "openapi.yaml", "output");
@@ -25,6 +25,7 @@
 use std::path::Path;
 
 // External imports (alphabetized)
+use crate::core::error::Result;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use url::Url;
@@ -86,14 +87,14 @@ impl Config {
     }
 
     /// Load configuration from a file
-    pub async fn from_file<P: AsRef<Path>>(path: P) -> crate::Result<Self> {
+    pub async fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path).await?;
         let config = serde_yaml::from_str(&content)?;
         Ok(config)
     }
 
     /// Save configuration to a file
-    pub async fn save<P: AsRef<Path>>(&self, path: P) -> crate::Result<()> {
+    pub async fn save<P: AsRef<Path>>(&self, path: P) -> crate::core::error::Result<()> {
         let content = serde_yaml::to_string(self)?;
         fs::write(path, content).await?;
         Ok(())
@@ -110,7 +111,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[tokio::test]
-    async fn test_config_roundtrip() -> crate::Result<()> {
+    async fn test_config_roundtrip() -> crate::core::error::Result<()> {
         let dir = tempdir()?;
         let file_path = dir.path().join("config.yaml");
 

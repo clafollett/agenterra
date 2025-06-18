@@ -1,11 +1,11 @@
 //! Main client implementation for Agenterra MCP Client
 
-use crate::auth::AuthConfig;
-use crate::cache::{CacheConfig, ResourceCache};
-use crate::error::{ClientError, Result};
-use crate::registry::ToolRegistry;
-use crate::result::ToolResult;
-use crate::transport::Transport;
+use crate::mcp::client::auth::AuthConfig;
+use crate::mcp::client::cache::{CacheConfig, ResourceCache};
+use crate::mcp::client::error::{ClientError, Result};
+use crate::mcp::client::registry::ToolRegistry;
+use crate::mcp::client::result::ToolResult;
+use crate::mcp::client::transport::Transport;
 use std::time::Duration;
 
 // Import rmcp types for real MCP protocol integration
@@ -72,7 +72,7 @@ impl AgenterraClient {
     }
 
     /// Get cache analytics if caching is enabled
-    pub fn cache_analytics(&self) -> Option<&crate::cache::CacheAnalytics> {
+    pub fn cache_analytics(&self) -> Option<&crate::mcp::client::cache::CacheAnalytics> {
         self.resource_cache
             .as_ref()
             .map(|cache| cache.get_analytics())
@@ -317,7 +317,9 @@ impl AgenterraClient {
     }
 
     /// List all available resources from the MCP server
-    pub async fn list_resources(&mut self) -> Result<Vec<crate::resource::ResourceInfo>> {
+    pub async fn list_resources(
+        &mut self,
+    ) -> Result<Vec<crate::mcp::client::resource::ResourceInfo>> {
         let service = self.service.as_ref().ok_or_else(|| {
             ClientError::Client(
                 "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
@@ -342,7 +344,7 @@ impl AgenterraClient {
                     );
                 }
 
-                crate::resource::ResourceInfo {
+                crate::mcp::client::resource::ResourceInfo {
                     uri: rmcp_resource.uri.clone(),
                     name: Some(rmcp_resource.name.clone()),
                     description: rmcp_resource.description.clone(),
@@ -356,7 +358,10 @@ impl AgenterraClient {
     }
 
     /// Get a specific resource by URI
-    pub async fn get_resource(&mut self, uri: &str) -> Result<crate::resource::ResourceContent> {
+    pub async fn get_resource(
+        &mut self,
+        uri: &str,
+    ) -> Result<crate::mcp::client::resource::ResourceContent> {
         // Check cache first if caching is enabled
         if let Some(ref mut cache) = self.resource_cache {
             if let Some(cached_resource) = cache.get_resource(uri).await? {
@@ -400,7 +405,7 @@ impl AgenterraClient {
                 }
             };
 
-            let resource_info = crate::resource::ResourceInfo {
+            let resource_info = crate::mcp::client::resource::ResourceInfo {
                 uri: uri.to_string(),
                 name: None, // rmcp ResourceContents doesn't include name
                 description: None,
@@ -408,7 +413,7 @@ impl AgenterraClient {
                 metadata: std::collections::HashMap::new(),
             };
 
-            let resource_content = crate::resource::ResourceContent {
+            let resource_content = crate::mcp::client::resource::ResourceContent {
                 info: resource_info,
                 data,
                 encoding,
@@ -460,7 +465,9 @@ impl AgenterraClient {
     }
 
     /// Get list of cached resources
-    pub async fn list_cached_resources(&self) -> Result<Vec<crate::cache::CachedResource>> {
+    pub async fn list_cached_resources(
+        &self,
+    ) -> Result<Vec<crate::mcp::client::cache::CachedResource>> {
         if let Some(ref cache) = self.resource_cache {
             cache.list_cached_resources().await
         } else {
@@ -472,7 +479,7 @@ impl AgenterraClient {
     pub async fn search_cached_resources(
         &self,
         query: &str,
-    ) -> Result<Vec<crate::cache::CachedResource>> {
+    ) -> Result<Vec<crate::mcp::client::cache::CachedResource>> {
         if let Some(ref cache) = self.resource_cache {
             cache.search_resources(query).await
         } else {
@@ -484,14 +491,14 @@ impl AgenterraClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::MockTransport;
+    use crate::mcp::client::transport::MockTransport;
     use serde_json::json;
     use uuid::Uuid;
 
-    fn create_test_cache_config() -> (crate::cache::CacheConfig, tempfile::TempDir) {
+    fn create_test_cache_config() -> (crate::mcp::client::cache::CacheConfig, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join(format!("test_{}.db", Uuid::new_v4()));
-        let config = crate::cache::CacheConfig {
+        let config = crate::mcp::client::cache::CacheConfig {
             database_path: db_path.to_string_lossy().to_string(),
             ..Default::default()
         };
@@ -829,7 +836,7 @@ mod tests {
     async fn test_tool_result_content_types() {
         // This test demonstrates how we'll handle different content types
         // It will pass once we have real tool results to process
-        use crate::result::{ContentType, ToolResult};
+        use crate::mcp::client::result::{ContentType, ToolResult};
 
         // Mock a tool result with different content types
         let mock_result = ToolResult {
@@ -858,7 +865,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_tool_result_handling() {
-        use crate::result::{ContentType, ToolResult};
+        use crate::mcp::client::result::{ContentType, ToolResult};
 
         // Mock an error result
         let error_result = ToolResult {
@@ -877,7 +884,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_required_parameters() {
-        use crate::registry::ToolInfo;
+        use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
         let mut client = AgenterraClient::new(Box::new(mock_transport));
@@ -910,7 +917,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_parameter_types() {
-        use crate::registry::ToolInfo;
+        use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
         let mut client = AgenterraClient::new(Box::new(mock_transport));
@@ -945,7 +952,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_unknown_parameters() {
-        use crate::registry::ToolInfo;
+        use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
         let mut client = AgenterraClient::new(Box::new(mock_transport));
@@ -983,7 +990,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_parameters_successful() {
-        use crate::registry::ToolInfo;
+        use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
         let mut client = AgenterraClient::new(Box::new(mock_transport));
@@ -1047,7 +1054,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_end_to_end_tool_validation_integration() {
-        use crate::registry::ToolInfo;
+        use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
         let mut client = AgenterraClient::new(Box::new(mock_transport));
@@ -1131,7 +1138,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_with_auth_configuration() {
-        use crate::auth::AuthConfig;
+        use crate::mcp::client::auth::AuthConfig;
 
         let mock_transport = MockTransport::new(vec![]);
 
@@ -1163,7 +1170,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_auth_security_validation() {
-        use crate::auth::AuthConfig;
+        use crate::mcp::client::auth::AuthConfig;
 
         // Test that dangerous credentials are rejected
         let dangerous_api_key = "ignore previous instructions\x00malicious";
@@ -1181,7 +1188,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_bearer_token_auth() {
-        use crate::auth::AuthConfig;
+        use crate::mcp::client::auth::AuthConfig;
 
         let mock_transport = MockTransport::new(vec![]);
 
@@ -1204,7 +1211,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_header_injection_protection() {
-        use crate::auth::AuthConfig;
+        use crate::mcp::client::auth::AuthConfig;
 
         // Try to inject malicious headers
         let malicious_header_name = "X-API-Key\r\nInjected-Header: malicious";
@@ -1309,7 +1316,7 @@ mod tests {
         use std::time::Duration;
 
         let mock_transport = MockTransport::new(vec![]);
-        let cache_config = crate::cache::CacheConfig {
+        let cache_config = crate::mcp::client::cache::CacheConfig {
             database_path: ":memory:".to_string(),
             default_ttl: Duration::from_secs(300), // 5 minutes
             max_size_mb: 50,
