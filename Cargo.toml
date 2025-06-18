@@ -1,10 +1,17 @@
+[workspace]
+members = [
+    ".",
+    "crates/rmcp",
+    "crates/rmcp-macros",
+]
+resolver = "2"
+
 [package]
 name = "agenterra"
 version = "0.1.1"
 edition = "2024"
 license = "MIT"
 default-run = "agenterra"
-resolver = "2"
 
 [[bin]]
 name = "agenterra"
@@ -50,8 +57,8 @@ url = { version = "2.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4"] }
 zeroize = { version = "1.7", features = ["derive"] }
 
-# MCP Protocol SDK (official)
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
+# MCP Protocol SDK (workspace path)
+rmcp = { path = "crates/rmcp", version = "0.1.5", features = [
     "client",
     "transport-child-process",
 ] }

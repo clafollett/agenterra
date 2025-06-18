@@ -586,31 +586,35 @@ fn test_cli_flag_combinations() -> Result<()> {
         .output()
         .expect("Failed to run agenterra");
 
-    assert!(!result.status.success(), "Server command should fail without --schema-path");
+    assert!(
+        !result.status.success(),
+        "Server command should fail without --schema-path"
+    );
     let stderr = String::from_utf8_lossy(&result.stderr);
     // Verify clap's missing required argument error
     assert!(
-        stderr.contains("the following required arguments were not provided") &&
-        stderr.contains("--schema-path <SCHEMA_PATH>"),
+        stderr.contains("the following required arguments were not provided")
+            && stderr.contains("--schema-path <SCHEMA_PATH>"),
         "Should show missing --schema-path error, but got: {}",
         stderr
     );
 
-    // Test 2: Client command requires --project-name
+    // Test 2: Client command should succeed with default project-name
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
         .args(["scaffold", "mcp", "client", "--template", "rust_reqwest"])
         .output()
         .expect("Failed to run agenterra");
 
-    assert!(!result.status.success(), "Client command should fail without --project-name");
-    let stderr = String::from_utf8_lossy(&result.stderr);
-    // Verify clap's missing required argument error
     assert!(
-        stderr.contains("the following required arguments were not provided") &&
-        stderr.contains("--project-name <PROJECT_NAME>"),
-        "Should show missing --project-name error, but got: {}",
-        stderr
+        result.status.success(),
+        "Client command should succeed with default --project-name"
+    );
+    // Verify that the default project was created
+    let default_project_dir = sandbox_dir.join("mcp_client");
+    assert!(
+        default_project_dir.exists(),
+        "Default project directory should be created"
     );
 
     // Test 3: Client command should reject --schema-path
@@ -628,11 +632,14 @@ fn test_cli_flag_combinations() -> Result<()> {
         .output()
         .expect("Failed to run agenterra");
 
-    assert!(!result.status.success(), "Client command should reject --schema-path flag");
+    assert!(
+        !result.status.success(),
+        "Client command should reject --schema-path flag"
+    );
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("unexpected argument '--schema-path' found") ||
-        stderr.contains("unrecognized argument '--schema-path'"),
+        stderr.contains("unexpected argument '--schema-path' found")
+            || stderr.contains("unrecognized argument '--schema-path'"),
         "Should show error about unsupported --schema-path flag, but got: {}",
         stderr
     );
@@ -656,21 +663,24 @@ fn test_cli_flag_combinations() -> Result<()> {
         .expect("Failed to run agenterra");
 
     // Should fail due to missing file, not argument parsing
-    assert!(!result.status.success(), "Server command should fail with non-existent schema file");
+    assert!(
+        !result.status.success(),
+        "Server command should fail with non-existent schema file"
+    );
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("No such file or directory") ||
-        stderr.contains("not found") ||
-        stderr.contains("failed to read file"),
+        stderr.contains("No such file or directory")
+            || stderr.contains("not found")
+            || stderr.contains("failed to read file"),
         "Should show file not found error, but got: {}",
         stderr
     );
-    
+
     // Verify it's not an argument parsing error
     assert!(
-        !stderr.contains("unrecognized") && 
-        !stderr.contains("unexpected") &&
-        !stderr.contains("required"),
+        !stderr.contains("unrecognized")
+            && !stderr.contains("unexpected")
+            && !stderr.contains("required"),
         "Should not be an argument parsing error, but got: {}",
         stderr
     );
@@ -697,9 +707,9 @@ fn test_cli_flag_combinations() -> Result<()> {
     if result.status.success() {
         let stdout = String::from_utf8_lossy(&result.stdout);
         assert!(
-            stdout.contains("Successfully") || 
-            stdout.contains("generated") ||
-            stdout.contains("Creating"),
+            stdout.contains("Successfully")
+                || stdout.contains("generated")
+                || stdout.contains("Creating"),
             "Should show success message for valid client command, but got: {}",
             stdout
         );
@@ -707,19 +717,19 @@ fn test_cli_flag_combinations() -> Result<()> {
         let stderr = String::from_utf8_lossy(&result.stderr);
         // Should NOT be an argument parsing error
         assert!(
-            !stderr.contains("unrecognized") && 
-            !stderr.contains("unexpected") &&
-            !stderr.contains("required"),
+            !stderr.contains("unrecognized")
+                && !stderr.contains("unexpected")
+                && !stderr.contains("required"),
             "Should not be an argument parsing error, but got: {}",
             stderr
         );
-        
+
         // Should be a template-related error, not argument parsing
         assert!(
-            stderr.is_empty() || 
-            stderr.contains("template") ||
-            stderr.contains("not found") ||
-            stderr.contains("failed"),
+            stderr.is_empty()
+                || stderr.contains("template")
+                || stderr.contains("not found")
+                || stderr.contains("failed"),
             "Unexpected error for valid client command: {}",
             stderr
         );

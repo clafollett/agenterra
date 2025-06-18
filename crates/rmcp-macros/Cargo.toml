@@ -1,0 +1,26 @@
+
+
+[package]
+name = "rmcp-macros"
+license = "MIT"
+version = "0.1.5"
+edition = "2024"
+repository = "https://github.com/modelcontextprotocol/rust-sdk"
+homepage = "https://github.com/modelcontextprotocol/rust-sdk"
+readme = "README.md"
+description = "Rust SDK for Model Context Protocol macros library"
+documentation = "https://docs.rs/rmcp-macros"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+serde_json = "1.0"
+
+
+[features]
+[dev-dependencies]

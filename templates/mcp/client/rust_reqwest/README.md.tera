@@ -94,6 +94,18 @@ The cache provides:
 - **r2d2**: Connection pooling for database operations
 - **chrono**: Date and time handling for cache analytics
 
+## Publishing Limitation
+
+⚠️ **Important**: This project uses git dependencies and cannot be published to crates.io in its current form.
+
+The `rmcp` dependency is referenced directly from the official ModelContextProtocol GitHub repository to ensure access to the latest features (including authentication support). To publish this project to crates.io, you would need to:
+
+1. Wait for an official `rmcp` release on crates.io that includes the `auth` feature
+2. Or remove features that require git dependencies
+3. Or vendor the dependencies locally
+
+This limitation ensures you have access to the full, official MCP SDK functionality during development.
+
 ## Development
 
 ### Building
