@@ -1,6 +1,6 @@
 //! agenterra CLI entrypoint
 //! Parses command-line arguments and dispatches to the core generator.
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 mod core;
 mod mcp;
 

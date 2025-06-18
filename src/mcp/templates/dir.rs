@@ -627,6 +627,50 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)] // Required for set_var/remove_var in tests
+    fn test_environment_variable_template_discovery() {
+        let temp_dir = create_test_workspace("env_var_template_discovery");
+        let templates_dir = temp_dir.join("templates");
+        let mcp_dir = templates_dir.join("mcp");
+        let server_dir = mcp_dir.join("server");
+        let client_dir = mcp_dir.join("client");
+        fs::create_dir_all(&server_dir).unwrap();
+        fs::create_dir_all(&client_dir).unwrap();
+
+        // Test 1: Without env var set (should return None for env var path)
+        let env_config = EnvTemplateConfigReader;
+        let _no_env_result = env_config.get_template_dir();
+        // Note: We can't assert None because AGENTERRA_TEMPLATE_DIR might be set globally
+        // This test documents the behavior
+
+        // Test 2: With env var set temporarily (single-threaded, marked unsafe due to race potential)
+        unsafe {
+            // SAFETY: This test runs in a single thread, so we know no other thread
+            // will be reading the environment variable concurrently
+            std::env::set_var("AGENTERRA_TEMPLATE_DIR", &temp_dir);
+        }
+
+        let with_env_result = env_config.get_template_dir();
+        assert!(with_env_result.is_some());
+        assert_eq!(with_env_result.unwrap(), temp_dir.to_string_lossy());
+
+        // Test 3: Test the full discovery process with env var
+        let discovery_result = TemplateDir::find_template_base_dir();
+        assert!(discovery_result.is_some());
+
+        // Cleanup (unsafe due to potential race with other threads reading env vars)
+        unsafe {
+            // SAFETY: This test runs in a single thread, so we know no other thread
+            // will be reading the environment variable concurrently
+            std::env::remove_var("AGENTERRA_TEMPLATE_DIR");
+        }
+
+        // Test 4: After cleanup, env var should be gone
+        let _after_cleanup = env_config.get_template_dir();
+        // Note: Can't assert None due to potential global env var, but documents cleanup
+    }
+
+    #[test]
     fn test_concurrent_template_discovery() {
         use std::sync::{Arc, Barrier};
         use std::thread;
@@ -670,44 +714,5 @@ mod tests {
         }
 
         // No cleanup needed - no global state was modified
-    }
-
-    #[test]
-    fn test_environment_variable_template_discovery() {
-        // Sequential test for environment variable functionality
-        let temp_dir = create_test_workspace("test_environment_variable_template_discovery");
-        let templates_dir = temp_dir.join("templates");
-        let mcp_dir = templates_dir.join("mcp");
-        let server_dir = mcp_dir.join("server");
-        let client_dir = mcp_dir.join("client");
-        fs::create_dir_all(&server_dir).unwrap();
-        fs::create_dir_all(&client_dir).unwrap();
-
-        // Test 1: Without env var set (should return None for env var path)
-        let env_config = EnvTemplateConfigReader;
-        let _no_env_result = env_config.get_template_dir();
-        // Note: We can't assert None because AGENTERRA_TEMPLATE_DIR might be set globally
-        // This test documents the behavior
-
-        // Test 2: With env var set temporarily (single-threaded, marked unsafe due to race potential)
-        unsafe {
-            std::env::set_var("AGENTERRA_TEMPLATE_DIR", &temp_dir);
-        }
-        let with_env_result = env_config.get_template_dir();
-        assert!(with_env_result.is_some());
-        assert_eq!(with_env_result.unwrap(), temp_dir.to_string_lossy());
-
-        // Test 3: Test the full discovery process with env var
-        let discovery_result = TemplateDir::find_template_base_dir();
-        assert!(discovery_result.is_some());
-
-        // Cleanup (unsafe due to potential race with other threads reading env vars)
-        unsafe {
-            std::env::remove_var("AGENTERRA_TEMPLATE_DIR");
-        }
-
-        // Test 4: After cleanup, env var should be gone
-        let _after_cleanup = env_config.get_template_dir();
-        // Note: Can't assert None due to potential global env var, but documents cleanup
     }
 }
