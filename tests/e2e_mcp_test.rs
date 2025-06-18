@@ -586,14 +586,14 @@ fn test_cli_flag_combinations() -> Result<()> {
         .output()
         .expect("Failed to run agenterra");
 
-    assert!(!result.status.success());
+    assert!(!result.status.success(), "Server command should fail without --schema-path");
     let stderr = String::from_utf8_lossy(&result.stderr);
-    // Note: Due to CLI design, template initialization happens before argument validation
-    // So we get template errors instead of missing argument errors
+    // Verify clap's missing required argument error
     assert!(
-        stderr.contains("template")
-            || stderr.contains("required")
-            || stderr.contains("schema-path")
+        stderr.contains("the following required arguments were not provided") &&
+        stderr.contains("--schema-path <SCHEMA_PATH>"),
+        "Should show missing --schema-path error, but got: {}",
+        stderr
     );
 
     // Test 2: Client command requires --project-name
@@ -603,14 +603,14 @@ fn test_cli_flag_combinations() -> Result<()> {
         .output()
         .expect("Failed to run agenterra");
 
-    assert!(!result.status.success());
+    assert!(!result.status.success(), "Client command should fail without --project-name");
     let stderr = String::from_utf8_lossy(&result.stderr);
-    // Note: Due to CLI design, template initialization happens before argument validation
-    // So we get template errors instead of missing argument errors
+    // Verify clap's missing required argument error
     assert!(
-        stderr.contains("template")
-            || stderr.contains("required")
-            || stderr.contains("project-name")
+        stderr.contains("the following required arguments were not provided") &&
+        stderr.contains("--project-name <PROJECT_NAME>"),
+        "Should show missing --project-name error, but got: {}",
+        stderr
     );
 
     // Test 3: Client command should reject --schema-path
