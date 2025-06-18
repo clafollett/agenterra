@@ -14,12 +14,8 @@ use tokio::time::timeout;
 #[tokio::test]
 async fn test_mcp_server_client_generation() -> Result<()> {
     // Discover project root first
-    let current_dir = std::env::current_dir()?;
-    let project_dir = current_dir
-        .parent()
-        .unwrap() // Go up from crates/agenterra-cli
-        .parent()
-        .unwrap(); // Go up to project root
+    // Determine project root at compile time via Cargo
+    let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     // Resolve path to agenterra binary (prefer Cargo-built path)
     let agenterra = project_dir
@@ -28,7 +24,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
         .into_owned();
 
     // Pass project root as template dir - the code will append "templates" internally
-    let template_dir = project_dir;
+    let template_dir = project_dir.clone();
 
     // Use workspace .agenterra directory for generated artifacts
     // Clean any previous run directories to avoid duplicate headers or build conflicts
@@ -508,9 +504,15 @@ async fn test_mcp_with_interactive_client(
 #[test]
 fn test_cli_help_output() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
+    // Use sandbox directory under .agenterra to avoid polluting repo root
+    let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
+    let _ = std::fs::remove_dir_all(&sandbox_dir);
+    std::fs::create_dir_all(&sandbox_dir).unwrap();
 
     // Test main help
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .arg("--help")
         .output()
         .expect("Failed to run agenterra");
@@ -521,6 +523,7 @@ fn test_cli_help_output() {
 
     // Test scaffold mcp help
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args(["scaffold", "mcp", "--help"])
         .output()
         .expect("Failed to run agenterra");
@@ -535,9 +538,15 @@ fn test_cli_help_output() {
 #[test]
 fn test_new_cli_structure() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
+    // Use sandbox directory under .agenterra to avoid polluting repo root
+    let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
+    let _ = std::fs::remove_dir_all(&sandbox_dir);
+    std::fs::create_dir_all(&sandbox_dir).unwrap();
 
     // Test server help shows correct options
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args(["scaffold", "mcp", "server", "--help"])
         .output()
         .expect("Failed to run agenterra");
@@ -549,6 +558,7 @@ fn test_new_cli_structure() {
 
     // Test client help shows correct options
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args(["scaffold", "mcp", "client", "--help"])
         .output()
         .expect("Failed to run agenterra");
@@ -561,11 +571,17 @@ fn test_new_cli_structure() {
 }
 
 #[test]
-fn test_cli_flag_combinations() {
+fn test_cli_flag_combinations() -> Result<()> {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
+    // Use sandbox directory under .agenterra to avoid polluting repo root
+    let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
+    let _ = std::fs::remove_dir_all(&sandbox_dir);
+    std::fs::create_dir_all(&sandbox_dir).unwrap();
 
     // Test 1: Server command requires --schema-path
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args(["scaffold", "mcp", "server", "--project-name", "test"])
         .output()
         .expect("Failed to run agenterra");
@@ -582,6 +598,7 @@ fn test_cli_flag_combinations() {
 
     // Test 2: Client command requires --project-name
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args(["scaffold", "mcp", "client", "--template", "rust_reqwest"])
         .output()
         .expect("Failed to run agenterra");
@@ -598,6 +615,7 @@ fn test_cli_flag_combinations() {
 
     // Test 3: Client command should reject --schema-path
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args([
             "scaffold",
             "mcp",
@@ -617,6 +635,7 @@ fn test_cli_flag_combinations() {
     // Test 4: Valid server command combination
     // Note: This will fail because file doesn't exist, but argument parsing should work
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args([
             "scaffold",
             "mcp",
@@ -641,6 +660,7 @@ fn test_cli_flag_combinations() {
 
     // Test 5: Valid client command combination
     let result = Command::new(agenterra)
+        .current_dir(&sandbox_dir)
         .args([
             "scaffold",
             "mcp",
@@ -663,6 +683,8 @@ fn test_cli_flag_combinations() {
         assert!(!stderr.contains("unrecognized"));
         assert!(!stderr.contains("required"));
     }
+
+    Ok(())
 }
 
 /// Verify SQLite cache by directly querying the database

@@ -10,6 +10,10 @@ resolver = "2"
 name = "agenterra"
 path = "src/main.rs"
 
+[features]
+mcp_client = []
+
+
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"

@@ -11,8 +11,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use clap::Parser;
 use mcp::{
-    ClientConfig, ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
-    generate_client,
+    ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
 };
 use tempfile::tempdir;
 
@@ -232,18 +231,29 @@ async fn generate_mcp_client(
         .clone()
         .unwrap_or_else(|| PathBuf::from(project_name));
 
-    // Create client config
-    let client_config = ClientConfig {
+    // Initialise template manager for the chosen client template
+    let template_manager = TemplateManager::new_client(template_kind_enum, template_dir.clone())
+        .await?;
+
+    // Build a core config (no OpenAPI schema needed for clients)
+    let core_config = crate::core::config::Config {
         project_name: project_name.to_string(),
+        openapi_schema_path: String::new(),
         output_dir: output_path.to_string_lossy().to_string(),
         template_kind: template_kind_enum.as_str().to_string(),
         template_dir: template_dir
             .as_ref()
             .map(|p| p.to_string_lossy().to_string()),
+        include_all: true,
+        include_operations: Vec::new(),
+        exclude_operations: Vec::new(),
+        base_url: None,
     };
 
-    // Generate the client
-    generate_client(&client_config, None).await?;
+    // Generate the client directly via TemplateManager
+    template_manager
+        .generate_client(&core_config, None)
+        .await?;
 
     println!(
         "✅ Successfully generated MCP client in: {}",

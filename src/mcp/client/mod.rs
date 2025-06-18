@@ -12,10 +12,9 @@ pub mod resource;
 pub mod result;
 pub mod transport;
 
-#[allow(dead_code)]
 pub use auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
 pub use cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
-pub use client::AgenterraClient;
+pub use client::McpClient;
 pub use error::{ClientError, Result};
 pub use registry::{ToolInfo, ToolRegistry};
 pub use resource::{ResourceContent, ResourceInfo};

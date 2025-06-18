@@ -17,7 +17,7 @@ use rmcp::{
 };
 
 /// High-level MCP client with ergonomic APIs
-pub struct AgenterraClient {
+pub struct McpClient {
     // We'll store the rmcp service for actual MCP communication
     service: Option<RunningService<RoleClient, ()>>,
     // Tool registry for caching and validating tools
@@ -29,7 +29,7 @@ pub struct AgenterraClient {
     timeout: Duration,
 }
 
-impl AgenterraClient {
+impl McpClient {
     /// Create a new client - for now still accepting Transport but will transition to rmcp
     pub fn new(_transport: Box<dyn Transport>) -> Self {
         Self {
@@ -512,7 +512,7 @@ mod tests {
         use tokio::process::Command;
 
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Try to connect to a mock MCP server (this will fail but shows the API)
         let mut command = Command::new("echo");
@@ -534,7 +534,7 @@ mod tests {
     #[tokio::test]
     async fn test_client_creation() {
         let mock_transport = MockTransport::new(vec![]);
-        let client = AgenterraClient::new(Box::new(mock_transport));
+        let client = McpClient::new(Box::new(mock_transport));
 
         // Should be able to create client successfully
         assert_eq!(client.timeout, Duration::from_millis(5000));
@@ -544,7 +544,7 @@ mod tests {
     async fn test_client_with_custom_timeout() {
         let mock_transport = MockTransport::new(vec![]);
         let timeout = Duration::from_millis(1000);
-        let client = AgenterraClient::new(Box::new(mock_transport)).with_timeout(timeout);
+        let client = McpClient::new(Box::new(mock_transport)).with_timeout(timeout);
 
         assert_eq!(client.timeout, timeout);
     }
@@ -558,7 +558,7 @@ mod tests {
         });
 
         let mock_transport = MockTransport::new(vec![mock_response]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Without connecting to a server, ping should fail
         let result = client.ping().await;
@@ -575,7 +575,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_tools_not_connected() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Without connecting to a server, list_tools should fail
         let result = client.list_tools().await;
@@ -592,7 +592,7 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool_not_connected() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Without connecting to a server, call_tool should fail
         let result = client.call_tool("get_pet_by_id", json!({"id": 123})).await;
@@ -609,7 +609,7 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool_snake_case_naming() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Test various snake_case tool names that our server generation would create
         let test_cases = vec![
@@ -638,7 +638,7 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool_argument_handling() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Test different argument types that call_tool should handle
         let test_cases = vec![
@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn test_registry_access() {
         let mock_transport = MockTransport::new(vec![]);
-        let client = AgenterraClient::new(Box::new(mock_transport));
+        let client = McpClient::new(Box::new(mock_transport));
 
         // Should start with empty registry
         let registry = client.registry();
@@ -687,7 +687,7 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool_streaming_not_connected() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Without connecting to a server, streaming should fail
         let result = client
@@ -706,7 +706,7 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool_streaming_mock_response() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Mock connecting to server for this test (we'll skip actual connection for now)
         // This test will fail until we implement proper streaming
@@ -738,7 +738,7 @@ mod tests {
         // This test verifies the expected streaming response format
         // It will pass once we have a connected client, but fail until then
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Test streaming response structure
         let result = client
@@ -759,7 +759,7 @@ mod tests {
     async fn test_streaming_vs_non_streaming_response() {
         // This test demonstrates the difference between streaming and non-streaming responses
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Test cases for different response types
         let test_cases = vec![
@@ -788,7 +788,7 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool_typed_not_connected() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Without connecting to a server, typed tool call should fail
         let result = client
@@ -808,7 +808,7 @@ mod tests {
     async fn test_call_tool_typed_response_processing() {
         // This test will fail until we have a real connection, but shows the expected API
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         let test_cases = vec![
             // Text response
@@ -887,7 +887,7 @@ mod tests {
         use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Add a tool to the registry with required parameters
         let tool = ToolInfo {
@@ -920,7 +920,7 @@ mod tests {
         use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Add a tool to the registry with typed parameters
         let tool = ToolInfo {
@@ -955,7 +955,7 @@ mod tests {
         use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Add a tool to the registry
         let tool = ToolInfo {
@@ -993,7 +993,7 @@ mod tests {
         use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Add a tool to the registry
         let tool = ToolInfo {
@@ -1021,7 +1021,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_resources_not_connected() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Without connecting to a server, list_resources should fail
         let result = client.list_resources().await;
@@ -1038,7 +1038,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_resource_not_connected() {
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Without connecting to a server, get_resource should fail
         let result = client.get_resource("file:///test.txt").await;
@@ -1057,7 +1057,7 @@ mod tests {
         use crate::mcp::client::registry::ToolInfo;
 
         let mock_transport = MockTransport::new(vec![]);
-        let mut client = AgenterraClient::new(Box::new(mock_transport));
+        let mut client = McpClient::new(Box::new(mock_transport));
 
         // Add a comprehensive tool to the registry
         let tool = ToolInfo {
@@ -1151,7 +1151,7 @@ mod tests {
         assert!(auth_config.is_ok());
         let auth_config = auth_config.unwrap();
 
-        let client = AgenterraClient::new(Box::new(mock_transport)).with_auth(auth_config);
+        let client = McpClient::new(Box::new(mock_transport)).with_auth(auth_config);
 
         // Should have auth config
         assert!(client.auth_config().is_some());
@@ -1199,7 +1199,7 @@ mod tests {
         assert!(auth_config.is_ok());
 
         let auth_config = auth_config.unwrap();
-        let client = AgenterraClient::new(Box::new(mock_transport)).with_auth(auth_config);
+        let client = McpClient::new(Box::new(mock_transport)).with_auth(auth_config);
 
         // Should have auth config with bearer token
         assert!(client.auth_config().is_some());
@@ -1230,7 +1230,7 @@ mod tests {
     #[tokio::test]
     async fn test_client_without_auth() {
         let mock_transport = MockTransport::new(vec![]);
-        let client = AgenterraClient::new(Box::new(mock_transport));
+        let client = McpClient::new(Box::new(mock_transport));
 
         // Should not have auth config by default
         assert!(client.auth_config().is_none());
@@ -1239,7 +1239,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_configuration() {
         let mock_transport = MockTransport::new(vec![]);
-        let client = AgenterraClient::new(Box::new(mock_transport));
+        let client = McpClient::new(Box::new(mock_transport));
 
         // Initially no cache
         assert!(client.cache_analytics().is_none());
@@ -1263,7 +1263,7 @@ mod tests {
     async fn test_cache_operations() {
         let mock_transport = MockTransport::new(vec![]);
         let (cache_config, _temp_dir) = create_test_cache_config();
-        let mut client = AgenterraClient::new(Box::new(mock_transport))
+        let mut client = McpClient::new(Box::new(mock_transport))
             .with_cache(cache_config)
             .await
             .unwrap();
@@ -1289,7 +1289,7 @@ mod tests {
     async fn test_cache_analytics_tracking() {
         let mock_transport = MockTransport::new(vec![]);
         let (cache_config, _temp_dir) = create_test_cache_config();
-        let mut client = AgenterraClient::new(Box::new(mock_transport))
+        let mut client = McpClient::new(Box::new(mock_transport))
             .with_cache(cache_config)
             .await
             .unwrap();
@@ -1328,7 +1328,7 @@ mod tests {
             pool_max_lifetime: None,
         };
 
-        let client = AgenterraClient::new(Box::new(mock_transport))
+        let client = McpClient::new(Box::new(mock_transport))
             .with_cache(cache_config)
             .await
             .unwrap();
