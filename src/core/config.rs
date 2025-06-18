@@ -90,7 +90,7 @@ impl Config {
     /// Load configuration from a file
     pub async fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path).await?;
-        let config = serde_yaml::from_str(&content)?;
+        let config: Self = serde_yaml::from_str(&content)?;
         Ok(config)
     }
 

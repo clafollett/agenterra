@@ -628,9 +628,14 @@ fn test_cli_flag_combinations() -> Result<()> {
         .output()
         .expect("Failed to run agenterra");
 
-    assert!(!result.status.success());
+    assert!(!result.status.success(), "Client command should reject --schema-path flag");
     let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(stderr.contains("unrecognized") || stderr.contains("unexpected"));
+    assert!(
+        stderr.contains("unexpected argument '--schema-path' found") ||
+        stderr.contains("unrecognized argument '--schema-path'"),
+        "Should show error about unsupported --schema-path flag, but got: {}",
+        stderr
+    );
 
     // Test 4: Valid server command combination
     // Note: This will fail because file doesn't exist, but argument parsing should work
@@ -651,11 +656,23 @@ fn test_cli_flag_combinations() -> Result<()> {
         .expect("Failed to run agenterra");
 
     // Should fail due to missing file, not argument parsing
+    assert!(!result.status.success(), "Server command should fail with non-existent schema file");
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("not found")
-            || stderr.contains("No such file")
-            || stderr.contains("template")
+        stderr.contains("No such file or directory") ||
+        stderr.contains("not found") ||
+        stderr.contains("failed to read file"),
+        "Should show file not found error, but got: {}",
+        stderr
+    );
+    
+    // Verify it's not an argument parsing error
+    assert!(
+        !stderr.contains("unrecognized") && 
+        !stderr.contains("unexpected") &&
+        !stderr.contains("required"),
+        "Should not be an argument parsing error, but got: {}",
+        stderr
     );
 
     // Test 5: Valid client command combination
@@ -677,11 +694,35 @@ fn test_cli_flag_combinations() -> Result<()> {
 
     // This should succeed in argument parsing
     // It may fail later due to template not found, but args should be valid
-    if !result.status.success() {
+    if result.status.success() {
+        let stdout = String::from_utf8_lossy(&result.stdout);
+        assert!(
+            stdout.contains("Successfully") || 
+            stdout.contains("generated") ||
+            stdout.contains("Creating"),
+            "Should show success message for valid client command, but got: {}",
+            stdout
+        );
+    } else {
         let stderr = String::from_utf8_lossy(&result.stderr);
         // Should NOT be an argument parsing error
-        assert!(!stderr.contains("unrecognized"));
-        assert!(!stderr.contains("required"));
+        assert!(
+            !stderr.contains("unrecognized") && 
+            !stderr.contains("unexpected") &&
+            !stderr.contains("required"),
+            "Should not be an argument parsing error, but got: {}",
+            stderr
+        );
+        
+        // Should be a template-related error, not argument parsing
+        assert!(
+            stderr.is_empty() || 
+            stderr.contains("template") ||
+            stderr.contains("not found") ||
+            stderr.contains("failed"),
+            "Unexpected error for valid client command: {}",
+            stderr
+        );
     }
 
     Ok(())
