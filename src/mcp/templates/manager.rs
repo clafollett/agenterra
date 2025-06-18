@@ -84,7 +84,7 @@ impl TemplateManager {
         })?;
 
         // Load the template manifest - try YAML first, then TOML
-        let yaml_manifest_path = template_path.join("manifest.yaml");
+        let yaml_manifest_path = template_path.join("manifest.yml");
         let toml_manifest_path = template_path.join("manifest.toml");
 
         let manifest = if yaml_manifest_path.exists() {
@@ -201,7 +201,7 @@ impl TemplateManager {
         );
 
         // Load template manifest
-        let yaml_manifest_path = template_dir_path.join("manifest.yaml");
+        let yaml_manifest_path = template_dir_path.join("manifest.yml");
         let toml_manifest_path = template_dir_path.join("manifest.toml");
 
         let manifest = if yaml_manifest_path.exists() {

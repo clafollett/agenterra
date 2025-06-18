@@ -89,7 +89,7 @@ impl Default for TemplateFile {
 impl TemplateManifest {
     /// Load a template manifest from a directory.
     ///
-    /// Looks for a `manifest.yaml` file in the specified directory and parses it.
+    /// Looks for a `manifest.yml` file in the specified directory and parses it.
     ///
     /// # Errors
     ///
@@ -97,7 +97,7 @@ impl TemplateManifest {
     pub async fn load_from_dir(
         template_dir: &std::path::Path,
     ) -> Result<Self, crate::core::error::Error> {
-        let manifest_path = template_dir.join("manifest.yaml");
+        let manifest_path = template_dir.join("manifest.yml");
 
         println!(
             "DEBUG - Attempting to read manifest from: {}",

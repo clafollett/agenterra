@@ -186,13 +186,13 @@ impl TemplateDir {
         // 4. Check in the crate root (for development)
         if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
             let manifest_path = PathBuf::from(manifest_dir);
-            
+
             // First check the manifest directory itself (for workspace root)
             let templates_dir = manifest_path.join("templates");
             if templates_dir.exists() {
                 return Some(manifest_path);
             }
-            
+
             // Then check parent (for sub-crates in workspace)
             if let Some(workspace_root) = manifest_path.parent() {
                 let templates_dir = workspace_root.join("templates");
