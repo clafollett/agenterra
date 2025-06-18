@@ -7,10 +7,9 @@
 pub mod builders;
 #[cfg(feature = "mcp_client")]
 pub mod client;
-pub mod generate;
+
 pub mod manifest;
 pub mod templates;
 
-// Re-exports
-pub use generate::{ClientConfig, generate, generate_client};
+// Re-exports removed: obsolete generate module
 pub use templates::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions};

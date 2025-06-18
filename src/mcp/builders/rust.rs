@@ -12,7 +12,7 @@
 
 use super::EndpointContextBuilder;
 use crate::core::openapi::OpenApiOperation;
-use crate::core::utils::{to_snake_case, to_upper_camel_case};
+use crate::core::utils::{to_proper_case, to_snake_case};
 use crate::mcp::templates::{ParameterKind, TemplateParameterInfo};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
@@ -100,13 +100,13 @@ impl EndpointContextBuilder for RustEndpointContextBuilder {
     fn build(&self, op: &OpenApiOperation) -> crate::core::error::Result<JsonValue> {
         let context = RustEndpointContext {
             fn_name: to_snake_case(&op.id),
-            parameters_type: to_upper_camel_case(&format!("{}_params", op.id)),
+            parameters_type: to_proper_case(&format!("{}_params", op.id)),
             endpoint: to_snake_case(&op.id),
-            endpoint_cap: to_upper_camel_case(&op.id),
+            endpoint_cap: to_proper_case(&op.id),
             endpoint_fs: to_snake_case(&op.id),
             path: op.path.clone(),
-            properties_type: to_upper_camel_case(&format!("{}_properties", op.id)),
-            response_type: to_upper_camel_case(&format!("{}_response", op.id)),
+            properties_type: to_proper_case(&format!("{}_properties", op.id)),
+            response_type: to_proper_case(&format!("{}_response", op.id)),
             envelope_properties: extract_envelope_properties(op),
             properties: extract_response_properties(op),
             properties_for_handler: extract_handler_properties(op),

@@ -9,6 +9,3 @@ pub mod openapi;
 pub mod utils;
 
 pub use error::Error;
-
-/// Result type for Agenterra generation operations
-pub type AgenterraResult<T> = std::result::Result<T, Error>;

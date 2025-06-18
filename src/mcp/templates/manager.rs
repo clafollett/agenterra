@@ -585,27 +585,16 @@ impl TemplateManager {
         // Add project name from config (user-specified)
         base_map.insert("project_name".to_string(), json!(config.project_name));
 
-        // Add project title from spec for reference
-        if let Some(title) = openapi_context
-            .json
-            .get("info")
-            .and_then(|info| info.get("title"))
-            .and_then(|t| t.as_str())
-        {
-            base_map.insert("project_title".to_string(), json!(title));
-            // Also add sanitized version for cases where we might need it
+        // Add project title and version from spec
+        if let Some(title) = openapi_context.title() {
+            base_map.insert("api_title".to_string(), json!(title));
             let sanitized_name = to_snake_case(title);
             base_map.insert("project_name_from_spec".to_string(), json!(sanitized_name));
         }
 
         // Add API version from spec
-        if let Some(api_version) = openapi_context
-            .json
-            .get("info")
-            .and_then(|info| info.get("version"))
-            .and_then(|v| v.as_str())
-        {
-            base_map.insert("api_version".to_string(), json!(api_version));
+        if let Some(version) = openapi_context.version() {
+            base_map.insert("api_version".to_string(), json!(version));
         }
 
         // Add MCP Agent instructions if provided, or default to empty

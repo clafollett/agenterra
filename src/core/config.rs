@@ -66,6 +66,7 @@ pub struct Config {
     pub base_url: Option<Url>,
 }
 
+#[allow(dead_code)]
 impl Config {
     /// Create a new Config with default values
     pub fn new(

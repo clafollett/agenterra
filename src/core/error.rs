@@ -52,6 +52,7 @@ pub enum Error {
     Config(String),
 }
 
+#[allow(dead_code)]
 impl Error {
     /// Create a new configuration error
     pub fn config<S: Into<String>>(msg: S) -> Self {

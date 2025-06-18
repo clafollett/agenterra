@@ -1,19 +1,20 @@
 //! agenterra CLI entrypoint
 //! Parses command-line arguments and dispatches to the core generator.
+#![forbid(unsafe_code)]
 mod core;
 mod mcp;
 
 // Internal imports (std, crate)
-use reqwest::Url;
+use core::openapi::OpenApiContext;
+use mcp::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions};
 use std::path::PathBuf;
 
 // External imports (alphabetized)
 use anyhow::Context;
 use clap::Parser;
-use mcp::{
-    ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
-};
-use tempfile::tempdir;
+use reqwest::Url;
+use tracing::{Level, error, info};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
 #[command(name = "agenterra")]
@@ -89,8 +90,12 @@ pub enum McpRoleCommands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
+    // Initialize logging with default level INFO
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .init();
+
+    info!("Starting Agenterra CLI");
     let cli = Cli::parse();
     match &cli.command {
         Commands::Scaffold { protocol } => match protocol {
@@ -143,9 +148,9 @@ struct ServerGenParams<'a> {
 
 /// Generate MCP server from OpenAPI specification
 async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> {
-    println!(
-        "🚀 Generating MCP server with template: {}",
-        params.template
+    info!(
+        template = %params.template,
+        "Generating MCP server"
     );
 
     // Parse template
@@ -167,15 +172,17 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
 
     // Create output directory if it doesn't exist
     if !output_path.exists() {
-        println!("📁 Creating output directory: {}", output_path.display());
-        tokio::fs::create_dir_all(&output_path)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create output directory: {}", e))?;
+        info!(path = %output_path.display(), "Creating output directory");
+        tokio::fs::create_dir_all(&output_path).await.map_err(|e| {
+            error!(path = %output_path.display(), error = %e, "Failed to create output directory");
+            anyhow::anyhow!("Failed to create output directory: {}", e)
+        })?
     }
 
     // Load OpenAPI schema
-    println!("📖 Loading OpenAPI schema from: {}", params.schema_path);
-    let schema_obj = load_openapi_schema(params.schema_path).await?;
+    let schema_obj = OpenApiContext::from_file_or_url(params.schema_path)
+        .await
+        .context("Failed to load OpenAPI schema")?;
 
     // Create config
     let config = crate::core::config::Config {
@@ -200,14 +207,19 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
         ..Default::default()
     };
 
-    // Generate the server
+    // Generate the server code
+    info!("Generating MCP server code...");
     template_manager
         .generate(&schema_obj, &config, Some(template_opts))
-        .await?;
+        .await
+        .map_err(|e| {
+            error!("Failed to generate server code: {}", e);
+            anyhow::anyhow!("Failed to generate server code: {}", e)
+        })?;
 
-    println!(
-        "✅ Successfully generated MCP server in: {}",
-        output_path.display()
+    info!(
+        output_path = %output_path.display(),
+        "Successfully generated MCP server"
     );
     Ok(())
 }
@@ -219,7 +231,10 @@ async fn generate_mcp_client(
     template_dir: &Option<PathBuf>,
     output_dir: &Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    println!("🚀 Generating MCP client with template: {}", template);
+    info!(
+        template = %template,
+        "Generating MCP client"
+    );
 
     // Parse and validate template
     let template_kind_enum: ClientTemplateKind = template
@@ -232,8 +247,8 @@ async fn generate_mcp_client(
         .unwrap_or_else(|| PathBuf::from(project_name));
 
     // Initialise template manager for the chosen client template
-    let template_manager = TemplateManager::new_client(template_kind_enum, template_dir.clone())
-        .await?;
+    let template_manager =
+        TemplateManager::new_client(template_kind_enum, template_dir.clone()).await?;
 
     // Build a core config (no OpenAPI schema needed for clients)
     let core_config = crate::core::config::Config {
@@ -251,54 +266,12 @@ async fn generate_mcp_client(
     };
 
     // Generate the client directly via TemplateManager
-    template_manager
-        .generate_client(&core_config, None)
-        .await?;
+    info!("Generating MCP client code...");
+    template_manager.generate_client(&core_config, None).await?;
 
-    println!(
-        "✅ Successfully generated MCP client in: {}",
-        output_path.display()
+    info!(
+        output_path = %output_path.display(),
+        "Successfully generated MCP client"
     );
     Ok(())
-}
-
-/// Load OpenAPI schema from file or URL
-async fn load_openapi_schema(
-    schema_path: &str,
-) -> anyhow::Result<crate::core::openapi::OpenApiContext> {
-    if schema_path.starts_with("http://") || schema_path.starts_with("https://") {
-        // It's a URL
-        let response = reqwest::get(schema_path).await.map_err(|e| {
-            anyhow::anyhow!("Failed to fetch OpenAPI schema from {}: {}", schema_path, e)
-        })?;
-
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!(
-                "Failed to fetch OpenAPI schema from {}: HTTP {}",
-                schema_path,
-                response.status()
-            ));
-        }
-
-        let content = response
-            .text()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to read response from {}: {}", schema_path, e))?;
-
-        // Save to temporary file
-        let temp_dir = tempdir()?;
-        let temp_file = temp_dir.path().join("openapi_schema.json");
-        tokio::fs::write(&temp_file, &content).await?;
-
-        crate::core::openapi::OpenApiContext::from_file(&temp_file)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to parse OpenAPI schema from {}: {}", schema_path, e)
-            })
-    } else {
-        // It's a file path
-        crate::core::openapi::OpenApiContext::from_file(schema_path)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to load OpenAPI schema: {}", e))
-    }
 }

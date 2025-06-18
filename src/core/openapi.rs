@@ -108,33 +108,6 @@ impl OpenApiContext {
         // If both parsers fail, return an error
         Err("content is neither valid JSON nor YAML".to_string())
     }
-
-    /// Returns a reference to the raw JSON representation of the OpenAPI specification.
-    ///
-    /// This provides direct access to the underlying JSON structure for advanced use cases
-    /// where the convenience methods don't provide the needed functionality.
-    ///
-    /// # Returns
-    /// A reference to the `JsonValue` containing the complete OpenAPI specification
-    ///
-    /// # Examples
-    /// ```
-    /// use agenterra_core::openapi::OpenApiContext;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() -> agenterra_core::Result<()> {
-    /// // Load spec from file and access raw JSON
-    /// let spec = OpenApiContext::from_file("../../tests/fixtures/openapi/petstore.openapi.v3.json").await?;
-    /// let raw_json = spec.as_json();
-    /// assert_eq!(raw_json["openapi"], "3.0.4");
-    /// assert_eq!(raw_json["info"]["title"], "Swagger Petstore - OpenAPI 3.0");
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn as_json(&self) -> &JsonValue {
-        &self.json
-    }
-
     /// Get the title of the API
     pub fn title(&self) -> Option<&str> {
         self.json.get("info")?.get("title")?.as_str()
@@ -414,6 +387,7 @@ impl OpenApiContext {
     }
 
     /// Sanitizes Markdown for Rust doc comments and Swagger UI.
+    #[allow(dead_code)]
     pub fn sanitize_markdown(input: &str) -> String {
         use regex::Regex;
         // Regex for problematic Unicode (e.g., smart quotes, em-dash)
