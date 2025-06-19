@@ -1,3 +1,5 @@
+#![allow(clippy::derivable_impls)]
+
 use std::{borrow::Cow, sync::Arc};
 mod annotated;
 mod capabilities;
