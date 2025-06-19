@@ -52,7 +52,7 @@ pub struct TemplateDir {
 
 impl TemplateDir {
     /// Create a new TemplateDir with explicit paths
-    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold <role> <protocol> <kind>)
+    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
     pub fn new(
         _root_dir: PathBuf,
         template_path: PathBuf,
@@ -67,7 +67,7 @@ impl TemplateDir {
     }
 
     /// Create a new TemplateDir for client templates with explicit paths
-    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold <role> <protocol> <kind>)
+    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
     pub fn new_client(
         _root_dir: PathBuf,
         template_path: PathBuf,
@@ -83,7 +83,7 @@ impl TemplateDir {
     }
 
     /// Discover the template directory with explicit protocol support
-    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold <role> <protocol> <kind>)
+    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
     pub fn discover_with_protocol(
         protocol: Protocol,
         kind: ServerTemplateKind,
@@ -154,7 +154,7 @@ impl TemplateDir {
     }
 
     /// Discover client template directory with explicit protocol support
-    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold <role> <protocol> <kind>)
+    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
     pub fn discover_client_with_protocol(
         protocol: Protocol,
         kind: ClientTemplateKind,

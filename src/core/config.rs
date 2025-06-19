@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use config::Config;
+//! use agenterra_core::config::Config;
 //!
 //! // Create a new config programmatically
 //! let mut config = Config::new("my-project", "openapi.yaml", "output");

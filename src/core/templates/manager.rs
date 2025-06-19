@@ -40,7 +40,7 @@ pub struct TemplateManager {
 
 impl TemplateManager {
     /// Create a new TemplateManager with explicit protocol support
-    /// Arguments ordered to match CLI: protocol, template_kind (matching: scaffold <role> <protocol> <kind>)
+    /// Arguments ordered to match CLI: protocol, template_kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
     ///
     /// # Arguments
     /// * `protocol` - The protocol to use (e.g., MCP)
@@ -131,7 +131,7 @@ impl TemplateManager {
     }
 
     /// Create a new TemplateManager for client template generation with explicit protocol support
-    /// Arguments ordered to match CLI: protocol, template_kind (matching: scaffold <role> <protocol> <kind>)
+    /// Arguments ordered to match CLI: protocol, template_kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
     ///
     /// # Arguments
     /// * `protocol` - The protocol to use (e.g., MCP)
