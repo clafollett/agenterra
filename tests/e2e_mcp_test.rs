@@ -598,6 +598,7 @@ fn test_cli_flag_combinations() -> Result<()> {
 
     // Test 2: Client command should succeed with default project-name
     let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
+    let output_dir = sandbox_dir.join("test_client_output");
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
         .args([
@@ -608,6 +609,8 @@ fn test_cli_flag_combinations() -> Result<()> {
             "rust_reqwest",
             "--template-dir",
             client_template_dir.to_str().unwrap(),
+            "--output-dir",
+            output_dir.to_str().unwrap(),
         ])
         .output()
         .expect("Failed to run agenterra");
@@ -622,12 +625,8 @@ fn test_cli_flag_combinations() -> Result<()> {
             stderr
         );
     }
-    // Verify that the default project was created
-    let default_project_dir = sandbox_dir.join("mcp_client");
-    assert!(
-        default_project_dir.exists(),
-        "Default project directory should be created"
-    );
+    // Verify that the project was created in the specified output directory
+    assert!(output_dir.exists(), "Output directory should be created");
 
     // Test 3: Client command should reject --schema-path
     let result = Command::new(agenterra)

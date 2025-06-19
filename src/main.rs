@@ -8,7 +8,9 @@ mod mcp;
 use core::{
     openapi::OpenApiContext,
     protocol::Protocol,
-    templates::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions},
+    templates::{
+        ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateManager, TemplateOptions,
+    },
 };
 use std::path::PathBuf;
 
@@ -173,11 +175,10 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid server template '{}': {}", params.template, e))?;
 
-    // Resolve output directory - use project_name if not specified
-    let output_path = params
-        .output_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(params.project_name));
+    // Resolve output directory with workspace-aware defaults
+    let output_path =
+        TemplateDir::resolve_output_dir(params.project_name, params.output_dir.as_deref())
+            .context("Failed to resolve output directory")?;
 
     // Initialize the template manager with MCP protocol
     let template_manager = TemplateManager::new_with_protocol(
@@ -259,10 +260,9 @@ async fn generate_mcp_client(
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid client template '{}': {}", template, e))?;
 
-    // Resolve output directory - use project_name if not specified
-    let output_path = output_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(project_name));
+    // Resolve output directory with workspace-aware defaults
+    let output_path = TemplateDir::resolve_output_dir(project_name, output_dir.as_deref())
+        .context("Failed to resolve output directory")?;
 
     // Initialize template manager for the chosen client template with MCP protocol
     let template_manager = TemplateManager::new_client_with_protocol(

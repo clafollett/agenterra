@@ -558,6 +558,118 @@ impl TemplateDir {
     pub fn template_path(&self) -> &Path {
         &self.template_path
     }
+
+    /// Find the workspace base directory for output resolution
+    /// Similar to find_template_base_dir but focused on workspace root for outputs
+    pub fn find_workspace_base_dir() -> Option<PathBuf> {
+        Self::find_workspace_base_dir_with_config(&EnvTemplateConfigReader)
+    }
+
+    /// Find the workspace base directory with a custom config reader (for testing)
+    pub fn find_workspace_base_dir_with_config(
+        config_reader: &dyn TemplateConfigReader,
+    ) -> Option<PathBuf> {
+        // 1. Check environment variable for explicit workspace override
+        if let Some(dir) = config_reader.get_template_dir() {
+            let path = PathBuf::from(dir);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+
+        // 2. Check CARGO_MANIFEST_DIR (for development/testing)
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let manifest_path = PathBuf::from(manifest_dir);
+
+            // First check the manifest directory itself (for workspace root)
+            if manifest_path.exists() {
+                return Some(manifest_path);
+            }
+
+            // Then check parent (for sub-crates in workspace)
+            if let Some(workspace_root) = manifest_path.parent() {
+                if workspace_root.exists() {
+                    return Some(workspace_root.to_path_buf());
+                }
+            }
+        }
+
+        // 3. Check executable directory and parent directories
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                if let Ok(exe_dir_abs) = exe_dir.canonicalize() {
+                    // Check parent directory first (typical installation structure)
+                    if let Some(parent_dir) = exe_dir_abs.parent() {
+                        return Some(parent_dir.to_path_buf());
+                    }
+                    // Fallback to executable directory
+                    return Some(exe_dir_abs);
+                }
+            }
+        }
+
+        // 4. Check current directory as fallback
+        if let Ok(current_dir) = std::env::current_dir() {
+            return Some(current_dir);
+        }
+
+        None
+    }
+
+    /// Resolve output directory with workspace-aware defaults
+    /// Returns an absolute path for the output directory
+    pub fn resolve_output_dir(
+        project_name: &str,
+        custom_output_dir: Option<&Path>,
+    ) -> io::Result<PathBuf> {
+        let output_path = if let Some(custom_dir) = custom_output_dir {
+            // Use custom directory directly
+            debug!("Using custom output directory: {}", custom_dir.display());
+            custom_dir.to_path_buf()
+        } else {
+            // Find workspace and create .agenterra/project_name structure
+            debug!(
+                "Resolving default output directory for project: {}",
+                project_name
+            );
+
+            if let Some(workspace_base) = Self::find_workspace_base_dir() {
+                let agenterra_dir = workspace_base.join(".agenterra");
+                let project_output_dir = agenterra_dir.join(project_name);
+
+                debug!(
+                    "Using workspace-relative output directory: {}",
+                    project_output_dir.display()
+                );
+                project_output_dir
+            } else {
+                // Fallback to current directory + project name
+                debug!("No workspace found, using current directory fallback");
+                if let Ok(current_dir) = std::env::current_dir() {
+                    current_dir.join(project_name)
+                } else {
+                    PathBuf::from(project_name)
+                }
+            }
+        };
+
+        // Convert to absolute path
+        let absolute_path = if output_path.is_absolute() {
+            output_path
+        } else {
+            std::env::current_dir()
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Failed to get current directory: {}", e),
+                    )
+                })?
+                .join(output_path)
+        };
+
+        debug!("Resolved output path: {}", absolute_path.display());
+        Ok(absolute_path)
+    }
 }
 
 #[cfg(test)]
@@ -906,5 +1018,76 @@ mod tests {
             result.unwrap().template_path(),
             server_template_dir.as_path()
         );
+    }
+
+    #[test]
+    fn test_resolve_output_dir_with_custom_path() {
+        let temp_dir = create_test_workspace("test_resolve_output_dir_with_custom_path");
+        let custom_output = temp_dir.join("custom_output");
+
+        let result = TemplateDir::resolve_output_dir("test_project", Some(&custom_output));
+        assert!(result.is_ok());
+
+        let resolved_path = result.unwrap();
+        assert!(resolved_path.is_absolute());
+        assert!(resolved_path.ends_with("custom_output"));
+    }
+
+    #[test]
+    fn test_resolve_output_dir_with_workspace_default() {
+        let temp_dir = create_test_workspace("test_resolve_output_dir_with_workspace_default");
+
+        // Create a .agenterra directory to simulate workspace structure
+        let agenterra_dir = temp_dir.join(".agenterra");
+        fs::create_dir_all(&agenterra_dir).unwrap();
+
+        // Test by temporarily changing to the temp directory
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        let result = TemplateDir::resolve_output_dir("test_project", None);
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.is_ok());
+        let resolved_path = result.unwrap();
+        assert!(resolved_path.is_absolute());
+        // Since we're in the temp_dir, it should detect it as workspace and use .agenterra
+        assert!(resolved_path.to_string_lossy().contains("test_project"));
+    }
+
+    #[test]
+    fn test_find_workspace_base_dir() {
+        let temp_dir = create_test_workspace("test_find_workspace_base_dir");
+
+        // Test with mock config reader
+        let mock_config =
+            MockTemplateConfigReader::new(Some(temp_dir.to_string_lossy().to_string()));
+        let result = TemplateDir::find_workspace_base_dir_with_config(&mock_config);
+
+        assert!(result.is_some());
+        let workspace_path = result.unwrap();
+        assert!(workspace_path.is_absolute());
+        assert!(workspace_path.exists());
+    }
+
+    #[test]
+    fn test_resolve_output_dir_fallback_behavior() {
+        // Test fallback when no workspace is found by changing to a temp directory
+        let temp_dir = create_test_workspace("test_resolve_output_dir_fallback_behavior");
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        // This should fallback to current_dir + project_name since no workspace indicators exist
+        let result = TemplateDir::resolve_output_dir("fallback_project", None);
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.is_ok());
+        let resolved_path = result.unwrap();
+        assert!(resolved_path.is_absolute());
+        assert!(resolved_path.to_string_lossy().contains("fallback_project"));
     }
 }
