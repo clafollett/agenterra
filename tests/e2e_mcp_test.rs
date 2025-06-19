@@ -597,9 +597,18 @@ fn test_cli_flag_combinations() -> Result<()> {
     );
 
     // Test 2: Client command should succeed with default project-name
+    let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
-        .args(["scaffold", "client", "mcp", "--template", "rust_reqwest"])
+        .args([
+            "scaffold",
+            "client",
+            "mcp",
+            "--template",
+            "rust_reqwest",
+            "--template-dir",
+            client_template_dir.to_str().unwrap(),
+        ])
         .output()
         .expect("Failed to run agenterra");
 
@@ -649,6 +658,7 @@ fn test_cli_flag_combinations() -> Result<()> {
 
     // Test 4: Valid server command combination
     // Note: This will fail because file doesn't exist, but argument parsing should work
+    let server_template_dir = project_dir.join("templates/mcp/server/rust_axum");
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
         .args([
@@ -661,6 +671,8 @@ fn test_cli_flag_combinations() -> Result<()> {
             "test",
             "--template",
             "rust_axum",
+            "--template-dir",
+            server_template_dir.to_str().unwrap(),
         ])
         .output()
         .expect("Failed to run agenterra");
@@ -689,6 +701,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     );
 
     // Test 5: Valid client command combination
+    let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
         .args([
@@ -699,6 +712,8 @@ fn test_cli_flag_combinations() -> Result<()> {
             "test-client",
             "--template",
             "rust_reqwest",
+            "--template-dir",
+            client_template_dir.to_str().unwrap(),
             "--output-dir",
             "/tmp/test-output",
         ])
