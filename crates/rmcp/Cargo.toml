@@ -43,7 +43,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 sse-stream = { version = "0.2", optional = true }
 
 http = { version = "1", optional = true }
-url = { version = "2.4", optional = true }
+url = { version = "2.5", optional = true }
 
 # For tower compatibility
 tower-service = { version = "0.3", optional = true }
@@ -66,10 +66,10 @@ bytes = { version = "1", optional = true }
 rmcp-macros = { path = "../rmcp-macros", optional = true }
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
-chrono = { version = "0.4.38", features = ["serde"] }
+chrono = { version = "0.4.41", features = ["serde"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
-chrono = { version = "0.4.38", default-features = false, features = [
+chrono = { version = "0.4.41", default-features = false, features = [
     "serde",
     "clock",
     "std",

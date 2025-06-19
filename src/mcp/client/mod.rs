@@ -7,8 +7,8 @@
 
 pub mod auth;
 pub mod cache;
-pub mod client;
 pub mod error;
+pub mod mcp_client;
 pub mod registry;
 pub mod resource;
 pub mod result;
@@ -16,8 +16,8 @@ pub mod transport;
 
 pub use auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
 pub use cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
-pub use client::McpClient;
 pub use error::{ClientError, Result};
+pub use mcp_client::McpClient;
 pub use registry::{ToolInfo, ToolRegistry};
 pub use resource::{ResourceContent, ResourceInfo};
 pub use result::{ContentType, ToolResult};
