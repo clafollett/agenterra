@@ -658,12 +658,7 @@ impl TemplateDir {
             output_path
         } else {
             std::env::current_dir()
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("Failed to get current directory: {}", e),
-                    )
-                })?
+                .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?
                 .join(output_path)
         };
 
