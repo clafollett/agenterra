@@ -603,10 +603,16 @@ fn test_cli_flag_combinations() -> Result<()> {
         .output()
         .expect("Failed to run agenterra");
 
-    assert!(
-        result.status.success(),
-        "Client command should succeed with default --project-name"
-    );
+    if !result.status.success() {
+        let stdout = String::from_utf8_lossy(&result.stdout);
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        panic!(
+            "Client command should succeed with default --project-name.\nExit code: {}\nStdout: {}\nStderr: {}",
+            result.status.code().unwrap_or(-1),
+            stdout,
+            stderr
+        );
+    }
     // Verify that the default project was created
     let default_project_dir = sandbox_dir.join("mcp_client");
     assert!(
