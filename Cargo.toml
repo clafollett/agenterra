@@ -11,6 +11,13 @@ name = "agenterra"
 version = "0.1.1"
 edition = "2024"
 license = "MIT"
+description = "Generate production-ready MCP (Model Context Protocol) servers and clients from OpenAPI specs"
+repository = "https://github.com/clafollett/agenterra"
+homepage = "https://github.com/clafollett/agenterra"
+documentation = "https://github.com/clafollett/agenterra"
+readme = "README.md"
+keywords = ["mcp", "openapi", "generator", "protocol", "client-server"]
+categories = ["development-tools", "api-bindings"]
 default-run = "agenterra"
 
 [[bin]]

@@ -3,25 +3,10 @@ changelog_update = true
 git_release_enable = true
 features_always_increment_minor = false
 release_always = false
-publish = false
+publish = true
 git_tag_name = "agenterra-v{{ version }}"
 
 [[package]]
 name = "agenterra"
 release = true
-publish = false
-
-[[package]]
-name = "agenterra-client"
-release = false
-publish = false
-
-[[package]]
-name = "agenterra-core"
-release = false
-publish = false
-
-[[package]]
-name = "agenterra-mcp"
-release = false
-publish = false
+publish = true
