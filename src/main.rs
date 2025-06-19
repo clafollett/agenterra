@@ -5,8 +5,11 @@ mod core;
 mod mcp;
 
 // Internal imports (std, crate)
-use core::openapi::OpenApiContext;
-use mcp::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions};
+use core::{
+    openapi::OpenApiContext,
+    protocol::Protocol,
+    templates::{ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions},
+};
 use std::path::PathBuf;
 
 // External imports (alphabetized)
@@ -26,26 +29,31 @@ struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Commands {
-    /// Scaffold MCP servers and clients
+    /// Scaffold servers and clients for various protocols
     Scaffold {
         #[command(subcommand)]
-        protocol: ProtocolCommands,
+        role: RoleCommands,
     },
 }
 
 #[derive(clap::Subcommand, Debug)]
-pub enum ProtocolCommands {
-    /// Model Context Protocol (MCP) scaffolding
-    Mcp {
-        #[command(subcommand)]
-        role: McpRoleCommands,
-    },
-}
-
-#[derive(clap::Subcommand, Debug)]
-pub enum McpRoleCommands {
-    /// Generate MCP server from OpenAPI specification
+pub enum RoleCommands {
+    /// Generate server implementations
     Server {
+        #[command(subcommand)]
+        protocol: ServerProtocolCommands,
+    },
+    /// Generate client implementations
+    Client {
+        #[command(subcommand)]
+        protocol: ClientProtocolCommands,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum ServerProtocolCommands {
+    /// Model Context Protocol (MCP) server
+    Mcp {
         /// Project name
         #[arg(long, default_value = "mcp_server")]
         project_name: String,
@@ -71,8 +79,12 @@ pub enum McpRoleCommands {
         #[arg(long)]
         base_url: Option<Url>,
     },
-    /// Generate MCP client
-    Client {
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum ClientProtocolCommands {
+    /// Model Context Protocol (MCP) client
+    Mcp {
         /// Project name
         #[arg(long, default_value = "mcp_client")]
         project_name: String,
@@ -98,9 +110,9 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting Agenterra CLI");
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Scaffold { protocol } => match protocol {
-            ProtocolCommands::Mcp { role } => match role {
-                McpRoleCommands::Server {
+        Commands::Scaffold { role } => match role {
+            RoleCommands::Server { protocol } => match protocol {
+                ServerProtocolCommands::Mcp {
                     project_name,
                     schema_path,
                     template,
@@ -122,7 +134,9 @@ async fn main() -> anyhow::Result<()> {
                     })
                     .await?
                 }
-                McpRoleCommands::Client {
+            },
+            RoleCommands::Client { protocol } => match protocol {
+                ClientProtocolCommands::Mcp {
                     project_name,
                     template,
                     template_dir,
@@ -165,10 +179,14 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
         .clone()
         .unwrap_or_else(|| PathBuf::from(params.project_name));
 
-    // Initialize the template manager
-    let template_manager = TemplateManager::new(template_kind_enum, params.template_dir.clone())
-        .await
-        .context("Failed to initialize server template manager")?;
+    // Initialize the template manager with MCP protocol
+    let template_manager = TemplateManager::new_with_protocol(
+        Protocol::Mcp,
+        template_kind_enum,
+        params.template_dir.clone(),
+    )
+    .await
+    .context("Failed to initialize server template manager")?;
 
     // Create output directory if it doesn't exist
     if !output_path.exists() {
@@ -246,9 +264,13 @@ async fn generate_mcp_client(
         .clone()
         .unwrap_or_else(|| PathBuf::from(project_name));
 
-    // Initialise template manager for the chosen client template
-    let template_manager =
-        TemplateManager::new_client(template_kind_enum, template_dir.clone()).await?;
+    // Initialize template manager for the chosen client template with MCP protocol
+    let template_manager = TemplateManager::new_client_with_protocol(
+        Protocol::Mcp,
+        template_kind_enum,
+        template_dir.clone(),
+    )
+    .await?;
 
     // Build a core config (no OpenAPI schema needed for clients)
     let core_config = crate::core::config::Config {

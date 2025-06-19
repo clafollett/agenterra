@@ -3,6 +3,8 @@
 //! Ergonomic wrapper around the official `rmcp` SDK for Model Context Protocol interactions.
 //! Provides high-level APIs for tool discovery, invocation, resource management, and real-time communication.
 
+#![allow(dead_code, unused_imports)]
+
 pub mod auth;
 pub mod cache;
 pub mod client;

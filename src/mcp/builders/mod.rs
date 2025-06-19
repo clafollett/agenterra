@@ -8,7 +8,7 @@
 pub mod rust;
 
 use crate::core::openapi::OpenApiOperation;
-use crate::mcp::templates::ServerTemplateKind;
+use crate::core::templates::ServerTemplateKind;
 use serde_json::Value as JsonValue;
 
 /// Trait for converting an OpenApiOperation into a language-specific context.

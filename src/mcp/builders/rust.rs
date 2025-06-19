@@ -12,16 +12,10 @@
 
 use super::EndpointContextBuilder;
 use crate::core::openapi::OpenApiOperation;
+use crate::core::templates::{ParameterKind, TemplateParameterInfo};
 use crate::core::utils::{to_proper_case, to_snake_case};
-use crate::mcp::templates::{ParameterKind, TemplateParameterInfo};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
-
-/// Type alias for Rust-specific parameter info.
-///
-/// This reuses the generic `TemplateParameterInfo` structure but provides a more
-/// specific name in the Rust context for clarity.
-pub type RustParameterInfo = TemplateParameterInfo;
 
 /// Rust-specific property information with type mapping.
 ///

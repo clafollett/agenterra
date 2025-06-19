@@ -44,6 +44,7 @@ pub enum TemplateRole {
     /// Server-side template
     Server,
     /// Client-side template
+    #[allow(dead_code)]
     Client,
 }
 
@@ -136,6 +137,7 @@ impl ServerTemplateKind {
     }
 
     /// Returns the language/framework name
+    #[allow(dead_code)]
     pub fn framework(&self) -> &'static str {
         match self {
             Self::RustAxum => "rust",
@@ -146,6 +148,7 @@ impl ServerTemplateKind {
     }
 
     /// Returns an iterator over all available server template kinds
+    #[allow(dead_code)]
     pub fn all() -> impl Iterator<Item = Self> {
         use ServerTemplateKind::*;
         [RustAxum, PythonFastAPI, TypeScriptExpress, Custom]
@@ -166,11 +169,13 @@ impl ClientTemplateKind {
     }
 
     /// Returns the template role (always client)
+    #[allow(dead_code)]
     pub fn role(&self) -> TemplateRole {
         TemplateRole::Client
     }
 
     /// Returns the language/framework name
+    #[allow(dead_code)]
     pub fn framework(&self) -> &'static str {
         match self {
             Self::RustReqwest => "rust",
@@ -181,6 +186,7 @@ impl ClientTemplateKind {
     }
 
     /// Returns an iterator over all available client template kinds
+    #[allow(dead_code)]
     pub fn all() -> impl Iterator<Item = Self> {
         use ClientTemplateKind::*;
         [RustReqwest, PythonRequests, TypeScriptAxios, Custom]
@@ -426,5 +432,70 @@ mod tests {
     fn test_template_role_display() {
         assert_eq!(format!("{}", TemplateRole::Server), "server");
         assert_eq!(format!("{}", TemplateRole::Client), "client");
+    }
+
+    // Protocol-aware template tests (TDD Red phase)
+    #[test]
+    fn test_template_kind_with_protocol() {
+        use crate::core::protocol::Protocol;
+
+        // Test that template kinds can be combined with protocols
+        let server_kind = ServerTemplateKind::RustAxum;
+        let protocol = Protocol::Mcp;
+
+        // This should construct a path like: templates/mcp/server/rust_axum
+        let expected_path = format!(
+            "templates/{}/{}/{}",
+            protocol.path_segment(),
+            server_kind.role().as_str(),
+            server_kind.as_str()
+        );
+
+        assert_eq!(expected_path, "templates/mcp/server/rust_axum");
+
+        // Test client templates too
+        let client_kind = ClientTemplateKind::RustReqwest;
+        let expected_client_path = format!(
+            "templates/{}/{}/{}",
+            protocol.path_segment(),
+            client_kind.role().as_str(),
+            client_kind.as_str()
+        );
+
+        assert_eq!(expected_client_path, "templates/mcp/client/rust_reqwest");
+    }
+
+    #[test]
+    fn test_template_kind_path_construction() {
+        use crate::core::protocol::Protocol;
+
+        // Test that we can build template paths for different protocols and kinds
+        let test_cases = vec![
+            (
+                Protocol::Mcp,
+                ServerTemplateKind::RustAxum,
+                "templates/mcp/server/rust_axum",
+            ),
+            (
+                Protocol::Mcp,
+                ServerTemplateKind::PythonFastAPI,
+                "templates/mcp/server/python_fastapi",
+            ),
+            (
+                Protocol::Mcp,
+                ServerTemplateKind::Custom,
+                "templates/mcp/server/custom",
+            ),
+        ];
+
+        for (protocol, template_kind, expected_path) in test_cases {
+            let path = format!(
+                "templates/{}/{}/{}",
+                protocol.path_segment(),
+                template_kind.role().as_str(),
+                template_kind.as_str()
+            );
+            assert_eq!(path, expected_path);
+        }
     }
 }

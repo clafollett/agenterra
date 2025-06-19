@@ -13,11 +13,13 @@
 pub mod dir;
 pub mod kind;
 pub mod manager;
+pub mod manifest;
 pub mod options;
 pub mod types;
 
 pub use dir::*;
-pub use kind::{ClientTemplateKind, ServerTemplateKind, TemplateRole};
+pub use kind::{ClientTemplateKind, ServerTemplateKind};
 pub use manager::*;
+pub use manifest::*;
 pub use options::*;
 pub use types::*;

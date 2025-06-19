@@ -6,6 +6,8 @@
 pub mod config;
 pub mod error;
 pub mod openapi;
+pub mod protocol;
+pub mod templates;
 pub mod utils;
 
 pub use error::Error;

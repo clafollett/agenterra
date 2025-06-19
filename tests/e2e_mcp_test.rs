@@ -23,8 +23,9 @@ async fn test_mcp_server_client_generation() -> Result<()> {
         .to_string_lossy()
         .into_owned();
 
-    // Pass project root as template dir - the code will append "templates" internally
-    let template_dir = project_dir.clone();
+    // With the new "take users at their word" logic, we pass the specific template paths directly
+    let server_template_dir = project_dir.join("templates/mcp/server/rust_axum");
+    let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
 
     // Use workspace .agenterra directory for generated artifacts
     // Clean any previous run directories to avoid duplicate headers or build conflicts
@@ -38,11 +39,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
 
     println!("=== Testing MCP Server Generation ===");
     println!("Project dir: {}", project_dir.display());
-    println!("Template dir: {}", template_dir.display());
-    println!(
-        "Expected template path: {}/templates/mcp/server/rust_axum",
-        template_dir.display()
-    );
+    println!("Server template dir: {}", server_template_dir.display());
 
     // Test 1: Generate MCP server
     let server_name = "e2e_mcp_server";
@@ -57,8 +54,8 @@ async fn test_mcp_server_client_generation() -> Result<()> {
     let server_result = Command::new(&agenterra)
         .args([
             "scaffold",
-            "mcp",
             "server",
+            "mcp",
             "--project-name",
             server_name,
             "--output-dir",
@@ -66,7 +63,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
             "--schema-path",
             schema_path.to_str().unwrap(),
             "--template-dir",
-            template_dir.to_str().unwrap(),
+            server_template_dir.to_str().unwrap(),
             "--template",
             "rust_axum",
             "--base-url",
@@ -107,14 +104,14 @@ async fn test_mcp_server_client_generation() -> Result<()> {
     let client_result = Command::new(&agenterra)
         .args([
             "scaffold",
-            "mcp",
             "client",
+            "mcp",
             "--project-name",
             client_name,
             "--output-dir",
             client_output.to_str().unwrap(),
             "--template-dir",
-            template_dir.to_str().unwrap(),
+            client_template_dir.to_str().unwrap(),
             "--template",
             "rust_reqwest",
         ])
@@ -519,20 +516,20 @@ fn test_cli_help_output() {
 
     let output = String::from_utf8_lossy(&result.stdout);
     assert!(output.contains("scaffold"));
-    assert!(output.contains("Scaffold MCP servers and clients"));
+    assert!(output.contains("Scaffold servers and clients for various protocols"));
 
-    // Test scaffold mcp help
+    // Test scaffold help
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
-        .args(["scaffold", "mcp", "--help"])
+        .args(["scaffold", "--help"])
         .output()
         .expect("Failed to run agenterra");
 
     let output = String::from_utf8_lossy(&result.stdout);
     assert!(output.contains("server"));
     assert!(output.contains("client"));
-    assert!(output.contains("Generate MCP server from OpenAPI specification"));
-    assert!(output.contains("Generate MCP client"));
+    assert!(output.contains("Generate server implementations"));
+    assert!(output.contains("Generate client implementations"));
 }
 
 #[test]
@@ -547,7 +544,7 @@ fn test_new_cli_structure() {
     // Test server help shows correct options
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
-        .args(["scaffold", "mcp", "server", "--help"])
+        .args(["scaffold", "server", "mcp", "--help"])
         .output()
         .expect("Failed to run agenterra");
 
@@ -559,7 +556,7 @@ fn test_new_cli_structure() {
     // Test client help shows correct options
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
-        .args(["scaffold", "mcp", "client", "--help"])
+        .args(["scaffold", "client", "mcp", "--help"])
         .output()
         .expect("Failed to run agenterra");
 
@@ -582,7 +579,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     // Test 1: Server command requires --schema-path
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
-        .args(["scaffold", "mcp", "server", "--project-name", "test"])
+        .args(["scaffold", "server", "mcp", "--project-name", "test"])
         .output()
         .expect("Failed to run agenterra");
 
@@ -602,7 +599,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     // Test 2: Client command should succeed with default project-name
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
-        .args(["scaffold", "mcp", "client", "--template", "rust_reqwest"])
+        .args(["scaffold", "client", "mcp", "--template", "rust_reqwest"])
         .output()
         .expect("Failed to run agenterra");
 
@@ -622,8 +619,8 @@ fn test_cli_flag_combinations() -> Result<()> {
         .current_dir(&sandbox_dir)
         .args([
             "scaffold",
-            "mcp",
             "client",
+            "mcp",
             "--project-name",
             "test",
             "--schema-path",
@@ -650,8 +647,8 @@ fn test_cli_flag_combinations() -> Result<()> {
         .current_dir(&sandbox_dir)
         .args([
             "scaffold",
-            "mcp",
             "server",
+            "mcp",
             "--schema-path",
             "/nonexistent/schema.yaml",
             "--project-name",
@@ -690,8 +687,8 @@ fn test_cli_flag_combinations() -> Result<()> {
         .current_dir(&sandbox_dir)
         .args([
             "scaffold",
-            "mcp",
             "client",
+            "mcp",
             "--project-name",
             "test-client",
             "--template",

@@ -6,46 +6,26 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::task;
 
 use crate::core::{
     config::Config,
     error::Result,
     openapi::{OpenApiContext, OpenApiOperation},
+    protocol::Protocol,
     utils::to_snake_case,
 };
-use crate::mcp::{builders::EndpointContext, manifest::TemplateManifest};
+use crate::mcp::builders::EndpointContext;
 
-use super::{ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateOptions};
+use super::{
+    ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateFile, TemplateManifest,
+    TemplateOptions,
+};
 
 // External imports (alphabetized)
 use serde::Serialize;
 use serde_json::{Map, Value as JsonValue, json};
 use tera::{Context, Tera};
 use tracing::{debug, error};
-
-/// Internal unified template kind for TemplateManager
-#[derive(Debug, Clone)]
-pub enum TemplateKind {
-    Server(ServerTemplateKind),
-    Client(ClientTemplateKind),
-}
-
-impl TemplateKind {
-    pub fn role(&self) -> super::TemplateRole {
-        match self {
-            TemplateKind::Server(kind) => kind.role(),
-            TemplateKind::Client(kind) => kind.role(),
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            TemplateKind::Server(kind) => kind.as_str(),
-            TemplateKind::Client(kind) => kind.as_str(),
-        }
-    }
-}
 
 /// Manages loading and rendering of code generation templates
 #[derive(Debug, Clone)]
@@ -59,20 +39,24 @@ pub struct TemplateManager {
 }
 
 impl TemplateManager {
-    /// Create a new TemplateManager for the given template kind and directory
+    /// Create a new TemplateManager with explicit protocol support
+    /// Arguments ordered to match CLI: protocol, template_kind (matching: scaffold <role> <protocol> <kind>)
     ///
     /// # Arguments
+    /// * `protocol` - The protocol to use (e.g., MCP)
     /// * `template_kind` - The kind of template to use
     /// * `template_dir` - Optional path to the template directory. If None, the default location will be used.
     ///
     /// # Returns
     /// A new `TemplateManager` instance or an error if the template directory cannot be found or loaded.
-    pub async fn new(
+    pub async fn new_with_protocol(
+        protocol: Protocol,
         template_kind: ServerTemplateKind,
         template_dir: Option<PathBuf>,
     ) -> Result<Self> {
-        // Convert PathBuf to TemplateDir using discover method
-        let template_dir = TemplateDir::discover(template_kind, template_dir.as_deref())?;
+        // Convert PathBuf to TemplateDir using protocol-aware discover method
+        let template_dir =
+            TemplateDir::discover_with_protocol(protocol, template_kind, template_dir.as_deref())?;
 
         // Get the template path for Tera
         let template_path = template_dir.template_path();
@@ -146,86 +130,41 @@ impl TemplateManager {
         Ok(manager)
     }
 
-    /// Create a new TemplateManager for client template generation
+    /// Create a new TemplateManager for client template generation with explicit protocol support
+    /// Arguments ordered to match CLI: protocol, template_kind (matching: scaffold <role> <protocol> <kind>)
     ///
     /// # Arguments
+    /// * `protocol` - The protocol to use (e.g., MCP)
     /// * `template_kind` - The kind of client template to use
     /// * `template_dir` - Optional path to the template directory. If None, the default location will be used.
     ///
     /// # Returns
     /// A new `TemplateManager` instance or an error if the template directory cannot be found or loaded.
-    pub async fn new_client(
+    pub async fn new_client_with_protocol(
+        protocol: Protocol,
         template_kind: ClientTemplateKind,
         template_dir: Option<PathBuf>,
     ) -> Result<Self> {
-        // For client templates, we need to create a similar structure but for clients
-        // For now, we'll reuse the existing logic but adapt the paths
+        // Use the new client template discovery method
+        let template_dir = TemplateDir::discover_client_with_protocol(
+            protocol,
+            template_kind,
+            template_dir.as_deref(),
+        )?;
 
-        // Convert ClientTemplateKind to ServerTemplateKind for TemplateDir compatibility
-        // This is a temporary workaround - we should make TemplateDir generic later
-        let server_kind = match template_kind {
-            ClientTemplateKind::RustReqwest => ServerTemplateKind::RustAxum, // Placeholder
-            ClientTemplateKind::PythonRequests => ServerTemplateKind::PythonFastAPI, // Placeholder
-            ClientTemplateKind::TypeScriptAxios => ServerTemplateKind::TypeScriptExpress, // Placeholder
-            ClientTemplateKind::Custom => ServerTemplateKind::Custom,
-        };
-
-        // Use the same pattern as server templates - construct the full path
-        let base_dir = template_dir.unwrap_or_else(|| {
-            TemplateDir::find_template_base_dir().expect("Could not find template directory")
-        });
-
-        let template_dir_path = base_dir
-            .join("templates")
-            .join("mcp")
-            .join("client")
-            .join(template_kind.as_str());
-
-        // Validate the template directory exists
-        if !template_dir_path.exists() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!(
-                    "Client template directory not found: {}",
-                    template_dir_path.display()
-                ),
-            )
-            .into());
-        }
-
-        // Create TemplateDir (using server_kind as placeholder)
-        let template_dir_obj = TemplateDir::new(
-            template_dir_path.parent().unwrap().to_path_buf(),
-            template_dir_path.clone(),
-            server_kind,
-        );
-
-        // Load template manifest
-        let yaml_manifest_path = template_dir_path.join("manifest.yml");
-        let toml_manifest_path = template_dir_path.join("manifest.toml");
-
-        let manifest = if yaml_manifest_path.exists() {
-            TemplateManifest::load_from_dir(&template_dir_path).await?
-        } else if toml_manifest_path.exists() {
-            let content = tokio::fs::read_to_string(&toml_manifest_path).await?;
-            toml::from_str::<TemplateManifest>(&content).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to parse template manifest: {}", e),
-                )
-            })?
-        } else {
-            TemplateManifest::default()
-        };
-
-        // Create Tera instance
-        let template_dir_str = template_dir_path.to_str().ok_or_else(|| {
+        // Get the template path for Tera
+        let template_path = template_dir.template_path();
+        let template_dir_str = template_path.to_str().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Template path contains invalid UTF-8",
             )
         })?;
 
+        // Load template manifest
+        let manifest = TemplateManifest::load_from_dir(template_path).await?;
+
+        // Create Tera instance with template files matching glob patterns
         let tera = Tera::new(&format!("{}/**/*", template_dir_str)).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -235,7 +174,7 @@ impl TemplateManager {
 
         Ok(TemplateManager {
             tera: Arc::new(tera),
-            template_dir: template_dir_obj,
+            template_dir,
             manifest,
         })
     }
@@ -245,78 +184,24 @@ impl TemplateManager {
         self.template_dir.kind()
     }
 
-    /// Get the template directory
-    pub fn template_dir(&self) -> &TemplateDir {
-        &self.template_dir
-    }
-
-    /// Get the template directory path (legacy method)
-    pub fn template_dir_path(&self) -> &Path {
-        self.template_dir.template_path()
-    }
-
-    /// Get a reference to the Tera template engine
-    pub fn tera(&self) -> &Tera {
-        &self.tera
+    /// Get the protocol this template manager is configured for
+    pub fn protocol(&self) -> Protocol {
+        self.template_dir.protocol()
     }
 
     /// Reload all templates from the template directory.
     /// This is a no-op in the cached implementation since templates are loaded on demand.
+    // TODO(CLI): Wire up for `agenterra templates reload` command for development workflow
+    #[allow(dead_code)]
     pub async fn reload_templates(&self) -> Result<()> {
         // In the cached implementation, we don't need to do anything here
         // since templates are loaded on demand.
         Ok(())
     }
 
-    /// Discovers all template files in the given directory and its subdirectories.
-    ///
-    /// This function uses `spawn_blocking` to avoid blocking the async runtime
-    /// during filesystem operations.
-    ///
-    /// # Arguments
-    /// * `dir` - The directory to search for template files
-    ///
-    /// # Returns
-    /// A `Result` containing a vector of paths to template files with the `.tera` extension
-    pub async fn discover_template_files(dir: &Path) -> Result<Vec<PathBuf>> {
-        let dir_buf = dir.to_path_buf();
-
-        task::spawn_blocking(move || {
-            let mut templates = Vec::new();
-
-            fn walk_dir(dir: &Path, templates: &mut Vec<PathBuf>) -> std::io::Result<()> {
-                for entry in std::fs::read_dir(dir)? {
-                    let entry = entry?;
-                    let path = entry.path();
-
-                    if path.is_dir() {
-                        walk_dir(&path, templates)?;
-                    } else if path.extension().and_then(|s| s.to_str()) == Some("tera") {
-                        templates.push(path);
-                    }
-                }
-                Ok(())
-            }
-
-            walk_dir(&dir_buf, &mut templates)?;
-            Ok(templates)
-        })
-        .await
-        .map_err(|e| io::Error::other(format!("Failed to join blocking task: {}", e)))?
-    }
-
-    /// Generate a handler file from a template
-    pub async fn generate_handler<T: Serialize>(
-        &self,
-        template_name: &str,
-        context: &T,
-        output_path: impl AsRef<Path>,
-    ) -> Result<()> {
-        self.generate_with_context(template_name, context, output_path)
-            .await
-    }
-
     /// Get a reference to the template manifest
+    // TODO(CLI): Wire up for `agenterra templates info <template>` command to show manifest details
+    #[allow(dead_code)]
     pub fn manifest(&self) -> &TemplateManifest {
         &self.manifest
     }
@@ -427,17 +312,13 @@ impl TemplateManager {
     }
 
     /// List all available templates
-    /// Check if a template exists
-    pub fn has_template(&self, name: &str) -> bool {
-        self.tera.get_template(name).is_ok()
-    }
-
-    /// List all available templates
+    // TODO(CLI): Wire up for `agenterra templates list` command to show available templates
+    #[allow(dead_code)]
     pub fn list_templates(&self) -> Vec<(String, String)> {
         self.manifest
             .files
             .iter()
-            .filter(|f| self.has_template(&f.source))
+            .filter(|f| self.tera.get_template(&f.source).is_ok())
             .map(|f| (f.source.clone(), f.destination.clone()))
             .collect()
     }
@@ -553,6 +434,9 @@ impl TemplateManager {
         base_map.insert("project_name".to_string(), json!(config.project_name));
         base_map.insert("output_dir".to_string(), json!(config.output_dir));
 
+        // Add protocol information
+        base_map.insert("protocol".to_string(), json!(self.protocol().name()));
+
         // Add template options if provided
         if let Some(opts) = template_opts {
             if let Some(port) = opts.server_port {
@@ -584,6 +468,9 @@ impl TemplateManager {
 
         // Add project name from config (user-specified)
         base_map.insert("project_name".to_string(), json!(config.project_name));
+
+        // Add protocol information
+        base_map.insert("protocol".to_string(), json!(self.protocol().name()));
 
         // Add project title and version from spec
         if let Some(title) = openapi_context.title() {
@@ -679,7 +566,7 @@ impl TemplateManager {
     /// Process a single template file
     async fn process_single_file(
         &self,
-        file: &crate::mcp::manifest::TemplateFile,
+        file: &TemplateFile,
         base_context: &serde_json::Value,
         output_path: &Path,
     ) -> Result<()> {
@@ -793,7 +680,7 @@ impl TemplateManager {
     /// Process a template file for each operation
     async fn process_operation_file(
         &self,
-        file: &crate::mcp::manifest::TemplateFile,
+        file: &TemplateFile,
         base_context: &Context,
         output_path: &Path,
         operations: &[OpenApiOperation],
@@ -1153,7 +1040,7 @@ impl TemplateManager {
     pub fn create_file_context(
         &self,
         base_context: &serde_json::Value,
-        file: &crate::mcp::manifest::TemplateFile,
+        file: &TemplateFile,
     ) -> crate::core::error::Result<serde_json::Value> {
         let mut context = if let serde_json::Value::Object(file_ctx) = &file.context {
             file_ctx.clone()
@@ -1216,7 +1103,7 @@ impl TemplateManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::manifest::TemplateHooks;
+    use crate::core::{protocol::Protocol, templates::TemplateHooks};
     use serde_json::{Map, json};
     use tempfile;
     use tokio;
@@ -1276,37 +1163,36 @@ mod tests {
             files: vec![],
             hooks: TemplateHooks::default(),
         };
-        let manifest_path = template_dir.join("manifest.toml");
-        let manifest_toml = toml::to_string_pretty(&manifest).map_err(|e| {
+        let manifest_path = template_dir.join("manifest.yml");
+        let manifest_yaml = serde_yaml::to_string(&manifest).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Failed to serialize manifest: {}", e),
             )
         })?;
-        tokio::fs::write(&manifest_path, manifest_toml).await?;
+        tokio::fs::write(&manifest_path, manifest_yaml).await?;
 
         // Test creating a new TemplateManager
-        let manager = TemplateManager::new(
+        // Use the actual template directory since custom paths are used directly
+        let manager = TemplateManager::new_with_protocol(
+            Protocol::Mcp,
             ServerTemplateKind::Custom,
-            Some(templates_base_dir.to_path_buf()),
+            Some(template_dir.to_path_buf()),
         )
         .await?;
 
         // Test template_kind
         assert_eq!(manager.template_kind(), ServerTemplateKind::Custom);
 
-        // Test template_dir_path
-        assert!(manager.template_dir_path().ends_with("custom"));
+        // Test protocol
+        assert_eq!(manager.protocol(), Protocol::Mcp);
 
-        // Test has_template
-        assert!(manager.has_template("test.tera"));
+        // Test that template path exists and is readable
+        assert!(manager.template_dir.template_path().exists());
 
         // Test list_templates
         let templates = manager.list_templates();
         assert!(templates.is_empty()); // No files in manifest yet
-
-        // Test template_dir
-        assert!(manager.template_dir().exists());
 
         // Test template rendering
         let mut context = tera::Context::new();
@@ -1321,6 +1207,109 @@ mod tests {
         })?;
 
         assert_eq!(output, "Hello World!");
+
+        Ok(())
+    }
+
+    // TDD Red phase: Protocol-aware TemplateManager tests
+    #[tokio::test]
+    async fn test_template_manager_with_protocol() -> Result<()> {
+        use crate::core::protocol::Protocol;
+
+        let temp_dir = tempfile::tempdir()?;
+        let templates_base_dir = temp_dir.path();
+        let template_dir = templates_base_dir
+            .join("templates")
+            .join("mcp")
+            .join("server")
+            .join("custom");
+        tokio::fs::create_dir_all(&template_dir).await?;
+
+        // Create a simple template
+        let template_content = "Hello {{ name }}! Protocol: {{ protocol }}";
+        let template_path = template_dir.join("test.tera");
+        tokio::fs::write(&template_path, template_content).await?;
+
+        // Create a test manifest
+        let manifest = TemplateManifest {
+            name: "test".to_string(),
+            description: "Test template".to_string(),
+            version: "0.1.1".to_string(),
+            language: "rust".to_string(),
+            files: vec![],
+            hooks: TemplateHooks::default(),
+        };
+        let manifest_path = template_dir.join("manifest.yml");
+        let manifest_yaml = serde_yaml::to_string(&manifest).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to serialize manifest: {}", e),
+            )
+        })?;
+        tokio::fs::write(&manifest_path, manifest_yaml).await?;
+
+        // Test creating a new TemplateManager with protocol parameter
+        let manager = TemplateManager::new_with_protocol(
+            Protocol::Mcp,
+            ServerTemplateKind::Custom,
+            Some(templates_base_dir.to_path_buf()),
+        )
+        .await?;
+
+        // Test that we can access the protocol
+        assert_eq!(manager.protocol(), Protocol::Mcp);
+        assert_eq!(manager.template_kind(), ServerTemplateKind::Custom);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_client_template_manager_with_protocol() -> Result<()> {
+        use crate::core::protocol::Protocol;
+
+        let temp_dir = tempfile::tempdir()?;
+        let templates_base_dir = temp_dir.path();
+        let template_dir = templates_base_dir
+            .join("templates")
+            .join("mcp")
+            .join("client")
+            .join("custom");
+        tokio::fs::create_dir_all(&template_dir).await?;
+
+        // Create a simple template
+        let template_content = "Hello client! Protocol: {{ protocol }}";
+        let template_path = template_dir.join("test.tera");
+        tokio::fs::write(&template_path, template_content).await?;
+
+        // Create a test manifest
+        let manifest = TemplateManifest {
+            name: "test-client".to_string(),
+            description: "Test client template".to_string(),
+            version: "0.1.1".to_string(),
+            language: "rust".to_string(),
+            files: vec![],
+            hooks: TemplateHooks::default(),
+        };
+        let manifest_path = template_dir.join("manifest.yml");
+        let manifest_yaml = serde_yaml::to_string(&manifest).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to serialize manifest: {}", e),
+            )
+        })?;
+        tokio::fs::write(&manifest_path, manifest_yaml).await?;
+
+        // Test creating a new client TemplateManager with protocol parameter
+        // Use the actual template directory since custom paths are used directly
+        let manager = TemplateManager::new_client_with_protocol(
+            Protocol::Mcp,
+            ClientTemplateKind::Custom,
+            Some(template_dir.to_path_buf()),
+        )
+        .await?;
+
+        // Test that we can access the protocol
+        assert_eq!(manager.protocol(), Protocol::Mcp);
 
         Ok(())
     }

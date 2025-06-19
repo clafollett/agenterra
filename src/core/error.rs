@@ -81,3 +81,74 @@ impl From<String> for Error {
         Self::Config(s)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    #[test]
+    fn test_error_config_creation() {
+        let error = Error::config("Invalid configuration");
+        assert!(matches!(error, Error::Config(_)));
+        assert_eq!(
+            error.to_string(),
+            "Configuration error: Invalid configuration"
+        );
+    }
+
+    #[test]
+    fn test_error_openapi_creation() {
+        let error = Error::openapi("Schema validation failed");
+        assert!(matches!(error, Error::OpenApi(_)));
+        assert_eq!(error.to_string(), "OpenAPI error: Schema validation failed");
+    }
+
+    #[test]
+    fn test_error_template_creation() {
+        let error = Error::template("Template not found");
+        assert!(matches!(error, Error::Template(_)));
+        assert_eq!(error.to_string(), "Template error: Template not found");
+    }
+
+    #[test]
+    fn test_error_from_str() {
+        let error: Error = "Test error message".into();
+        assert!(matches!(error, Error::Config(_)));
+        assert_eq!(error.to_string(), "Configuration error: Test error message");
+    }
+
+    #[test]
+    fn test_error_from_string() {
+        let error: Error = "Test string error".to_string().into();
+        assert!(matches!(error, Error::Config(_)));
+        assert_eq!(error.to_string(), "Configuration error: Test string error");
+    }
+
+    #[test]
+    fn test_error_from_io_error() {
+        let io_error = io::Error::new(io::ErrorKind::NotFound, "File not found");
+        let error: Error = io_error.into();
+        assert!(matches!(error, Error::Io(_)));
+        assert!(error.to_string().contains("I/O error"));
+        assert!(error.to_string().contains("File not found"));
+    }
+
+    #[test]
+    fn test_error_from_serde_json_error() {
+        let json_result: std::result::Result<serde_json::Value, _> =
+            serde_json::from_str("invalid json");
+        let json_error = json_result.unwrap_err();
+        let error: Error = json_error.into();
+        assert!(matches!(error, Error::Json(_)));
+        assert!(error.to_string().contains("JSON parsing error"));
+    }
+
+    #[test]
+    fn test_error_debug_display() {
+        let error = Error::config("Debug test");
+        let debug_str = format!("{:?}", error);
+        assert!(debug_str.contains("Config"));
+        assert!(debug_str.contains("Debug test"));
+    }
+}
