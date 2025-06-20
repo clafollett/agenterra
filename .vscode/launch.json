@@ -19,6 +19,8 @@
                 "${workspaceFolder}/.agenterra/${input:serverName}",
                 "--schema-path",
                 "${workspaceFolder}/tests/fixtures/openapi/petstore.openapi.v3.json",
+                "--template-dir",
+                "${workspaceFolder}/templates",
                 "--template",
                 "rust_axum",
                 "--base-url",

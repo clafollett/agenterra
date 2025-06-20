@@ -63,7 +63,7 @@ jobs:
       run: cargo test --all-features --workspace --doc
 
     - name: Run integration tests
-      run: cargo test -p agenterra --test e2e_mcp_test
+      run: cargo test --test e2e_mcp_test
 
   lint:
     name: Linting

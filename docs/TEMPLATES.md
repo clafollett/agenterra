@@ -21,7 +21,7 @@ templates/
 ├── mcp/                    # Model Context Protocol templates
 │   ├── server/             # MCP server templates
 │   │   └── rust_axum/      # Rust Axum server template
-│   │       ├── manifest.yaml
+│   │       ├── manifest.yml
 │   │       ├── Cargo.toml.tera
 │   │       ├── src/
 │   │       │   ├── main.rs.tera
@@ -31,7 +31,7 @@ templates/
 │   │       └── README.md.tera
 │   └── client/             # MCP client templates
 │       └── rust_reqwest/   # Rust reqwest client template
-│           ├── manifest.yaml
+│           ├── manifest.yml
 │           ├── Cargo.toml.tera
 │           ├── src/
 │           │   ├── main.rs.tera
@@ -44,7 +44,7 @@ templates/
 ```
 
 Each template directory contains:
-- `manifest.yaml` - Required template manifest
+- `manifest.yml` - Required template manifest
 - `*.tera` - Template files using Tera templating engine
 - Subdirectories for organized template structure
 
@@ -70,7 +70,7 @@ Client templates generate MCP clients that can connect to MCP servers. They:
 
 ## Manifest Format
 
-The `manifest.yaml` file defines the template's metadata and configuration:
+The `manifest.yml` file defines the template's metadata and configuration:
 
 ```yaml
 name: "rust_reqwest"     # Required: Template name
@@ -429,7 +429,7 @@ To create a custom server template:
 1. Create directory structure:
    ```
    templates/mcp/server/my_custom_server/
-   ├── manifest.yaml
+   ├── manifest.yml
    ├── Cargo.toml.tera
    └── src/
        ├── main.rs.tera
@@ -448,7 +448,7 @@ To create a custom client template:
 1. Create directory structure:
    ```
    templates/mcp/client/my_custom_client/
-   ├── manifest.yaml
+   ├── manifest.yml
    ├── package.json.tera  # For Node.js client
    └── src/
        ├── index.ts.tera

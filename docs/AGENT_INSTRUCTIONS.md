@@ -107,10 +107,10 @@ cargo build --release   # Release build
 # Tests
 cargo test --all-features --workspace --lib     # Unit tests
 cargo test --all-features --workspace --doc     # Doc tests
-cargo test -p agenterra --test e2e_mcp_test # Integration tests
+cargo test --test e2e_mcp_test # Integration tests
 
 # Run Agenterra
-cargo run -p agenterra -- scaffold --schema-path <path-or-url> --output <dir>
+cargo run -- scaffold mcp server --schema-path <path-or-url> --output-dir <dir>
 ```
 
 ## Architecture Overview
