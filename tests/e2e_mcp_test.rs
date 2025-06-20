@@ -501,8 +501,8 @@ async fn test_mcp_with_interactive_client(
 #[test]
 fn test_cli_help_output() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
-    // Use sandbox directory under .agenterra to avoid polluting repo root
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Use sandbox directory under .agenterra to avoid polluting repo root
     let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
@@ -533,8 +533,8 @@ fn test_cli_help_output() {
 #[test]
 fn test_new_cli_structure() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
-    // Use sandbox directory under .agenterra to avoid polluting repo root
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Use sandbox directory under .agenterra to avoid polluting repo root
     let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
@@ -568,8 +568,8 @@ fn test_new_cli_structure() {
 #[test]
 fn test_cli_flag_combinations() -> Result<()> {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
-    // Use sandbox directory under .agenterra to avoid polluting repo root
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Use sandbox directory under .agenterra to avoid polluting repo root
     let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
