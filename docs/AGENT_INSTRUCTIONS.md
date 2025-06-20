@@ -1,20 +1,20 @@
 # Workspace LLM Agent Instructions
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to your LLM Agent when working with code in this repository.
 
 **Repository:** https://github.com/clafollett/agenterra
-**Version:** Read the badge in the workspace README.md
+**Version:** Read the badge in the project README.md
 
 ## Prime Directives
 
 1. **NEVER PUSH TO MAIN** - All changes must go through PR workflow, no direct pushes to main branch
-2. **Test-First Development (TDD)**
-   - Write failing tests before implementation
-   - Implement simplest solution to pass tests
-   - Refactor to make code idiomatic
-   - Cover: happy path, errors, edge cases
-   - Mock external services
-   - Keep tests in the same module as the code under test
+2. **Test-First Development (Red/Green TDD)**
+   - **MUST** Write failing tests before implementation
+   - **MUST** Implement simplest solution to pass tests
+   - **MUST** Refactor to make code idiomatic
+   - **MUST** Cover: happy path, errors, edge cases
+   - **MUST** Mock external services
+   - **MUST** Keep tests in the same module as the code under test
 3. **NO analysis paralysis** - Use tests to guide development, avoid overthinking
 
 ## CI/CD Workflow (HIGH PRIORITY)
@@ -59,7 +59,7 @@ Use semantic commit messages with GitHub issue linking:
      - `fix/issue-123/login-error`
      - `docs/issue-57/update-readme`
 2. **Make changes** following coding standards
-3. **Run Rust workspace checks:** `cargo fmt --all -- --check && cargo clippy -- -D warnings && cargo test`
+3. **Run pre-commit checks:** `cargo fmt --all -- --check && cargo clippy -- -D warnings && cargo test`
    - For non-Rust code, run the formatter, linter, and test suite appropriate to that language before committing.
 4. **Push branch** and create pull request
 5. **Wait for CI** - All checks must pass
@@ -105,9 +105,9 @@ cargo build             # Debug build
 cargo build --release   # Release build
 
 # Tests
-cargo test --all-features --workspace --lib     # Unit tests
-cargo test --all-features --workspace --doc     # Doc tests
-cargo test --test e2e_mcp_test # Integration tests
+cargo test --all-features --lib     # Unit tests
+cargo test --all-features --doc     # Doc tests
+cargo test --test e2e_mcp_test       # Integration tests
 
 # Run Agenterra
 cargo run -- scaffold mcp server --schema-path <path-or-url> --output-dir <dir>
@@ -133,11 +133,11 @@ OpenAPI Spec → Parser → Template Builder → Code Generator → MCP Server
 - **`builders/`** - Context Builders (trait-based extensibility, transforms OpenAPI to language contexts)
 - **`config.rs`** - Configuration (project settings, template selection, operation filtering)
 
-### Workspace Structure
-- `agenterra-cli/` - CLI interface (thin wrapper)
-- `agenterra-core/` - Core library (business logic)
-- `templates/` - Built-in templates
-- `tests/fixtures/` - Test OpenAPI specs
+### Project Structure
+- `src/` - Single-crate Rust application with CLI and core logic
+- `templates/` - Built-in code generation templates
+- `tests/fixtures/` - Test OpenAPI specifications
+- `crates/rmcp*` - Vendored MCP protocol implementation
 
 ## Rust Coding Standards
 

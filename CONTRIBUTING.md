@@ -90,8 +90,8 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 3. **Running Tests**
    ```bash
-   cargo test                                        # All tests
-   cargo test --test e2e_mcp_test  # Integration tests
+   cargo test                       # All tests
+   cargo test --test e2e_mcp_test   # Integration tests
    ```
 
 4. **Test Agenterra CLI**
@@ -129,10 +129,10 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 ```
 agenterra/
+├── src/                     # Single-crate Rust application
 ├── crates/
-│   ├── agenterra-core/      # Core library (shared utilities)
-│   ├── agenterra-mcp/       # MCP-specific generation logic
-│   └── agenterra-cli/       # CLI interface
+│   ├── rmcp/                # Vendored MCP protocol implementation
+│   └── rmcp-macros/         # MCP protocol macros
 ├── docs/                    # Documentation
 ├── templates/               # Code generation templates
 │   └── mcp/                 # MCP protocol templates
@@ -141,13 +141,12 @@ agenterra/
 │       └── client/          # MCP client templates
 │           └── rust_reqwest/ # Rust reqwest client template with SQLite caching
 ├── tests/fixtures/          # Test OpenAPI specs
-└── plans/                   # Project planning docs
+└── .github/workflows/       # CI/CD automation
 ```
 
 ## Getting Help 💬
 
 - Create an issue
-- Join our Discord
 - Check the documentation
 
 ## License 📄

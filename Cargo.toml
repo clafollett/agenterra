@@ -1,9 +1,5 @@
 [workspace]
-members = [
-    ".",
-    "crates/rmcp",
-    "crates/rmcp-macros",
-]
+members = [".", "crates/rmcp", "crates/rmcp-macros"]
 resolver = "2"
 
 [package]
@@ -11,13 +7,20 @@ name = "agenterra"
 version = "0.1.2"
 edition = "2024"
 license = "MIT"
+authors = ["LaFollett Labs LLC <contact@lafollettlabs.com>"]
 description = "Generate production-ready MCP (Model Context Protocol) servers and clients from OpenAPI specs"
 repository = "https://github.com/clafollett/agenterra"
 homepage = "https://github.com/clafollett/agenterra"
-documentation = "https://github.com/clafollett/agenterra"
+documentation = "https://docs.rs/agenterra"
 readme = "README.md"
-keywords = ["mcp", "openapi", "generator", "protocol", "client-server"]
-categories = ["development-tools", "api-bindings"]
+categories = [
+    "development-tools",
+    "api-bindings",
+    "command-line-utilities",
+    "template-engine",
+    "config",
+]
+keywords = ["cli", "mcp", "code-generator", "openapi", "templates"]
 default-run = "agenterra"
 
 [[bin]]

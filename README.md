@@ -2,11 +2,10 @@
 
 **Generate production-ready MCP (Model Context Protocol) servers and clients from OpenAPI specs with minimal configuration.**
 
+[![Crates.io](https://img.shields.io/crates/v/agenterra?style=for-the-badge)](https://crates.io/crates/agenterra)
 [![CI](https://github.com/clafollett/agenterra/workflows/CI/badge.svg)](https://github.com/clafollett/agenterra/actions/workflows/ci.yml)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/clafollett/agenterra?style=for-the-badge)](https://github.com/clafollett/agenterra/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.86.0%2B-orange?logo=rust&style=for-the-badge)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0-85ea2d?logo=openapi-initiative&style=for-the-badge)](https://www.openapis.org/)
 
 ---
 
