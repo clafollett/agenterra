@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use tracing::info;
 use uuid::Uuid;
 
 // Global tracking of initialized databases (double-checked locking pattern)
@@ -1974,6 +1975,6 @@ mod tests {
             assert!(result.is_ok()); // Should succeed even for non-existent resources
         }
 
-        println!("Migration system and connection pool integration test passed");
+        info!("Migration system and connection pool integration test passed");
     }
 }
