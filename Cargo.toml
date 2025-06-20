@@ -8,7 +8,7 @@ resolver = "2"
 
 [package]
 name = "agenterra"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 description = "Generate production-ready MCP (Model Context Protocol) servers and clients from OpenAPI specs"
