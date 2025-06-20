@@ -11,6 +11,7 @@ jobs:
   test:
     name: Test Suite
     runs-on: ${{ matrix.os }}
+    if: github.actor != 'release-plz[bot]'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -68,6 +69,7 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-latest
+    if: github.actor != 'release-plz[bot]'
     steps:
     - name: Checkout sources
       uses: actions/checkout@v4
@@ -92,6 +94,7 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    if: github.actor != 'release-plz[bot]'
     steps:
     - name: Checkout sources
       uses: actions/checkout@v4
