@@ -31,31 +31,26 @@ struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Commands {
-    /// Scaffold servers and clients for various protocols
+    /// Scaffold servers and clients for various targets
     Scaffold {
         #[command(subcommand)]
-        role: RoleCommands,
+        target: TargetCommands,
     },
 }
 
 #[derive(clap::Subcommand, Debug)]
-pub enum RoleCommands {
-    /// Generate server implementations
-    Server {
-        #[command(subcommand)]
-        protocol: ServerProtocolCommands,
-    },
-    /// Generate client implementations
-    Client {
-        #[command(subcommand)]
-        protocol: ClientProtocolCommands,
-    },
-}
-
-#[derive(clap::Subcommand, Debug)]
-pub enum ServerProtocolCommands {
-    /// Model Context Protocol (MCP) server
+pub enum TargetCommands {
+    /// Model Context Protocol (MCP) servers and clients
     Mcp {
+        #[command(subcommand)]
+        role: McpCommands,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum McpCommands {
+    /// Generate MCP server from OpenAPI specification
+    Server {
         /// Project name
         #[arg(long, default_value = "mcp_server")]
         project_name: String,
@@ -81,12 +76,8 @@ pub enum ServerProtocolCommands {
         #[arg(long)]
         base_url: Option<Url>,
     },
-}
-
-#[derive(clap::Subcommand, Debug)]
-pub enum ClientProtocolCommands {
-    /// Model Context Protocol (MCP) client
-    Mcp {
+    /// Generate MCP client
+    Client {
         /// Project name
         #[arg(long, default_value = "mcp_client")]
         project_name: String,
@@ -112,9 +103,9 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting Agenterra CLI");
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Scaffold { role } => match role {
-            RoleCommands::Server { protocol } => match protocol {
-                ServerProtocolCommands::Mcp {
+        Commands::Scaffold { target } => match target {
+            TargetCommands::Mcp { role } => match role {
+                McpCommands::Server {
                     project_name,
                     schema_path,
                     template,
@@ -136,9 +127,7 @@ async fn main() -> anyhow::Result<()> {
                     })
                     .await?
                 }
-            },
-            RoleCommands::Client { protocol } => match protocol {
-                ClientProtocolCommands::Mcp {
+                McpCommands::Client {
                     project_name,
                     template,
                     template_dir,

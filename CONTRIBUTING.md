@@ -60,10 +60,10 @@ This project and everyone participating in it is governed by our Code of Conduct
 5. **Test CLI Changes**
    ```bash
    # Test new server generation
-   cargo run -p agenterra -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir test-output-server --base-url https://petstore3.swagger.io
+   cargo run -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir test-output-server --base-url https://petstore3.swagger.io
    
    # Test new client generation  
-   cargo run -p agenterra -- scaffold mcp client --project-name test-client --output-dir test-output-client
+   cargo run -- scaffold mcp client --project-name test-client --output-dir test-output-client
    ```
 
 6. **Commit**
@@ -91,16 +91,16 @@ This project and everyone participating in it is governed by our Code of Conduct
 3. **Running Tests**
    ```bash
    cargo test                                        # All tests
-   cargo test -p agenterra --test e2e_mcp_test  # Integration tests
+   cargo test --test e2e_mcp_test  # Integration tests
    ```
 
 4. **Test Agenterra CLI**
    ```bash
    # Test MCP server generation
-   cargo run -p agenterra -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir test-server --base-url https://petstore3.swagger.io
+   cargo run -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir test-server --base-url https://petstore3.swagger.io
    
    # Test MCP client generation
-   cargo run -p agenterra -- scaffold mcp client --project-name test-client --output-dir test-client
+   cargo run -- scaffold mcp client --project-name test-client --output-dir test-client
    ```
 
 ## Coding Guidelines 📝

@@ -43,16 +43,16 @@ git clone https://github.com/clafollett/agenterra.git
 cd agenterra
 
 # Generate MCP server from a local file without install:
-cargo run -p agenterra -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/cargo_run_petstore_mcp_server_local_file --base-url https://petstore3.swagger.io
+cargo run -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/cargo_run_petstore_mcp_server_local_file --base-url https://petstore3.swagger.io
 
 # Generate MCP server from a remote URL without install:
-cargo run -p agenterra -- scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/cargo_run_petstore_mcp_server_remote_url
+cargo run -- scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/cargo_run_petstore_mcp_server_remote_url
 
 # Generate MCP client without install:
-cargo run -p agenterra -- scaffold mcp client --project-name petstore-client --output-dir .agenterra/cargo_run_petstore_mcp_client
+cargo run -- scaffold mcp client --project-name petstore-client --output-dir .agenterra/cargo_run_petstore_mcp_client
 
 # Or install the CLI
-cargo install --path crates/agenterra-cli
+cargo install --path .
 
 # Generate your MCP server from a local file
 agenterra scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/installed_petstore_mcp_server_local_file --base-url https://petstore3.swagger.io
@@ -65,7 +65,7 @@ agenterra scaffold mcp client --project-name petstore-client --output-dir .agent
 
 ```
 
-> **Note:** Agenterra uses a Cargo workspace. You must use the CLI crate path (`crates/agenterra-cli`) for `cargo install`. Top-level install will not work.
+> **Note:** After the single-crate refactor, you can now install directly from the project root with `cargo install --path .`
 
 ### Method 2: Install from Git
 
@@ -249,7 +249,7 @@ We welcome contributions from the community! To keep Agenterra high-quality and 
   - Update documentation for any user-facing or API changes.
 - **Testing**:
   - Add or update unit and integration tests for all new features or bugfixes.
-  - Run: `cargo test -p agenterra --test e2e_mcp_test`
+  - Run: `cargo test --test e2e_mcp_test`
 - **Docs**:
   - Update relevant docs and add examples for new features.
   - Document any new patterns or conventions.
@@ -269,9 +269,9 @@ Here’s how to work productively with Agenterra as a contributor or advanced us
   - Run all tests: `cargo test`
   - Run integration tests (all templates with OpenAPI specs):
     ```bash
-    cargo test -p agenterra --test e2e_mcp_test
+    cargo test --test e2e_mcp_test
     ```
-- **Test Location:** See [`crates/agenterra-cli/tests/e2e_mcp_test.rs`](crates/agenterra-cli/tests/e2e_mcp_test.rs) for integration coverage.
+- **Test Location:** See [`tests/e2e_mcp_test.rs`](tests/e2e_mcp_test.rs) for integration coverage.
 - **Test-First Principle:** Add failing tests before implementing new features or bugfixes.
 
 ### 🏗️ Building
