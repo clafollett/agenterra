@@ -6,6 +6,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_value::Value as SerdeValue;
 use tokio::fs;
+use tracing::debug;
 
 /// The root manifest structure for a template.
 ///
@@ -99,9 +100,9 @@ impl TemplateManifest {
     ) -> Result<Self, crate::core::error::Error> {
         let manifest_path = template_dir.join("manifest.yml");
 
-        println!(
-            "DEBUG - Attempting to read manifest from: {}",
-            manifest_path.display()
+        debug!(
+            manifest_path = %manifest_path.display(),
+            "Attempting to read template manifest"
         );
         // Read the file content and log it for debugging
         let content = fs::read_to_string(&manifest_path).await.map_err(|e| {
@@ -113,9 +114,9 @@ impl TemplateManifest {
         })?;
 
         // Log the content for debugging
-        println!(
-            "=== Template manifest content ===\n{}\n===============================",
-            content
+        debug!(
+            content_length = content.len(),
+            "Successfully read template manifest content"
         );
 
         // Try to parse the YAML content

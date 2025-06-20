@@ -49,10 +49,10 @@ pub enum TargetCommands {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum McpCommands {
-    /// Generate MCP server from OpenAPI specification
+    /// Generate MCP server from OpenAPI specification that exposes API endpoints as MCP tools
     Server {
-        /// Project name
-        #[arg(long, default_value = "mcp_server")]
+        /// Project name for the generated MCP server
+        #[arg(long, default_value = "agenterra_mcp_server")]
         project_name: String,
         /// Path or URL to OpenAPI schema (YAML or JSON)
         #[arg(long)]
@@ -76,10 +76,10 @@ pub enum McpCommands {
         #[arg(long)]
         base_url: Option<Url>,
     },
-    /// Generate MCP client
+    /// Generate MCP client that can connect to MCP servers (no OpenAPI spec required)
     Client {
-        /// Project name
-        #[arg(long, default_value = "mcp_client")]
+        /// Project name for the generated MCP client
+        #[arg(long, default_value = "agenterra_mcp_client")]
         project_name: String,
         /// Template to use for client generation
         #[arg(long, default_value = "rust_reqwest")]
