@@ -1,11 +1,10 @@
 //! Interactive REPL interface for MCP client
 
-use anyhow::{Result, Context};
+use anyhow::Result;
 use rustyline::error::ReadlineError;
-use rustyline::{DefaultEditor, Result as RustylineResult};
+use rustyline::DefaultEditor;
 use serde_json::{json, Value};
-use std::collections::HashMap;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, debug};
 
 use crate::client::McpClient;
 
@@ -25,6 +24,7 @@ impl McpRepl {
 
     /// Run the interactive REPL
     pub async fn run(&mut self) -> Result<()> {
+        info!("Starting MCP client REPL interface");
         println!("{{ project_name | default(value="MCP Client") }} - Interactive REPL");
         println!("Type 'help' for available commands, 'quit' to exit");
         println!();
@@ -67,6 +67,7 @@ impl McpRepl {
         }
 
         println!("Goodbye!");
+        info!("Shutting down MCP client REPL");
         self.client.disconnect().await?;
         Ok(())
     }
@@ -77,6 +78,8 @@ impl McpRepl {
         if parts.is_empty() {
             return Ok(true);
         }
+
+        debug!("Processing REPL command: {}", parts[0]);
 
         match parts[0] {
             "help" | "h" => {

@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     tracing::info!("Connecting to MCP server: {}", cli.server);
 
     // Create and connect MCP client
-    let mut client = McpClient::new("stdio", cli.timeout).await?;
+    let mut client = McpClient::new(cli.timeout).await?;
     
     // Start the server process and connect via stdio
     tracing::info!("Starting MCP server: {}", cli.server);

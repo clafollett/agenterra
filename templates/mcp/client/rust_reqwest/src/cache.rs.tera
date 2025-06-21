@@ -12,9 +12,9 @@ use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 // Global tracking of initialized databases (double-checked locking pattern)
@@ -96,8 +96,6 @@ pub struct CacheConfig {
     pub max_size_mb: u64,
     /// Enable automatic cleanup of expired resources
     pub auto_cleanup: bool,
-    /// Cleanup interval for expired resources
-    pub cleanup_interval: Duration,
     /// Minimum number of connections in the pool
     pub pool_min_connections: Option<u32>,
     /// Maximum number of connections in the pool
@@ -123,7 +121,6 @@ impl Default for CacheConfig {
             default_ttl: Duration::from_secs(3600), // 1 hour
             max_size_mb: 100,                       // 100 MB
             auto_cleanup: true,
-            cleanup_interval: Duration::from_secs(300), // 5 minutes
             pool_min_connections: Some(1),  // Minimum connections in pool
             pool_max_connections: Some(10), // Maximum connections in pool
             pool_connection_timeout: Some(Duration::from_secs(60)), // Increased from 30s for CI robustness
@@ -1307,7 +1304,6 @@ mod tests {
         assert_eq!(config.default_ttl, Duration::from_secs(3600));
         assert_eq!(config.max_size_mb, 100);
         assert!(config.auto_cleanup);
-        assert_eq!(config.cleanup_interval, Duration::from_secs(300));
     }
 
     #[test]

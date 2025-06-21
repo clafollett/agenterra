@@ -28,6 +28,7 @@ name = "agenterra"
 path = "src/main.rs"
 
 [features]
+default = ["mcp_client"]
 mcp_client = []
 
 

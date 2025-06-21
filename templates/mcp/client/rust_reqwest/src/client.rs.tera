@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time;
-use tracing::{debug, error, info, warn};
+use tracing;
 
 use crate::cache::{ResourceCache, CacheConfig};
 use crate::resource::{ResourceContent, ResourceInfo};
@@ -19,7 +19,6 @@ use crate::resource::{ResourceContent, ResourceInfo};
 /// MCP client for tool discovery and invocation
 pub struct McpClient {
     service: Option<RunningService<RoleClient, ()>>,
-    server_url: String,
     timeout: Duration,
     tools: HashMap<String, rmcp::model::Tool>,
     resources: Vec<rmcp::model::Resource>,
@@ -46,7 +45,7 @@ impl McpClient {
     }
 
     /// Create a new MCP client
-    pub async fn new(server_url: &str, timeout_secs: u64) -> Result<Self> {
+    pub async fn new(timeout_secs: u64) -> Result<Self> {
         // Initialize SQLite cache for resources
         let cache_db_path = Self::get_cache_db_path()?;
         let cache_config = CacheConfig {
@@ -63,7 +62,6 @@ impl McpClient {
         
         Ok(Self {
             service: None,
-            server_url: server_url.to_string(),
             timeout: Duration::from_secs(timeout_secs),
             tools: HashMap::new(),
             resources: Vec::new(),
@@ -85,18 +83,6 @@ impl McpClient {
         self.discover_capabilities().await?;
         
         Ok(())
-    }
-
-    /// Connect to the MCP server (legacy method for backwards compatibility)
-    pub async fn connect(&mut self) -> Result<()> {
-        if self.server_url == "stdio" {
-            // For backwards compatibility, create a simple echo command
-            let mut command = tokio::process::Command::new("echo");
-            command.arg("MCP server placeholder");
-            return Err(anyhow::anyhow!("Please use connect_stdio() with a proper command instead"));
-        } else {
-            return Err(anyhow::anyhow!("Only stdio connections are currently supported. Use connect_stdio() method."));
-        }
     }
 
     /// Discover tools, resources, and prompts from the server
@@ -252,7 +238,7 @@ impl McpClient {
         tracing::info!("Getting prompt: {} with arguments: {:?}", name, arguments);
         
         let arguments_object = arguments.and_then(|v| v.as_object().cloned());
-        let request = rmcp::model::GetPromptRequestParam {
+        let request = GetPromptRequestParam {
             name: name.to_string().into(),
             arguments: arguments_object,
         };

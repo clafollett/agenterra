@@ -85,6 +85,56 @@ Use semantic commit messages with GitHub issue linking:
 4. **GitHub Actions** builds cross-platform binaries automatically
 5. **Binaries published** to GitHub Releases with checksums
 
+## Domain-Driven Design & Clean Architecture
+
+### Core Principles (Big Blue Book - Eric Evans)
+- **Domain Model First** - Business logic drives the design
+- **Ubiquitous Language** - Same terms used by domain experts and code
+- **Bounded Context** - Clear boundaries between different domains
+- **Entities** - Objects with identity and lifecycle (own their state)
+- **Value Objects** - Immutable objects representing concepts
+- **Domain Services** - Stateless operations that don't belong to entities
+
+### Clean Architecture Layers
+```
+┌─────────────────┐
+│   Presentation  │ ← CLI, Web UI (main.rs, handlers)
+├─────────────────┤
+│   Application   │ ← Use cases, orchestration
+├─────────────────┤
+│     Domain      │ ← Business logic, entities, value objects
+├─────────────────┤
+│ Infrastructure  │ ← External services, databases, transport
+└─────────────────┘
+```
+
+**Rules:**
+- **Domain layer** has NO dependencies on outer layers
+- **Entities** manage their own state and lifecycle  
+- **No anemic domain models** - behavior belongs with data
+- **Dependency inversion** - abstractions don't depend on details
+
+### TDD for Domain Modeling
+1. **RED**: Write failing test describing domain behavior
+2. **GREEN**: Implement minimal domain model to pass test
+3. **REFACTOR**: Extract value objects, improve domain design
+4. **Domain Test Structure**:
+   ```rust
+   #[cfg(test)]
+   mod domain_tests {
+       use super::*;
+       
+       #[tokio::test]
+       async fn test_entity_lifecycle() { /* Test state transitions */ }
+       
+       #[tokio::test] 
+       async fn test_business_invariants() { /* Test domain rules */ }
+       
+       #[tokio::test]
+       async fn test_value_object_immutability() { /* Test value objects */ }
+   }
+   ```
+
 ## Code Quality Requirements
 
 - Run `cargo fmt --all -- --check` immediately after code changes
@@ -93,6 +143,8 @@ Use semantic commit messages with GitHub issue linking:
 - Validate all user inputs with explicit error handling
 - Log all errors and warnings with clear messages
 - Use idiomatic Rust patterns and best practices
+- **Follow DDD principles** - Domain entities own their state and behavior
+- **Test-first development** - Write failing tests before implementation
 
 ## Quick Development Commands
 
