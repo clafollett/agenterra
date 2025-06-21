@@ -204,10 +204,7 @@ async fn run_mcp_client_connect(command: &str, args: &[String]) -> anyhow::Resul
     use crate::mcp::client::{ConnectionConfig, McpSessionManager};
     use std::time::Duration;
 
-    info!(
-        "Connecting to MCP server: {} {:?}",
-        command, args
-    );
+    info!("Connecting to MCP server: {} {:?}", command, args);
 
     // Build connection configuration
     let config = ConnectionConfig::builder()

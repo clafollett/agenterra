@@ -1,0 +1,32 @@
+//! CLI module for {{ project_name | default(value="MCP Client") }}
+//!
+//! {{ description | default(value="Provides command-line interface functionality including:") }}
+//! - Interactive REPL mode (default)
+//! - Headless automation mode
+//! - Configuration management
+//!
+//! Version: {{ version | default(value="0.1.0") }}
+//! CLI Version: {{ cli_version | default(value="1.0") }}
+
+use crate::error::Result;
+
+/// CLI command structure
+#[derive(Debug)]
+pub enum CliCommand {
+    /// Interactive REPL mode (default)
+    Interactive,
+    /// Headless automation mode
+    Headless,
+    /// Show version information
+    Version,
+    /// Show help information
+    Help,
+}
+
+/// Main CLI entry point
+pub async fn run_cli() -> Result<()> {
+    // TODO: Implement in REFACTOR phase
+    // For GREEN phase, this is a minimal implementation
+    println!("{{ project_name | default(value='MCP Client') }} CLI");
+    Ok(())
+}

@@ -1,0 +1,35 @@
+//! Headless automation module for {{ project_name | default(value="MCP Client") }}
+//!
+//! {{ description | default(value="Provides non-interactive automation functionality for:") }}
+//! - Batch processing
+//! - Scripted operations
+//! - CI/CD integration
+//!
+//! Version: {{ version | default(value="0.1.0") }}
+//! Max batch size: {{ max_batch_size | default(value="100") }}
+
+use crate::error::Result;
+
+/// Headless mode runner
+pub struct HeadlessRunner;
+
+impl HeadlessRunner {
+    /// Create new headless runner
+    pub fn new() -> Self {
+        Self
+    }
+    
+    /// Run headless operations
+    pub async fn run(&self) -> Result<()> {
+        // TODO: Implement in REFACTOR phase
+        // For GREEN phase, this is a minimal implementation
+        println!("{{ project_name | default(value='MCP Client') }} Headless Mode");
+        Ok(())
+    }
+}
+
+impl Default for HeadlessRunner {
+    fn default() -> Self {
+        Self::new()
+    }
+}

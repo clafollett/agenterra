@@ -1,8 +1,12 @@
 //! SQLite-powered resource caching system for {{ project_name | default(value="MCP Client") }}
 //!
-//! This module provides a revolutionary resource caching system built on SQLite
+//! {{ description | default(value="This module provides a revolutionary resource caching system built on SQLite") }}
 //! that goes beyond simple key-value storage to offer a full-featured resource database
 //! with structured storage, rich queries, ACID transactions, and built-in analytics.
+//!
+//! Version: {{ version | default(value="0.1.0") }}
+//! Cache TTL: {{ default_cache_ttl_seconds | default(value="3600") }} seconds
+//! Max Cache Size: {{ max_cache_size_mb | default(value="100") }} MB
 
 use crate::error::{ClientError, Result};
 use crate::resource::{ResourceContent, ResourceInfo};
@@ -108,23 +112,23 @@ pub struct CacheConfig {
 
 impl Default for CacheConfig {
     fn default() -> Self {
-        // Get cache directory path for client {{ project_name }}
+        // Get cache directory path for client {{ project_name | default(value="mcp_client") }}
         let cache_path = if let Some(home) = dirs::home_dir() {
-            home.join(".agenterra").join("{{ project_name }}_cache.db")
+            home.join("{{ cache_dir | default(value=".agenterra") }}").join("{{ project_name | default(value="mcp_client") }}_cache.db")
         } else {
             // Fallback to current directory if home not found
-            std::path::PathBuf::from("./{{ project_name }}_cache.db")
+            std::path::PathBuf::from("./{{ project_name | default(value="mcp_client") }}_cache.db")
         };
         
         Self {
             database_path: cache_path.to_string_lossy().to_string(),
-            default_ttl: Duration::from_secs(3600), // 1 hour
-            max_size_mb: 100,                       // 100 MB
-            auto_cleanup: true,
-            pool_min_connections: Some(1),  // Minimum connections in pool
-            pool_max_connections: Some(10), // Maximum connections in pool
-            pool_connection_timeout: Some(Duration::from_secs(60)), // Increased from 30s for CI robustness
-            pool_max_lifetime: Some(Duration::from_secs(300)), // 5 minutes to recycle connections
+            default_ttl: Duration::from_secs({{ default_cache_ttl_seconds | default(value="3600") }}), // Default cache TTL
+            max_size_mb: {{ max_cache_size_mb | default(value="100") }},                       // Max cache size
+            auto_cleanup: {{ auto_cleanup_enabled | default(value="true") }},
+            pool_min_connections: Some({{ pool_min_connections | default(value="1") }}),  // Minimum connections in pool
+            pool_max_connections: Some({{ pool_max_connections | default(value="10") }}), // Maximum connections in pool
+            pool_connection_timeout: Some(Duration::from_secs({{ pool_connection_timeout_seconds | default(value="60") }})), // Connection timeout
+            pool_max_lifetime: Some(Duration::from_secs({{ pool_max_lifetime_seconds | default(value="300") }})), // Connection recycling
         }
     }
 }
@@ -1300,9 +1304,9 @@ mod tests {
     #[test]
     fn test_cache_config_defaults() {
         let config = CacheConfig::default();
-        assert!(config.database_path.contains("{{ project_name }}_cache.db"));
-        assert_eq!(config.default_ttl, Duration::from_secs(3600));
-        assert_eq!(config.max_size_mb, 100);
+        assert!(config.database_path.contains("{{ project_name | default(value="mcp_client") }}_cache.db"));
+        assert_eq!(config.default_ttl, Duration::from_secs({{ default_cache_ttl_seconds | default(value="3600") }}));
+        assert_eq!(config.max_size_mb, {{ max_cache_size_mb | default(value="100") }});
         assert!(config.auto_cleanup);
     }
 
@@ -1325,5 +1329,15 @@ mod tests {
         assert_eq!(cached_resource.content, b"Hello, World!");
         assert_eq!(cached_resource.size_bytes, 13);
         assert!(cached_resource.expires_at.is_some());
+    }
+}
+
+/// Custom Debug implementation for ResourceCache
+impl std::fmt::Debug for ResourceCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResourceCache")
+            .field("config", &self.config)
+            .field("analytics", &self.analytics)
+            .finish()
     }
 }

@@ -1,9 +1,13 @@
 //! Transport abstraction layer for MCP communication in {{ project_name | default(value="MCP Client") }}
+//!
+//! {{ description | default(value="Provides transport protocol abstraction for different MCP communication methods") }}
+//! Version: {{ version | default(value="0.1.0") }}
+//! Protocol: {{ mcp_protocol_version | default(value="2024-11-05") }}
 
 use crate::error::Result;
 use async_trait::async_trait;
 
-/// Abstraction over different MCP transport mechanisms
+/// Abstraction over different MCP transport mechanisms for {{ project_name | default(value="MCP Client") }}
 #[async_trait]
 pub trait Transport: Send + Sync {
     /// Send a message and receive a response
@@ -13,19 +17,31 @@ pub trait Transport: Send + Sync {
     async fn close(&mut self) -> Result<()>;
 }
 
-/// Mock transport for testing
+/// Mock transport for testing {{ project_name | default(value="MCP Client") }}
 #[cfg(test)]
 pub struct MockTransport {
     responses: Vec<serde_json::Value>,
     call_count: usize,
+    max_responses: usize,
 }
 
 #[cfg(test)]
 impl MockTransport {
     pub fn new(responses: Vec<serde_json::Value>) -> Self {
+        let max_responses = responses.len();
         Self {
             responses,
             call_count: 0,
+            max_responses,
+        }
+    }
+    
+    /// Create mock transport with configurable limit
+    pub fn with_limit(responses: Vec<serde_json::Value>, limit: usize) -> Self {
+        Self {
+            responses,
+            call_count: 0,
+            max_responses: limit.min({{ max_mock_responses | default(value="1000") }}),
         }
     }
 }

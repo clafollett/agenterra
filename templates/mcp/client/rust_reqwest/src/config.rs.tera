@@ -1,0 +1,71 @@
+//! Configuration management for {{ project_name | default(value="MCP Client") }}
+//!
+//! {{ description | default(value="Provides configuration loading and management including:") }}
+//! - Server profiles
+//! - Authentication settings
+//! - Cache configuration
+//!
+//! Version: {{ version | default(value="0.1.0") }}
+//! Config format: {{ config_format | default(value="TOML") }}
+
+use crate::error::Result;
+use serde::{Deserialize, Serialize};
+
+/// Application configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    /// Server profiles
+    pub servers: Vec<ServerProfile>,
+    /// Default server to use
+    pub default_server: Option<String>,
+}
+
+/// Server profile configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerProfile {
+    /// Profile name
+    pub name: String,
+    /// Server command
+    pub command: String,
+    /// Command arguments
+    pub args: Vec<String>,
+    /// Connection timeout in seconds
+    pub timeout: Option<u64>,
+    /// Description of the server
+    pub description: Option<String>,
+    /// Whether this server is enabled
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+/// Default value for enabled field
+fn default_enabled() -> bool {
+    {{ server_enabled_by_default | default(value="true") }}
+}
+
+impl AppConfig {
+    /// Load configuration from file
+    pub fn load() -> Result<Self> {
+        // TODO: Implement in REFACTOR phase
+        // For GREEN phase, return default configuration
+        Ok(Self {
+            servers: vec![],
+            default_server: Some("{{ default_server_name | default(value="default") }}".to_string()),
+        })
+    }
+    
+    /// Save configuration to file
+    pub fn save(&self) -> Result<()> {
+        // TODO: Implement in REFACTOR phase
+        Ok(())
+    }
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            servers: vec![],
+            default_server: Some("{{ default_server_name | default(value="default") }}".to_string()),
+        }
+    }
+}

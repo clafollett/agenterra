@@ -1,10 +1,12 @@
 //! Secure authentication module for {{ project_name | default(value="MCP Client") }}
 //!
-//! This module implements secure authentication with protection against:
+//! {{ description | default(value="This module implements secure authentication with protection against:") }}
 //! - Prompt injection attacks
 //! - Credential leakage
 //! - Header injection
 //! - Memory exposure
+//!
+//! Version: {{ version | default(value="0.1.0") }}
 
 use crate::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,7 @@ pub struct SecureCredential {
 }
 
 impl SecureCredential {
-    /// Create a new secure credential with validation
+    /// Create a new secure credential with validation for {{ project_name | default(value="MCP Client") }}
     pub fn new(value: String, credential_type: CredentialType) -> Result<Self> {
         // Security validation
         Self::validate_credential(&value, &credential_type)?;
@@ -61,7 +63,7 @@ impl SecureCredential {
         // 3. Type-specific validation
         match cred_type {
             CredentialType::ApiKey => {
-                if value.len() < 8 {
+                if value.len() < {{ min_api_key_length | default(value="8") }} {
                     return Err(ClientError::Validation("API key too short".to_string()));
                 }
                 // API keys should be alphanumeric + common special chars only
@@ -75,7 +77,7 @@ impl SecureCredential {
                 }
             }
             CredentialType::BearerToken => {
-                if value.len() < 16 {
+                if value.len() < {{ min_bearer_token_length | default(value="16") }} {
                     return Err(ClientError::Validation(
                         "Bearer token too short".to_string(),
                     ));
@@ -89,7 +91,7 @@ impl SecureCredential {
             }
             CredentialType::Custom => {
                 // Custom credentials have basic validation only
-                if value.len() > 1024 {
+                if value.len() > {{ max_custom_credential_length | default(value="1024") }} {
                     return Err(ClientError::Validation(
                         "Custom credential too long".to_string(),
                     ));
@@ -197,7 +199,7 @@ pub enum CredentialType {
 }
 
 /// Secure authentication configuration
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AuthConfig {
     /// Primary authentication method
     primary_auth: Option<AuthMethod>,
@@ -307,7 +309,7 @@ impl AuthConfig {
             ));
         }
 
-        if name.len() > 128 {
+        if name.len() > {{ max_header_name_length | default(value="128") }} {
             return Err(ClientError::Validation("Header name too long".to_string()));
         }
 
@@ -323,7 +325,7 @@ impl AuthConfig {
             ));
         }
 
-        if value.len() > 4096 {
+        if value.len() > {{ max_header_value_length | default(value="4096") }} {
             return Err(ClientError::Validation("Header value too long".to_string()));
         }
 
@@ -344,7 +346,7 @@ impl Default for AuthConfig {
 }
 
 /// Authentication methods
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AuthMethod {
     /// API key in custom header
     ApiKey {

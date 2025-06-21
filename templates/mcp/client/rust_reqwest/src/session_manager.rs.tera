@@ -1,7 +1,10 @@
 //! MCP Session Manager - Multi-session architecture with clean single-session API for {{ project_name | default(value="MCP Client") }}
 //!
-//! Provides session lifecycle management for MCP clients with future support for
+//! {{ description | default(value="Provides session lifecycle management for MCP clients with future support for") }}
 //! multiple named sessions (different LLMs, environments, etc.)
+//!
+//! Version: {{ version | default(value="0.1.0") }}
+//! Max sessions: {{ max_concurrent_sessions | default(value="10") }}
 
 use crate::client::McpClient;
 use crate::error::{ClientError, Result};
@@ -9,6 +12,9 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// Type alias for session storage to reduce complexity
+type SessionMap = Arc<Mutex<HashMap<String, Arc<Mutex<McpClient>>>>>;
 
 /// MCP Session Manager - handles session lifecycle with singleton pattern
 ///
@@ -18,7 +24,11 @@ pub struct McpSessionManager;
 
 impl McpSessionManager {
     /// Default session name for single-session API
-    const DEFAULT_SESSION: &'static str = "default";
+    const DEFAULT_SESSION: &'static str = "{{ default_session_name | default(value="default") }}";
+    
+    /// Maximum number of concurrent sessions
+    #[allow(dead_code)]
+    const MAX_SESSIONS: usize = {{ max_concurrent_sessions | default(value="10") }};
 
     /// Internal multi-session storage (future-ready architecture)
     ///
@@ -27,8 +37,8 @@ impl McpSessionManager {
     /// - "openai-gpt4" -> future multi-session support
     /// - "anthropic-claude" -> future multi-session support
     /// - etc.
-    fn sessions() -> &'static Lazy<Arc<Mutex<HashMap<String, Arc<Mutex<McpClient>>>>>> {
-        static SESSIONS: Lazy<Arc<Mutex<HashMap<String, Arc<Mutex<McpClient>>>>>> =
+    fn sessions() -> &'static Lazy<SessionMap> {
+        static SESSIONS: Lazy<SessionMap> =
             Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
         &SESSIONS
     }
@@ -50,7 +60,7 @@ impl McpSessionManager {
     /// Returns an error if no session is connected.
     pub async fn list_tools() -> Result<Vec<String>> {
         let client = Self::get_session_client(Self::DEFAULT_SESSION).await?;
-        let client_guard = client.lock().await;
+        let mut client_guard = client.lock().await;
         client_guard.list_tools().await
     }
 
@@ -64,7 +74,9 @@ impl McpSessionManager {
     pub async fn call_tool(name: &str, args: serde_json::Value) -> Result<serde_json::Value> {
         let client = Self::get_session_client(Self::DEFAULT_SESSION).await?;
         let mut client_guard = client.lock().await;
-        client_guard.call_tool(name, args).await
+        let result = client_guard.call_tool(name, args).await?;
+        // Convert CallToolResult to JSON
+        serde_json::to_value(result).map_err(|e| crate::error::ClientError::Protocol(format!("Failed to serialize tool result: {}", e)))
     }
 
     /// List available resources from the connected MCP server
@@ -72,8 +84,10 @@ impl McpSessionManager {
     /// Returns an error if no session is connected.
     pub async fn list_resources() -> Result<Vec<String>> {
         let client = Self::get_session_client(Self::DEFAULT_SESSION).await?;
-        let client_guard = client.lock().await;
-        client_guard.list_resources().await
+        let mut client_guard = client.lock().await;
+        let resources = client_guard.list_resources().await?;
+        // Convert Vec<ResourceInfo> to Vec<String>
+        Ok(resources.into_iter().map(|r| r.uri).collect())
     }
 
     /// Get a resource from the connected MCP server
@@ -85,7 +99,9 @@ impl McpSessionManager {
     pub async fn get_resource(uri: &str) -> Result<String> {
         let client = Self::get_session_client(Self::DEFAULT_SESSION).await?;
         let mut client_guard = client.lock().await;
-        client_guard.get_resource(uri).await
+        let resource = client_guard.get_resource(uri).await?;
+        // Convert ResourceContent to String
+        Ok(String::from_utf8_lossy(&resource.data).to_string())
     }
 
     /// List available prompts from the connected MCP server
@@ -107,7 +123,9 @@ impl McpSessionManager {
     pub async fn get_prompt(name: &str, args: Option<serde_json::Value>) -> Result<String> {
         let client = Self::get_session_client(Self::DEFAULT_SESSION).await?;
         let mut client_guard = client.lock().await;
-        client_guard.get_prompt(name, args).await
+        let result = client_guard.get_prompt(name, args).await?;
+        // Convert JSON result to String
+        Ok(result.to_string())
     }
 
     /// Disconnect the current session
@@ -142,11 +160,11 @@ impl McpSessionManager {
         tracing::info!("Connecting MCP session '{}' to server: {}", session_name, server_command);
 
         // Create new client
-        let mut client = McpClient::new(timeout).await?;
+        let mut client = McpClient::new_with_timeout(timeout).await?;
 
         // Start the server process and connect via stdio
-        let command = tokio::process::Command::new(&server_command)
-            .args(&args);
+        let mut command = tokio::process::Command::new(&server_command);
+        command.args(&args);
         client.connect_stdio(command).await?;
 
         // Wrap in Arc<Mutex> and store in session map
