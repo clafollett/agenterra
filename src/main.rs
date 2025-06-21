@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use clap::Parser;
 use reqwest::Url;
-use tracing::{Level, error, info, warn};
+use tracing::{Level, error, info};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -36,11 +36,6 @@ pub enum Commands {
         #[command(subcommand)]
         target: TargetCommands,
     },
-    /// Serve as various runtime components
-    Serve {
-        #[command(subcommand)]
-        target: ServeCommands,
-    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -52,47 +47,6 @@ pub enum TargetCommands {
     },
 }
 
-#[derive(clap::Subcommand, Debug)]
-pub enum ServeCommands {
-    /// Run as MCP client
-    Client {
-        #[command(subcommand)]
-        role: McpClientCommands,
-    },
-}
-
-#[derive(clap::Subcommand, Debug)]
-pub enum McpClientCommands {
-    /// Model Context Protocol client operations
-    Mcp {
-        #[command(subcommand)]
-        action: McpClientActions,
-    },
-}
-
-#[derive(clap::Subcommand, Debug)]
-pub enum McpClientActions {
-    /// Connect to an MCP server process
-    Connect {
-        /// Command to run MCP server
-        #[arg(long)]
-        command: String,
-        /// Additional arguments for the server command
-        #[arg(long)]
-        args: Vec<String>,
-    },
-    /// List available tools from connected server
-    #[command(name = "list-tools")]
-    ListTools,
-    /// Call a tool with JSON arguments
-    Call {
-        /// Name of the tool to call
-        tool_name: String,
-        /// JSON arguments for the tool
-        #[arg(long)]
-        args: Option<String>,
-    },
-}
 
 #[derive(clap::Subcommand, Debug)]
 pub enum McpCommands {
@@ -182,99 +136,10 @@ async fn main() -> anyhow::Result<()> {
                 } => generate_mcp_client(project_name, template, template_dir, output_dir).await?,
             },
         },
-        Commands::Serve { target } => match target {
-            ServeCommands::Client { role } => match role {
-                McpClientCommands::Mcp { action } => match action {
-                    McpClientActions::Connect { command, args } => {
-                        run_mcp_client_connect(command, args).await?
-                    }
-                    McpClientActions::ListTools => run_mcp_client_list_tools().await?,
-                    McpClientActions::Call { tool_name, args } => {
-                        run_mcp_client_call(tool_name, args.as_deref()).await?
-                    }
-                },
-            },
-        },
     }
     Ok(())
 }
 
-/// Runtime handler for MCP client connect command using session manager
-async fn run_mcp_client_connect(command: &str, args: &[String]) -> anyhow::Result<()> {
-    use crate::mcp::client::{ConnectionConfig, McpSessionManager};
-    use std::time::Duration;
-
-    info!("Connecting to MCP server: {} {:?}", command, args);
-
-    // Build connection configuration
-    let config = ConnectionConfig::builder()
-        .command(command)
-        .args(args.to_vec())
-        .timeout(Duration::from_secs(30))
-        .build()
-        .context("Failed to build connection configuration")?;
-
-    // Connect using session manager
-    McpSessionManager::connect(config)
-        .await
-        .context("Failed to connect to MCP server")?;
-
-    info!("✅ Successfully connected to MCP server: {}", command);
-    Ok(())
-}
-
-/// Runtime handler for MCP client list tools command using session manager
-async fn run_mcp_client_list_tools() -> anyhow::Result<()> {
-    use crate::mcp::client::McpSessionManager;
-
-    info!("Listing tools from MCP server");
-
-    let tools = McpSessionManager::list_tools()
-        .await
-        .context("Failed to list tools from MCP server")?;
-
-    if tools.is_empty() {
-        println!("No tools available from the MCP server.");
-    } else {
-        println!("Available tools:");
-        for tool in &tools {
-            println!("  • {}", tool);
-        }
-        println!("\n✅ Found {} tool(s)", tools.len());
-    }
-
-    Ok(())
-}
-
-/// Runtime handler for MCP client call tool command using session manager
-async fn run_mcp_client_call(tool_name: &str, args: Option<&str>) -> anyhow::Result<()> {
-    use crate::mcp::client::McpSessionManager;
-
-    // Parse arguments JSON or use empty object
-    let parsed_args = match args {
-        Some(json_str) => {
-            serde_json::from_str(json_str).context("Failed to parse JSON arguments")?
-        }
-        None => serde_json::Value::Object(serde_json::Map::new()),
-    };
-
-    info!("Calling tool '{}' with args: {}", tool_name, parsed_args);
-    println!("Calling tool: {}", tool_name);
-    if args.is_some() {
-        println!("Arguments: {}", serde_json::to_string_pretty(&parsed_args)?);
-    }
-
-    // Call the tool using session manager
-    let result = McpSessionManager::call_tool(tool_name, parsed_args)
-        .await
-        .context("Failed to call tool")?;
-
-    // Pretty print the result
-    println!("\n✅ Tool result:");
-    println!("{}", serde_json::to_string_pretty(&result)?);
-
-    Ok(())
-}
 
 /// Parameters for MCP server generation
 struct ServerGenParams<'a> {

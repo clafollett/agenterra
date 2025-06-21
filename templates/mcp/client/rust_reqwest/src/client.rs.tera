@@ -382,6 +382,9 @@ impl McpClient {
         // Discover available tools, resources, and prompts
         self.discover_capabilities().await?;
         
+        // Set connection state
+        self.state = ConnectionState::Connected;
+        
         Ok(())
     }
 

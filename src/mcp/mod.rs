@@ -4,5 +4,3 @@
 //! servers and clients from OpenAPI specifications.
 
 pub mod builders;
-#[cfg(feature = "mcp_client")]
-pub mod client;
