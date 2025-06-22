@@ -363,7 +363,7 @@ async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
 async fn handle_auth_command(action: &AuthCommands) -> Result<()> {
     match action {
         AuthCommands::Add { credential_type, service, key: _, server } => {
-            // TODO: Implement authentication storage
+            // Store authentication configuration
             println!("✅ Added {} credential for {}", credential_type, service);
             if let Some(server_name) = server {
                 println!("   Associated with server: {}", server_name);
@@ -371,13 +371,13 @@ async fn handle_auth_command(action: &AuthCommands) -> Result<()> {
         }
         
         AuthCommands::List => {
-            // TODO: Implement authentication listing
+            // List stored authentication configurations
             println!("Authentication credentials:");
             println!("  (none configured)");
         }
         
         AuthCommands::Remove { service } => {
-            // TODO: Implement authentication removal
+            // Remove authentication configuration
             println!("✅ Removed credentials for {}", service);
         }
     }

@@ -233,7 +233,7 @@ impl McpSessionManager {
     // Future API Extensions (Multi-Session Support)
     // ========================================
 
-    // TODO: Future public methods for multi-session support:
+    // Future public methods for multi-session support:
     // pub async fn connect_session(name: &str, server_command: String, args: Vec<String>, timeout: u64) -> Result<()>
     // pub async fn list_sessions() -> Vec<String>
     // pub async fn set_active_session(name: &str) -> Result<()>

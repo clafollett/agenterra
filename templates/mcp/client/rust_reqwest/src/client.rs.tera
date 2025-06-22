@@ -166,7 +166,12 @@ impl ConnectionConfigBuilder {
             ));
         }
 
-        let timeout = self.timeout.unwrap_or(Duration::from_secs(30));
+        // Require explicit timeout or document the default clearly
+        let timeout = self.timeout.ok_or_else(|| {
+            ClientError::Validation(
+                "Connection timeout is required. Use Duration::from_secs(30) for 30 seconds or Duration::MAX for no timeout".to_string()
+            )
+        })?;
 
         if timeout.is_zero() {
             return Err(ClientError::Validation(
@@ -287,12 +292,15 @@ impl McpClient {
     /// Enable resource caching with the given configuration
     pub async fn with_cache(mut self, cache_config: CacheConfig) -> Result<Self> {
         // Initialize database if not already initialized
-        if self.database.is_none() {
-            let db_manager = DatabaseManager::new().await?;
-            self.database = Some(Arc::new(db_manager));
-        }
-        
-        let db = self.database.as_ref().unwrap().clone();
+        let db = match &self.database {
+            Some(db) => db.clone(),
+            None => {
+                let db_manager = DatabaseManager::new().await?;
+                let db = Arc::new(db_manager);
+                self.database = Some(db.clone());
+                db
+            }
+        };
         let cache = ResourceCache::new(cache_config, db).await?;
         self.resource_cache = Some(cache);
         Ok(self)
@@ -350,7 +358,7 @@ impl McpClient {
             }
         }
 
-        // GREEN phase: Handle mock tools for testing (from stateful client)
+        // Handle mock tools for testing environments
         if config.command() == "echo" && config.args().contains(&"mock".to_string()) {
             // Mock successful connection for testing
             let mock_capabilities = ServerCapabilities::new(
@@ -516,7 +524,7 @@ impl McpClient {
             ));
         }
 
-        // GREEN phase: Handle mock tools for testing
+        // Handle mock tools for testing environments
         if let Some(capabilities) = &self.capabilities {
             if capabilities.has_tool("mock_tool") && name == "mock_tool" {
                 // Return mock response for testing

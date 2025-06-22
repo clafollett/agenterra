@@ -180,7 +180,8 @@ impl ResourceCache {
     pub async fn store_resource(&mut self, resource: &ResourceContent) -> Result<()> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
-        let expires_at = now + chrono::Duration::from_std(self.config.default_ttl).unwrap();
+        let expires_at = now + chrono::Duration::from_std(self.config.default_ttl)
+            .map_err(|e| ClientError::Client(format!("Invalid TTL duration: {}", e)))?;
 
         // Serialize metadata
         let metadata_json = serde_json::to_string(&resource.info.metadata)
@@ -261,7 +262,6 @@ impl ResourceCache {
     /// ```
     pub async fn get_resource(&mut self, uri: &str) -> Result<Option<ResourceContent>> {
         let start_time = std::time::Instant::now();
-        self.analytics.total_requests += 1;
 
         #[derive(Debug)]
         struct CacheRow {
@@ -302,12 +302,17 @@ impl ResourceCache {
 
         match result {
             Some(row) => {
-                let expires_dt =
-                    DateTime::from_timestamp_millis(row.expires_at).unwrap_or_else(Utc::now);
+                // Parse expiration timestamp - treat invalid timestamps as corruption
+                let expires_dt = DateTime::from_timestamp_millis(row.expires_at)
+                    .ok_or_else(|| ClientError::Client(format!(
+                        "Invalid expiration timestamp {} for resource '{}'", 
+                        row.expires_at, uri
+                    )))?;
 
                 // Check if expired
                 if expires_dt < Utc::now() {
                     self.analytics.cache_misses += 1;
+                    self.analytics.total_requests += 1;
                     debug!("Cache miss (expired): {}", uri);
 
                     // Remove expired entry
@@ -364,6 +369,7 @@ impl ResourceCache {
                 };
 
                 self.analytics.cache_hits += 1;
+                self.analytics.total_requests += 1;
                 let elapsed = start_time.elapsed().as_millis() as f64;
                 self.update_avg_response_time(elapsed);
 
@@ -372,6 +378,7 @@ impl ResourceCache {
             }
             None => {
                 self.analytics.cache_misses += 1;
+                self.analytics.total_requests += 1;
                 debug!("Cache miss: {}", uri);
                 Ok(None)
             }
@@ -565,12 +572,18 @@ impl ResourceCache {
 
     /// Update average response time
     fn update_avg_response_time(&mut self, new_time_ms: f64) {
+        // Note: This is called AFTER incrementing total_requests, so we use the new count
         let total = self.analytics.total_requests as f64;
-        let current_avg = self.analytics.avg_response_time_ms;
-
-        // Calculate new average
-        self.analytics.avg_response_time_ms =
-            ((current_avg * (total - 1.0)) + new_time_ms) / total;
+        
+        if total <= 1.0 {
+            // First request
+            self.analytics.avg_response_time_ms = new_time_ms;
+        } else {
+            // Calculate new average using existing average
+            let current_avg = self.analytics.avg_response_time_ms;
+            self.analytics.avg_response_time_ms =
+                ((current_avg * (total - 1.0)) + new_time_ms) / total;
+        }
     }
 
     /// Clean up cache if size exceeds limit

@@ -209,9 +209,14 @@ impl DatabaseManager {
             
             // Apply migrations up to the latest version
             // This is idempotent - if already at latest version, does nothing
-            // Apply migrations - convert error type manually
-            migrations.to_latest(conn)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            // Apply migrations - proper error handling
+            if let Err(e) = migrations.to_latest(conn) {
+                // Return a descriptive error that will be converted by with_connection
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                    Some(format!("Migration failed: {}", e))
+                ));
+            }
             
             let new_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))
                 .unwrap_or(0);

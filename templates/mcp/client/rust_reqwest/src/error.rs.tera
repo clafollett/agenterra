@@ -46,6 +46,10 @@ pub enum ClientError {
     /// Thread pool spawn errors (tokio task spawn failures)
     #[error("Spawn error: {0}")]
     Spawn(String),
+    
+    /// Database migration errors
+    #[error("Migration error: {0}")]
+    Migration(String),
 
     /// {{ project_name }}-specific runtime errors
     #[error("Runtime error: {0}")]

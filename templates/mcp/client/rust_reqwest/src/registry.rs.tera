@@ -74,7 +74,8 @@ impl ToolRegistry {
             )));
         }
 
-        let tool_info = self.get_tool(tool_name).unwrap(); // Safe because we checked above
+        let tool_info = self.get_tool(tool_name)
+            .expect("Tool should exist after has_tool check");
 
         // If no schema is defined, accept any parameters
         let Some(schema) = &tool_info.input_schema else {
@@ -112,7 +113,8 @@ impl ToolRegistry {
         }
 
         // If parameters are null or empty, check for required fields
-        if params.is_null() || (params.is_object() && params.as_object().unwrap().is_empty()) {
+        let is_empty_object = params.as_object().map_or(false, |obj| obj.is_empty());
+        if params.is_null() || is_empty_object {
             if let Some(required) = schema.get("required") {
                 if let Some(required_array) = required.as_array() {
                     if !required_array.is_empty() {
@@ -164,19 +166,18 @@ impl ToolRegistry {
         if let Some(properties) = schema.get("properties") {
             if let Some(properties_obj) = properties.as_object() {
                 for (param_name, param_value) in params_obj {
-                    // Check if parameter is known
-                    if !properties_obj.contains_key(param_name) {
-                        return Err(ClientError::Validation(format!(
+                    // Get parameter schema
+                    let param_schema = properties_obj.get(param_name)
+                        .ok_or_else(|| ClientError::Validation(format!(
                             "unknown parameter '{}'",
                             param_name
-                        )));
-                    }
+                        )))?;
 
                     // Validate parameter type
                     self.validate_single_parameter_type(
                         param_name,
                         param_value,
-                        properties_obj.get(param_name).unwrap(),
+                        param_schema,
                     )?;
                 }
             }
