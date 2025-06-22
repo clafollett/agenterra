@@ -51,37 +51,6 @@ pub struct TemplateDir {
 }
 
 impl TemplateDir {
-    /// Create a new TemplateDir with explicit paths
-    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
-    pub fn new(
-        _root_dir: PathBuf,
-        template_path: PathBuf,
-        protocol: Protocol,
-        kind: ServerTemplateKind,
-    ) -> Self {
-        Self {
-            template_path,
-            kind,
-            protocol,
-        }
-    }
-
-    /// Create a new TemplateDir for client templates with explicit paths
-    /// Arguments ordered to match CLI: protocol, kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
-    pub fn new_client(
-        _root_dir: PathBuf,
-        template_path: PathBuf,
-        protocol: Protocol,
-        _kind: ClientTemplateKind,
-    ) -> Self {
-        // For client templates, we store a default server kind
-        Self {
-            template_path,
-            kind: ServerTemplateKind::Custom, // Default, not used for client templates
-            protocol,
-        }
-    }
-
     /// Discover the template directory with explicit protocol support
     /// Arguments ordered to match CLI: protocol, kind (matching: scaffold `<role>` `<protocol>` `<kind>`)
     pub fn discover_with_protocol(
@@ -94,42 +63,8 @@ impl TemplateDir {
             protocol, kind, custom_dir
         );
 
-        let (root_dir, template_path) = if let Some(dir) = custom_dir {
-            // Use the provided directory directly - take user at their word
-            debug!(
-                "Using custom template directory directly: {}",
-                dir.display()
-            );
-            if !dir.exists() {
-                error!("Custom template directory not found: {}", dir.display());
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("Template directory not found: {}", dir.display()),
-                ));
-            }
-            // For custom paths, root_dir is the same as template_path
-            (dir.to_path_buf(), dir.to_path_buf())
-        } else {
-            // Auto-discover the template directory and use protocol-aware structure
-            debug!("Auto-discovering template directory...");
-            let discovered = Self::find_template_base_dir().ok_or_else(|| {
-                error!("Could not find template directory in any standard location");
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "Could not find template directory in any standard location",
-                )
-            })?;
-            debug!("Auto-discovered template base: {}", discovered.display());
-
-            // Only append protocol structure for auto-discovered paths
-            let template_path = discovered
-                .join("templates")
-                .join(protocol.path_segment())
-                .join(kind.role().as_str())
-                .join(kind.as_str());
-
-            (discovered, template_path)
-        };
+        let template_path =
+            Self::resolve_template_path(protocol, kind.role().as_str(), kind.as_str(), custom_dir)?;
 
         debug!("Resolved template path: {}", template_path.display());
         debug!("Template path exists: {}", template_path.exists());
@@ -150,7 +85,11 @@ impl TemplateDir {
             "Successfully created TemplateDir for: {}",
             template_path.display()
         );
-        Ok(Self::new(root_dir, template_path, protocol, kind))
+        Ok(Self {
+            template_path,
+            kind,
+            protocol,
+        })
     }
 
     /// Discover client template directory with explicit protocol support
@@ -165,45 +104,8 @@ impl TemplateDir {
             protocol, kind, custom_dir
         );
 
-        let (root_dir, template_path) = if let Some(dir) = custom_dir {
-            // Use the provided directory directly - take user at their word
-            debug!(
-                "Using custom client template directory directly: {}",
-                dir.display()
-            );
-            if !dir.exists() {
-                error!(
-                    "Custom client template directory not found: {}",
-                    dir.display()
-                );
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("Client template directory not found: {}", dir.display()),
-                ));
-            }
-            // For custom paths, root_dir is the same as template_path
-            (dir.to_path_buf(), dir.to_path_buf())
-        } else {
-            // Auto-discover the template directory and use protocol-aware structure
-            debug!("Auto-discovering client template directory...");
-            let discovered = Self::find_template_base_dir().ok_or_else(|| {
-                error!("Could not find template directory in any standard location");
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "Could not find template directory in any standard location",
-                )
-            })?;
-            debug!("Auto-discovered template base: {}", discovered.display());
-
-            // Only append protocol structure for auto-discovered paths
-            let template_path = discovered
-                .join("templates")
-                .join(protocol.path_segment())
-                .join(kind.role().as_str())
-                .join(kind.as_str());
-
-            (discovered, template_path)
-        };
+        let template_path =
+            Self::resolve_template_path(protocol, kind.role().as_str(), kind.as_str(), custom_dir)?;
 
         debug!("Resolved client template path: {}", template_path.display());
         debug!("Client template path exists: {}", template_path.exists());
@@ -227,16 +129,80 @@ impl TemplateDir {
             "Successfully created TemplateDir for client: {}",
             template_path.display()
         );
-        Ok(Self::new_client(root_dir, template_path, protocol, kind))
+        Ok(Self {
+            template_path,
+            // For client templates, we store a default server kind
+            kind: ServerTemplateKind::Custom, // Default, not used for client templates
+            protocol,
+        })
+    }
+
+    /// Get the template kind
+    pub fn kind(&self) -> ServerTemplateKind {
+        self.kind
+    }
+
+    /// Get the protocol
+    pub fn protocol(&self) -> Protocol {
+        self.protocol
+    }
+
+    /// Get the path to the specific template directory
+    pub fn template_path(&self) -> &Path {
+        &self.template_path
+    }
+
+    /// Resolve template path by using custom directory or auto-discovering
+    fn resolve_template_path(
+        protocol: Protocol,
+        role: &str,
+        kind: &str,
+        custom_dir: Option<&Path>,
+    ) -> io::Result<PathBuf> {
+        if let Some(dir) = custom_dir {
+            // Use the provided directory directly - take user at their word
+            debug!(
+                "Using custom template directory directly: {}",
+                dir.display()
+            );
+            if !dir.exists() {
+                error!("Custom template directory not found: {}", dir.display());
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("Template directory not found: {}", dir.display()),
+                ));
+            }
+            Ok(dir.to_path_buf())
+        } else {
+            // Auto-discover the template directory and use protocol-aware structure
+            debug!("Auto-discovering template directory...");
+            let discovered = Self::find_template_base_dir().ok_or_else(|| {
+                error!("Could not find template directory in any standard location");
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "Could not find template directory in any standard location",
+                )
+            })?;
+            debug!("Auto-discovered template base: {}", discovered.display());
+
+            // Only append protocol structure for auto-discovered paths
+            let template_path = discovered
+                .join("templates")
+                .join(protocol.path_segment())
+                .join(role)
+                .join(kind);
+
+            Ok(template_path)
+        }
     }
 
     /// Find the base template directory by checking standard locations
-    pub fn find_template_base_dir() -> Option<PathBuf> {
+    fn find_template_base_dir() -> Option<PathBuf> {
         Self::find_template_base_dir_with_config(&EnvTemplateConfigReader)
     }
 
     /// Find the base template directory with a custom config reader (for testing)
-    pub fn find_template_base_dir_with_config(
+    fn find_template_base_dir_with_config(
         config_reader: &dyn TemplateConfigReader,
     ) -> Option<PathBuf> {
         // 1. Check environment variable via config reader
@@ -254,64 +220,51 @@ impl TemplateDir {
             }
         }
 
-        // 2. Check executable directory and parent directories
+        // 2. Check standard locations in order of preference
+        let search_locations = Self::get_template_search_locations();
+
+        search_locations
+            .into_iter()
+            .find(|location| location.join("templates").exists())
+    }
+
+    /// Get list of locations to search for templates
+    fn get_template_search_locations() -> Vec<PathBuf> {
+        let mut locations = Vec::new();
+
+        // Check executable directory and parent directories
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
-                // Canonicalize to get absolute path
                 if let Ok(exe_dir_abs) = exe_dir.canonicalize() {
-                    // Check if templates are next to the executable
-                    let templates_dir = exe_dir_abs.join("templates");
-                    if templates_dir.exists() {
-                        return Some(exe_dir_abs);
-                    }
-
-                    // Check parent directory (for development)
+                    locations.push(exe_dir_abs.clone());
                     if let Some(parent_dir) = exe_dir_abs.parent() {
-                        let templates_dir = parent_dir.join("templates");
-                        if templates_dir.exists() {
-                            return Some(parent_dir.to_path_buf());
-                        }
+                        locations.push(parent_dir.to_path_buf());
                     }
                 }
             }
         }
 
-        // 3. Check current directory (as fallback for development)
+        // Check current directory (as fallback for development)
         if let Ok(current_dir) = std::env::current_dir() {
-            let templates_dir = current_dir.join("templates");
-            if templates_dir.exists() {
-                return Some(current_dir);
-            }
+            locations.push(current_dir);
         }
 
-        // 4. Check in the crate root (for development)
+        // Check in the crate root (for development)
         if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
             let manifest_path = PathBuf::from(manifest_dir);
+            locations.push(manifest_path.clone());
 
-            // First check the manifest directory itself (for workspace root)
-            let templates_dir = manifest_path.join("templates");
-            if templates_dir.exists() {
-                return Some(manifest_path);
-            }
-
-            // Then check parent (for sub-crates in workspace)
             if let Some(workspace_root) = manifest_path.parent() {
-                let templates_dir = workspace_root.join("templates");
-                if templates_dir.exists() {
-                    return Some(workspace_root.to_path_buf());
-                }
+                locations.push(workspace_root.to_path_buf());
             }
         }
 
-        // 5. Check in the user's home directory
-        if let Some(home_dir) = dirs::home_dir() {
-            let templates_dir = home_dir.join(".agenterra").join("templates");
-            if templates_dir.exists() {
-                return Some(home_dir.join(".agenterra"));
-            }
+        // Check in the user's home directory config location
+        if let Some(config_dir) = dirs::config_dir() {
+            locations.push(config_dir.join("agenterra"));
         }
 
-        None
+        locations
     }
 
     /// Validate that a template directory path is safe
@@ -331,79 +284,9 @@ impl TemplateDir {
         // Check for system-critical directories (Unix-only)
         Self::validate_unix_system_paths(&canonical_path)?;
 
-        // After security checks pass, allow paths under user's home directory
-        if let Some(home_dir) = dirs::home_dir() {
-            if let Ok(home_canonical) = home_dir.canonicalize() {
-                if canonical_path.starts_with(&home_canonical) {
-                    debug!(
-                        "Template path allowed under home directory: {}",
-                        canonical_path.display()
-                    );
-                    return Ok(());
-                }
-            }
-        }
-
-        // Allow paths under current working directory and its parents (for development)
-        if let Ok(current_dir) = std::env::current_dir() {
-            if let Ok(current_canonical) = current_dir.canonicalize() {
-                // Allow under current directory
-                if canonical_path.starts_with(&current_canonical) {
-                    debug!(
-                        "Template path allowed under current directory: {}",
-                        canonical_path.display()
-                    );
-                    return Ok(());
-                }
-
-                // Allow under immediate parent directories (for workspace setups)
-                // But limit to reasonable depth to avoid allowing root directory
-                let mut parent = current_canonical.as_path();
-                let mut depth = 0;
-                const MAX_PARENT_DEPTH: usize = 3; // Only go up 3 levels max
-
-                while let Some(p) = parent.parent() {
-                    if depth >= MAX_PARENT_DEPTH {
-                        break;
-                    }
-                    if canonical_path.starts_with(p) {
-                        debug!(
-                            "Template path allowed under workspace parent (depth {}): {}",
-                            depth,
-                            canonical_path.display()
-                        );
-                        return Ok(());
-                    }
-                    parent = p;
-                    depth += 1;
-                }
-            }
-        }
-
-        // Allow paths under CARGO_MANIFEST_DIR and its parents (for development/testing)
-        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-            let manifest_path = PathBuf::from(manifest_dir);
-            if let Ok(manifest_canonical) = manifest_path.canonicalize() {
-                // Allow under manifest dir
-                if canonical_path.starts_with(&manifest_canonical) {
-                    debug!(
-                        "Template path allowed under cargo manifest dir: {}",
-                        canonical_path.display()
-                    );
-                    return Ok(());
-                }
-
-                // Allow under manifest parent (workspace root)
-                if let Some(parent) = manifest_canonical.parent() {
-                    if canonical_path.starts_with(parent) {
-                        debug!(
-                            "Template path allowed under cargo workspace: {}",
-                            canonical_path.display()
-                        );
-                        return Ok(());
-                    }
-                }
-            }
+        // Check if path is under any allowed location
+        if Self::is_path_allowed(&canonical_path) {
+            return Ok(());
         }
 
         // If we get here, the path is not under any known safe location and not in a critical system directory
@@ -413,6 +296,91 @@ impl TemplateDir {
             canonical_path.display()
         );
         Ok(())
+    }
+
+    /// Check if a path is under any of the allowed locations
+    fn is_path_allowed(canonical_path: &Path) -> bool {
+        // After security checks pass, allow paths under user's home directory
+        if let Some(home_dir) = dirs::home_dir() {
+            if let Ok(home_canonical) = home_dir.canonicalize() {
+                if canonical_path.starts_with(&home_canonical) {
+                    debug!(
+                        "Template path allowed under home directory: {}",
+                        canonical_path.display()
+                    );
+                    return true;
+                }
+            }
+        }
+
+        // Allow paths under current working directory and its parents (for development)
+        if let Ok(current_dir) = std::env::current_dir() {
+            if let Ok(current_canonical) = current_dir.canonicalize() {
+                if Self::is_under_workspace(canonical_path, &current_canonical) {
+                    return true;
+                }
+            }
+        }
+
+        // Allow paths under CARGO_MANIFEST_DIR and its parents (for development/testing)
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let manifest_path = PathBuf::from(manifest_dir);
+            if let Ok(manifest_canonical) = manifest_path.canonicalize() {
+                if canonical_path.starts_with(&manifest_canonical) {
+                    debug!(
+                        "Template path allowed under cargo manifest dir: {}",
+                        canonical_path.display()
+                    );
+                    return true;
+                }
+
+                if let Some(parent) = manifest_canonical.parent() {
+                    if canonical_path.starts_with(parent) {
+                        debug!(
+                            "Template path allowed under cargo workspace: {}",
+                            canonical_path.display()
+                        );
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Check if a path is under the workspace directory or its parents
+    fn is_under_workspace(path: &Path, workspace_dir: &Path) -> bool {
+        const MAX_PARENT_DEPTH: usize = 3;
+
+        // Check if under workspace directory
+        if path.starts_with(workspace_dir) {
+            debug!(
+                "Template path allowed under current directory: {}",
+                path.display()
+            );
+            return true;
+        }
+
+        // Check under immediate parent directories (for workspace setups)
+        let mut parent = workspace_dir;
+        for depth in 0..MAX_PARENT_DEPTH {
+            if let Some(p) = parent.parent() {
+                if path.starts_with(p) {
+                    debug!(
+                        "Template path allowed under workspace parent (depth {}): {}",
+                        depth + 1,
+                        path.display()
+                    );
+                    return true;
+                }
+                parent = p;
+            } else {
+                break;
+            }
+        }
+
+        false
     }
 
     /// Validate template path safely, handling cases where the path might not exist
@@ -431,20 +399,24 @@ impl TemplateDir {
         // Check for obviously malicious patterns
         #[cfg(unix)]
         {
-            // Check for absolute paths to system directories
-            if path_str.starts_with("/etc/")
-                || path_str.starts_with("/usr/bin/")
-                || path_str.starts_with("/usr/sbin/")
-                || path_str.starts_with("/root/")
-                || path_str.starts_with("/boot/")
-                || path_str.starts_with("/sys/")
-                || path_str.starts_with("/proc/")
-            {
-                error!("Potentially unsafe template path rejected: {}", path_str);
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("Template path not allowed: {}", path_str),
-                ));
+            const SYSTEM_DIRS: &[&str] = &[
+                "/etc/",
+                "/usr/bin/",
+                "/usr/sbin/",
+                "/root/",
+                "/boot/",
+                "/sys/",
+                "/proc/",
+            ];
+
+            for sys_dir in SYSTEM_DIRS {
+                if path_str.starts_with(sys_dir) {
+                    error!("Potentially unsafe template path rejected: {}", path_str);
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!("Template path not allowed: {}", path_str),
+                    ));
+                }
             }
         }
 
@@ -543,128 +515,49 @@ impl TemplateDir {
             ),
         )
     }
+}
 
-    /// Get the template kind
-    pub fn kind(&self) -> ServerTemplateKind {
-        self.kind
-    }
+/// Resolve output directory for generated projects
+///
+/// Resolution order:
+/// 1. custom_output_dir parameter (CLI --output-dir flag) - used as parent directory
+/// 2. AGENTERRA_OUTPUT_DIR environment variable - used as parent directory
+/// 3. Default: current_dir/project_name (like cargo new)
+pub fn resolve_output_dir(
+    project_name: &str,
+    custom_output_dir: Option<&Path>,
+) -> io::Result<PathBuf> {
+    let output_path = if let Some(custom_dir) = custom_output_dir {
+        // Use custom directory as parent, append project name
+        debug!("Using custom output directory: {}", custom_dir.display());
+        custom_dir.join(project_name)
+    } else if let Ok(env_dir) = std::env::var("AGENTERRA_OUTPUT_DIR") {
+        // Use environment variable as parent directory
+        let env_path = PathBuf::from(env_dir);
+        debug!("Using AGENTERRA_OUTPUT_DIR: {}", env_path.display());
+        env_path.join(project_name)
+    } else {
+        // Default behavior: current_directory/project_name (like cargo new)
+        let current_dir = std::env::current_dir()
+            .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?;
 
-    /// Get the protocol
-    pub fn protocol(&self) -> Protocol {
-        self.protocol
-    }
+        let output_dir = current_dir.join(project_name);
 
-    /// Get the path to the specific template directory
-    pub fn template_path(&self) -> &Path {
-        &self.template_path
-    }
+        debug!("Using default output directory: {}", output_dir.display());
+        output_dir
+    };
 
-    /// Find the workspace base directory for output resolution
-    /// Similar to find_template_base_dir but focused on workspace root for outputs
-    pub fn find_workspace_base_dir() -> Option<PathBuf> {
-        Self::find_workspace_base_dir_with_config(&EnvTemplateConfigReader)
-    }
+    // Convert to absolute path if needed
+    let absolute_path = if output_path.is_absolute() {
+        output_path
+    } else {
+        std::env::current_dir()
+            .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?
+            .join(output_path)
+    };
 
-    /// Find the workspace base directory with a custom config reader (for testing)
-    pub fn find_workspace_base_dir_with_config(
-        config_reader: &dyn TemplateConfigReader,
-    ) -> Option<PathBuf> {
-        // 1. Check environment variable for explicit workspace override
-        if let Some(dir) = config_reader.get_template_dir() {
-            let path = PathBuf::from(dir);
-            if path.exists() {
-                return Some(path);
-            }
-        }
-
-        // 2. Check CARGO_MANIFEST_DIR (for development/testing)
-        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-            let manifest_path = PathBuf::from(manifest_dir);
-
-            // First check the manifest directory itself (for workspace root)
-            if manifest_path.exists() {
-                return Some(manifest_path);
-            }
-
-            // Then check parent (for sub-crates in workspace)
-            if let Some(workspace_root) = manifest_path.parent() {
-                if workspace_root.exists() {
-                    return Some(workspace_root.to_path_buf());
-                }
-            }
-        }
-
-        // 3. Check executable directory and parent directories
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                if let Ok(exe_dir_abs) = exe_dir.canonicalize() {
-                    // Check parent directory first (typical installation structure)
-                    if let Some(parent_dir) = exe_dir_abs.parent() {
-                        return Some(parent_dir.to_path_buf());
-                    }
-                    // Fallback to executable directory
-                    return Some(exe_dir_abs);
-                }
-            }
-        }
-
-        // 4. Check current directory as fallback
-        if let Ok(current_dir) = std::env::current_dir() {
-            return Some(current_dir);
-        }
-
-        None
-    }
-
-    /// Resolve output directory with workspace-aware defaults
-    /// Returns an absolute path for the output directory
-    pub fn resolve_output_dir(
-        project_name: &str,
-        custom_output_dir: Option<&Path>,
-    ) -> io::Result<PathBuf> {
-        let output_path = if let Some(custom_dir) = custom_output_dir {
-            // Use custom directory directly
-            debug!("Using custom output directory: {}", custom_dir.display());
-            custom_dir.to_path_buf()
-        } else {
-            // Find workspace and create .agenterra/project_name structure
-            debug!(
-                "Resolving default output directory for project: {}",
-                project_name
-            );
-
-            if let Some(workspace_base) = Self::find_workspace_base_dir() {
-                let agenterra_dir = workspace_base.join(".agenterra");
-                let project_output_dir = agenterra_dir.join(project_name);
-
-                debug!(
-                    "Using workspace-relative output directory: {}",
-                    project_output_dir.display()
-                );
-                project_output_dir
-            } else {
-                // Fallback to current directory + project name
-                debug!("No workspace found, using current directory fallback");
-                if let Ok(current_dir) = std::env::current_dir() {
-                    current_dir.join(project_name)
-                } else {
-                    PathBuf::from(project_name)
-                }
-            }
-        };
-
-        // Convert to absolute path
-        let absolute_path = if output_path.is_absolute() {
-            output_path
-        } else {
-            std::env::current_dir()
-                .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?
-                .join(output_path)
-        };
-
-        debug!("Resolved output path: {}", absolute_path.display());
-        Ok(absolute_path)
-    }
+    debug!("Resolved output path: {}", absolute_path.display());
+    Ok(absolute_path)
 }
 
 #[cfg(test)]
@@ -673,10 +566,21 @@ mod tests {
     use std::fs;
     use tracing_test::traced_test;
 
-    /// Create a test workspace directory under ./target/test-workspaces
-    /// This is platform-agnostic and avoids system temp directory issues
-    fn create_test_workspace(test_name: &str) -> std::path::PathBuf {
-        let workspace_dir = std::path::PathBuf::from("./target/test-workspaces")
+    /// Create a test workspace directory under target/tmp/test-workspaces
+    /// This keeps all test artifacts in the gitignored target directory
+    pub fn create_test_workspace(test_name: &str) -> std::path::PathBuf {
+        // Find the workspace root by looking for Cargo.toml
+        let workspace_root = std::env::current_dir()
+            .expect("Failed to get current directory")
+            .ancestors()
+            .find(|p| p.join("Cargo.toml").exists())
+            .expect("Could not find workspace root")
+            .to_path_buf();
+
+        let workspace_dir = workspace_root
+            .join("target")
+            .join("tmp")
+            .join("test-workspaces")
             .join(test_name)
             .join(uuid::Uuid::new_v4().to_string());
 
@@ -1020,27 +924,24 @@ mod tests {
         let temp_dir = create_test_workspace("test_resolve_output_dir_with_custom_path");
         let custom_output = temp_dir.join("custom_output");
 
-        let result = TemplateDir::resolve_output_dir("test_project", Some(&custom_output));
+        let result = resolve_output_dir("test_project", Some(&custom_output));
         assert!(result.is_ok());
 
         let resolved_path = result.unwrap();
         assert!(resolved_path.is_absolute());
-        assert!(resolved_path.ends_with("custom_output"));
+        // Should append project name to custom directory
+        assert!(resolved_path.ends_with("custom_output/test_project"));
     }
 
     #[test]
-    fn test_resolve_output_dir_with_workspace_default() {
-        let temp_dir = create_test_workspace("test_resolve_output_dir_with_workspace_default");
-
-        // Create a .agenterra directory to simulate workspace structure
-        let agenterra_dir = temp_dir.join(".agenterra");
-        fs::create_dir_all(&agenterra_dir).unwrap();
+    fn test_resolve_output_dir_with_default() {
+        let temp_dir = create_test_workspace("test_resolve_output_dir_with_default");
 
         // Test by temporarily changing to the temp directory
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp_dir).unwrap();
 
-        let result = TemplateDir::resolve_output_dir("test_project", None);
+        let result = resolve_output_dir("test_project", None);
 
         // Restore original directory
         std::env::set_current_dir(original_dir).unwrap();
@@ -1048,23 +949,8 @@ mod tests {
         assert!(result.is_ok());
         let resolved_path = result.unwrap();
         assert!(resolved_path.is_absolute());
-        // Since we're in the temp_dir, it should detect it as workspace and use .agenterra
-        assert!(resolved_path.to_string_lossy().contains("test_project"));
-    }
-
-    #[test]
-    fn test_find_workspace_base_dir() {
-        let temp_dir = create_test_workspace("test_find_workspace_base_dir");
-
-        // Test with mock config reader
-        let mock_config =
-            MockTemplateConfigReader::new(Some(temp_dir.to_string_lossy().to_string()));
-        let result = TemplateDir::find_workspace_base_dir_with_config(&mock_config);
-
-        assert!(result.is_some());
-        let workspace_path = result.unwrap();
-        assert!(workspace_path.is_absolute());
-        assert!(workspace_path.exists());
+        // Should use current_dir/project_name pattern
+        assert!(resolved_path.to_string_lossy().ends_with("test_project"));
     }
 
     #[test]
@@ -1074,8 +960,8 @@ mod tests {
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp_dir).unwrap();
 
-        // This should fallback to current_dir + project_name since no workspace indicators exist
-        let result = TemplateDir::resolve_output_dir("fallback_project", None);
+        // This should use current_dir/scaffolded/project_name pattern
+        let result = resolve_output_dir("fallback_project", None);
 
         // Restore original directory
         std::env::set_current_dir(original_dir).unwrap();
@@ -1083,6 +969,10 @@ mod tests {
         assert!(result.is_ok());
         let resolved_path = result.unwrap();
         assert!(resolved_path.is_absolute());
-        assert!(resolved_path.to_string_lossy().contains("fallback_project"));
+        assert!(
+            resolved_path
+                .to_string_lossy()
+                .ends_with("fallback_project")
+        );
     }
 }

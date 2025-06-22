@@ -114,7 +114,7 @@ impl Default for CacheConfig {
     fn default() -> Self {
         // Get cache directory path for client {{ project_name | default(value="mcp_client") }}
         let cache_path = if let Some(home) = dirs::home_dir() {
-            home.join("{{ cache_dir | default(value=".agenterra") }}").join("{{ project_name | default(value="mcp_client") }}_cache.db")
+            home.join("{{ cache_dir | default(value=".cache/agenterra") }}").join("{{ project_name | default(value="mcp_client") }}_cache.db")
         } else {
             // Fallback to current directory if home not found
             std::path::PathBuf::from("./{{ project_name | default(value="mcp_client") }}_cache.db")

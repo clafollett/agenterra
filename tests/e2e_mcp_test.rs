@@ -27,9 +27,9 @@ async fn test_mcp_server_client_generation() -> Result<()> {
     let server_template_dir = project_dir.join("templates/mcp/server/rust_axum");
     let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
 
-    // Use workspace .agenterra directory for generated artifacts
+    // Use target/tmp/e2e-tests directory for generated artifacts
     // Clean any previous run directories to avoid duplicate headers or build conflicts
-    let scaffold_path = project_dir.join(".agenterra");
+    let scaffold_path = project_dir.join("target/tmp/e2e-tests");
     // Clean any previous run directories to avoid conflicts
     for sub in ["e2e_mcp_server", "e2e_mcp_client"] {
         let dir = scaffold_path.join(sub);
@@ -43,7 +43,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
 
     // Test 1: Generate MCP server
     let server_name = "e2e_mcp_server";
-    let server_output = scaffold_path.join(server_name);
+    let server_output = scaffold_path.join(server_name); // Full path for verification
     let schema_path = project_dir.join("tests/fixtures/openapi/petstore.openapi.v3.json");
 
     // Verify schema file exists
@@ -59,7 +59,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
             "--project-name",
             server_name,
             "--output-dir",
-            server_output.to_str().unwrap(),
+            scaffold_path.to_str().unwrap(), // Pass parent directory
             "--schema-path",
             schema_path.to_str().unwrap(),
             "--template-dir",
@@ -109,7 +109,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
             "--project-name",
             client_name,
             "--output-dir",
-            client_output.to_str().unwrap(),
+            scaffold_path.to_str().unwrap(), // Pass parent directory
             "--template-dir",
             client_template_dir.to_str().unwrap(),
             "--template",
@@ -502,8 +502,8 @@ async fn test_mcp_with_interactive_client(
 fn test_cli_help_output() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // Use sandbox directory under .agenterra to avoid polluting repo root
-    let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
+    // Use sandbox directory under target/tmp to avoid polluting repo root
+    let sandbox_dir = project_dir.join("target/tmp/cli_flag_tests");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
 
@@ -534,8 +534,8 @@ fn test_cli_help_output() {
 fn test_new_cli_structure() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // Use sandbox directory under .agenterra to avoid polluting repo root
-    let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
+    // Use sandbox directory under target/tmp to avoid polluting repo root
+    let sandbox_dir = project_dir.join("target/tmp/cli_flag_tests");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
 
@@ -569,15 +569,21 @@ fn test_new_cli_structure() {
 fn test_cli_flag_combinations() -> Result<()> {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // Use sandbox directory under .agenterra to avoid polluting repo root
-    let sandbox_dir = project_dir.join(".agenterra").join("cli_flag_tests");
+    // Use sandbox directory under target/tmp to avoid polluting repo root
+    let sandbox_dir = project_dir.join("target/tmp/cli_flag_tests");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
 
     // Test 1: Server command requires --schema-path
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
-        .args(["scaffold", "mcp", "server", "--project-name", "test"])
+        .args([
+            "scaffold",
+            "mcp",
+            "server",
+            "--project-name",
+            "test_schema_path_required",
+        ])
         .output()
         .expect("Failed to run agenterra");
 
@@ -634,7 +640,7 @@ fn test_cli_flag_combinations() -> Result<()> {
             "mcp",
             "client",
             "--project-name",
-            "test",
+            "test_schema_path_rejected",
             "--schema-path",
             "dummy.yaml",
         ])
@@ -665,7 +671,7 @@ fn test_cli_flag_combinations() -> Result<()> {
             "--schema-path",
             "/nonexistent/schema.yaml",
             "--project-name",
-            "test",
+            "test_schema_path_nonexistent",
             "--template",
             "rust_axum",
             "--template-dir",

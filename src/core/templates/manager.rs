@@ -453,7 +453,7 @@ impl TemplateManager {
             "description".to_string(),
             json!(format!("MCP client for {}", config.project_name)),
         );
-        
+
         // Set CLI binary name to match project name by default
         base_map.insert("cli_binary_name".to_string(), json!(config.project_name));
 

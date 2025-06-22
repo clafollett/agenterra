@@ -30,7 +30,7 @@
 //! The module searches for templates in the following locations:
 //! 1. Directory specified by `AGENTERRA_TEMPLATE_DIR` environment variable
 //! 2. `templates/` directory in the project root (for development)
-//! 3. `~/.agenterra/templates/` in the user's home directory
+//! 3. `~/.config/agenterra/templates/` in the user's config directory
 //! 4. `/usr/local/share/agenterra/templates/` for system-wide installation
 //! 5. `./templates/` in the current working directory
 
