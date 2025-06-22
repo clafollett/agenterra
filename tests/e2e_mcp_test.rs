@@ -7,11 +7,11 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use rusqlite::{Connection, params};
+use std::thread;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::Command as AsyncCommand;
 use tokio::time::timeout;
-use tracing::{info, warn, debug, error};
-use std::thread;
+use tracing::{debug, error, info, warn};
 use tracing_subscriber;
 
 /// Clean up any SQLite database files for a given project name
@@ -20,15 +20,17 @@ fn cleanup_project_databases(project_name: &str) -> Result<()> {
     // Database locations based on the template's get_database_path() function
     let db_paths = vec![
         // macOS location
-        dirs::data_dir()
-            .map(|d| d.join(project_name).join(format!("{}.db", project_name))),
-        // Linux location  
+        dirs::data_dir().map(|d| d.join(project_name).join(format!("{}.db", project_name))),
+        // Linux location
         dirs::data_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
             .map(|d| d.join(project_name).join(format!("{}.db", project_name))),
         // Windows location
-        dirs::data_local_dir()
-            .map(|d| d.join(project_name).join("data").join(format!("{}.db", project_name))),
+        dirs::data_local_dir().map(|d| {
+            d.join(project_name)
+                .join("data")
+                .join(format!("{}.db", project_name))
+        }),
     ];
 
     for path_opt in db_paths {
@@ -39,7 +41,7 @@ fn cleanup_project_databases(project_name: &str) -> Result<()> {
                 let _ = fs::remove_file(&db_path);
                 let _ = fs::remove_file(db_path.with_extension("db-wal"));
                 let _ = fs::remove_file(db_path.with_extension("db-shm"));
-                
+
                 // Try to remove the parent directory if it's empty
                 if let Some(parent) = db_path.parent() {
                     let _ = fs::remove_dir(parent);
@@ -47,7 +49,7 @@ fn cleanup_project_databases(project_name: &str) -> Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -55,12 +57,14 @@ fn cleanup_project_databases(project_name: &str) -> Result<()> {
 async fn test_mcp_server_client_generation() -> Result<()> {
     // Initialize tracing for test visibility
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("e2e_mcp_test=info".parse().unwrap())
-            .add_directive("agenterra=info".parse().unwrap()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("e2e_mcp_test=info".parse().unwrap())
+                .add_directive("agenterra=info".parse().unwrap()),
+        )
         .with_test_writer()
         .try_init();
-    
+
     // Discover project root first
     // Determine project root at compile time via Cargo
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -84,7 +88,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
         let _ = fs::remove_dir_all(&dir);
     }
     std::fs::create_dir_all(&scaffold_path)?;
-    
+
     // Clean up any existing client databases to ensure fresh state
     cleanup_project_databases("e2e_mcp_client")?;
 
@@ -281,8 +285,14 @@ async fn test_mcp_with_interactive_client(
 ) -> Result<()> {
     // Log thread information to prove multi-threading
     let thread_id = thread::current().id();
-    info!("Starting comprehensive MCP client test on thread {:?}", thread_id);
-    info!("Total active threads: ~{}", thread::available_parallelism()?.get());
+    info!(
+        "Starting comprehensive MCP client test on thread {:?}",
+        thread_id
+    );
+    info!(
+        "Total active threads: ~{}",
+        thread::available_parallelism()?.get()
+    );
 
     // Find the client binary
     let client_binary = client_output.join("target/debug/e2e_mcp_client");
@@ -477,7 +487,11 @@ async fn test_mcp_with_interactive_client(
     let mut at_least_one_tool_succeeded = false;
     let mut successful_tools = Vec::new();
     for tool in &tool_names {
-        info!("Calling tool: {} on thread {:?}", tool, thread::current().id());
+        info!(
+            "Calling tool: {} on thread {:?}",
+            tool,
+            thread::current().id()
+        );
         writer
             .write_all(format!("call {}\n", tool).as_bytes())
             .await?;
@@ -486,7 +500,7 @@ async fn test_mcp_with_interactive_client(
         let tool_output = read_until_prompt(&mut reader, &mut line).await;
         let mut tool_result_found = false;
         let mut result_content = String::new();
-        
+
         for line in &tool_output {
             if line.contains("Tool result:") || line.contains("Error:") {
                 tool_result_found = true;
@@ -497,15 +511,19 @@ async fn test_mcp_with_interactive_client(
                 }
             }
         }
-        
+
         if tool_result_found {
             info!("✅ Tool '{}' response: {}", tool, result_content.trim());
         } else {
             info!("⚠️ Tool '{}' - no response received", tool);
         }
     }
-    
-    info!("Successfully called {} tools: {:?}", successful_tools.len(), successful_tools);
+
+    info!(
+        "Successfully called {} tools: {:?}",
+        successful_tools.len(),
+        successful_tools
+    );
 
     if !at_least_one_tool_succeeded && !tool_names.is_empty() {
         return Err(anyhow::anyhow!("No tools succeeded - all tools failed"));
@@ -659,7 +677,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     let sandbox_dir = project_dir.join("target/tmp/cli_flag_tests");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
-    
+
     // Clean up any existing databases for projects we'll create
     cleanup_project_databases("test_schema_path_required")?;
     cleanup_project_databases("test_default_project_name")?;
@@ -894,7 +912,8 @@ fn verify_sqlite_cache(client_output: &std::path::Path) -> Result<()> {
 
     // First, list all tables in the database
     let mut table_stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table'")?;
-    let tables: Vec<String> = table_stmt.query_map(params![], |row| row.get(0))?
+    let tables: Vec<String> = table_stmt
+        .query_map(params![], |row| row.get(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     info!("Database tables found: {:?}", tables);
 
@@ -924,7 +943,10 @@ fn verify_sqlite_cache(client_output: &std::path::Path) -> Result<()> {
     let mut total_size = 0i64;
     let mut resource_details = Vec::new();
 
-    info!("Thread {:?} reading cached resources", thread::current().id());
+    info!(
+        "Thread {:?} reading cached resources",
+        thread::current().id()
+    );
     info!("Cached resources found:");
     info!("------------------------");
 
@@ -945,17 +967,17 @@ fn verify_sqlite_cache(client_output: &std::path::Path) -> Result<()> {
         info!("  💾 Size: {} bytes", size_bytes);
         info!("  🕐 Created: {}", created_at);
         info!("  🕐 Last Accessed: {}", accessed_at);
-        
+
         resource_details.push((uri.clone(), access_count, size_bytes));
     }
-    
+
     // Also check configuration table
-    let config_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM configuration",
-        params![],
-        |row| row.get(0)
-    ).unwrap_or(0);
-    
+    let config_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM configuration", params![], |row| {
+            row.get(0)
+        })
+        .unwrap_or(0);
+
     info!("Configuration entries in database: {}", config_count);
 
     // With comprehensive testing, we should have cached resources
@@ -1015,11 +1037,19 @@ fn verify_sqlite_cache(client_output: &std::path::Path) -> Result<()> {
         warn!("    2. Resource fetching failed during the test");
         warn!("    3. The cache is not working properly");
     } else {
-        info!("✅ Resources successfully cached: {} resources", resource_count);
+        info!(
+            "✅ Resources successfully cached: {} resources",
+            resource_count
+        );
         if total_access_count > 0 {
-            info!("✅ Cache retrieval working: {} total accesses", total_access_count);
+            info!(
+                "✅ Cache retrieval working: {} total accesses",
+                total_access_count
+            );
         } else {
-            info!("ℹ️ Resources cached but not yet accessed from cache (expected for first-time fetches)");
+            info!(
+                "ℹ️ Resources cached but not yet accessed from cache (expected for first-time fetches)"
+            );
         }
     }
 
