@@ -12,7 +12,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::Command as AsyncCommand;
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
-use tracing_subscriber;
 
 /// Clean up any SQLite database files for a given project name
 /// This ensures each test run starts with a fresh database state
@@ -33,19 +32,17 @@ fn cleanup_project_databases(project_name: &str) -> Result<()> {
         }),
     ];
 
-    for path_opt in db_paths {
-        if let Some(db_path) = path_opt {
-            if db_path.exists() {
-                info!("Cleaning up database: {}", db_path.display());
-                // Remove the database file and any associated WAL/SHM files
-                let _ = fs::remove_file(&db_path);
-                let _ = fs::remove_file(db_path.with_extension("db-wal"));
-                let _ = fs::remove_file(db_path.with_extension("db-shm"));
+    for db_path in db_paths.into_iter().flatten() {
+        if db_path.exists() {
+            info!("Cleaning up database: {}", db_path.display());
+            // Remove the database file and any associated WAL/SHM files
+            let _ = fs::remove_file(&db_path);
+            let _ = fs::remove_file(db_path.with_extension("db-wal"));
+            let _ = fs::remove_file(db_path.with_extension("db-shm"));
 
-                // Try to remove the parent directory if it's empty
-                if let Some(parent) = db_path.parent() {
-                    let _ = fs::remove_dir(parent);
-                }
+            // Try to remove the parent directory if it's empty
+            if let Some(parent) = db_path.parent() {
+                let _ = fs::remove_dir(parent);
             }
         }
     }
