@@ -58,6 +58,7 @@ async-trait = "0.1"
 
 # SQLite for resource caching
 rusqlite = { version = "0.36", features = ["bundled"] }
+rusqlite_migration = "2.2.0"
 uuid = { version = "1.17", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 # Connection pooling

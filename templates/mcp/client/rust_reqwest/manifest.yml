@@ -28,6 +28,9 @@ files:
   - source: "src/database.rs.tera"
     destination: "src/database.rs"
     
+  - source: "src/database_migrations.rs.tera"
+    destination: "src/database_migrations.rs"
+    
   - source: "src/registry.rs.tera"
     destination: "src/registry.rs"
     

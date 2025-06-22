@@ -14,6 +14,7 @@ pub mod auth;
 pub mod cache;
 pub mod client;
 pub mod database;
+pub mod database_migrations;
 pub mod error;
 pub mod registry;
 pub mod result;
