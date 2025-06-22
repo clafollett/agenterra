@@ -1,8 +1,8 @@
-//! Tool result processing and content type handling for {{ project_name | default(value="MCP Client") }}
+//! Tool result processing and content type handling for {{ project_name }}
 //!
-//! {{ description | default(value="Processes and validates tool execution results with comprehensive content type support") }}
-//! Version: {{ version | default(value="0.1.0") }}
-//! Supported types: {{ supported_content_types | default(value="text, json, binary, image, resource") }}
+//! {{ description }}
+//! Version: {{ version }}
+//! Supported types: text, json, binary, image, resource
 
 use crate::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,7 @@ pub enum ContentType {
 /// Processed tool result with typed content
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {
-    /// The processed content items (max {{ max_content_items | default(value="100") }})
+    /// The processed content items (max 100)
     pub content: Vec<ContentType>,
     /// Whether this was an error response
     pub is_error: bool,
@@ -47,7 +47,7 @@ impl ToolResult {
         let raw_response = serde_json::to_value(result)
             .map_err(|e| ClientError::Protocol(format!("Failed to serialize tool result: {}", e)))?;
 
-        let mut content = Vec::with_capacity({{ initial_content_capacity | default(value="4") }});
+        let mut content = Vec::with_capacity(10);
         let mut is_error = false;
         let mut error_code = None;
 
@@ -66,10 +66,10 @@ impl ToolResult {
             is_error = true;
         }
 
-        // Process the content array from rmcp result (limit to {{ max_content_items | default(value="100") }} items)
+        // Process the content array from rmcp result (limit to 100 items)
         for (index, content_item) in result.content.iter().enumerate() {
-            if index >= {{ max_content_items | default(value="100") }} {
-                tracing::warn!("Content limit reached, truncating at {} items", {{ max_content_items | default(value="100") }});
+            if index >= 100 {
+                tracing::warn!("Content limit reached, truncating at {} items", 100);
                 break;
             }
             match Self::parse_content_item(content_item) {
@@ -109,8 +109,9 @@ impl ToolResult {
     fn parse_content_item(item: &rmcp::model::Content) -> Result<ContentType> {
         // Extract the content based on rmcp Content enum variants
         // This is a simplified parser - we'll expand based on actual rmcp types
-        let item_json = serde_json::to_value(item)
-            .map_err(|e| ClientError::Protocol(format!("Failed to serialize content item: {}", e)))?;
+        let item_json = serde_json::to_value(item).map_err(|e| {
+            ClientError::Protocol(format!("Failed to serialize content item: {}", e))
+        })?;
 
         // Try to detect content type from the structure
         if let Some(text) = item_json.get("text").and_then(|t| t.as_str()) {

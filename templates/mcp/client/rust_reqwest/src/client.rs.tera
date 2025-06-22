@@ -1,15 +1,17 @@
-//! Main client implementation for {{ project_name | default(value="MCP Client") }}
+//! Main client implementation for {{ project_name }}
 //!
-//! {{ description | default(value="Comprehensive MCP client with DDD architecture, caching, and connection management") }}
-//! Version: {{ version | default(value="0.1.0") }}
-//! Protocol Version: {{ mcp_protocol_version | default(value="2024-11-05") }}
+//! {{ description }}
+//! Version: {{ version }}
+//! Protocol Version: 2025-06-18
 
 use crate::auth::AuthConfig;
 use crate::cache::{CacheConfig, ResourceCache};
+use crate::database::DatabaseManager;
 use crate::error::{ClientError, Result};
 use crate::registry::ToolRegistry;
 use crate::result::ToolResult;
 use crate::resource::{ResourceContent, ResourceInfo};
+use std::sync::Arc;
 use std::time::Duration;
 use std::collections::HashMap;
 use tokio::time;
@@ -192,6 +194,9 @@ pub struct McpClient {
     // Protocol implementation (using working RMCP pattern)
     service: Option<RunningService<RoleClient, ()>>,
     
+    // Unified database for all client data
+    database: Option<Arc<DatabaseManager>>,
+    
     // Domain services
     tool_registry: ToolRegistry,
     resource_cache: Option<ResourceCache>,
@@ -207,30 +212,13 @@ pub struct McpClient {
 }
 
 impl McpClient {
-    /// Get the path for the cache database file (integrated from original client.rs)
-    fn get_cache_db_path() -> Result<String> {
-        // Try to get the executable directory, fallback to current directory
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        
-        // Create a data directory next to the executable
-        let data_dir = exe_dir.join("data");
-        std::fs::create_dir_all(&data_dir)
-            .map_err(|e| ClientError::Connection(format!("Failed to create data directory: {}", e)))?;
-        
-        // Create the database path
-        let db_path = data_dir.join("{{ project_name | default(value='mcp_client') }}_{{ cache_file_suffix | default(value='cache') }}.db");
-        Ok(db_path.to_string_lossy().to_string())
-    }
-
     /// Create a new MCP client for stateful use
     pub fn new_stateful() -> Self {
         Self {
             state: ConnectionState::Disconnected,
             config: None,
             service: None,
+            database: None,
             tool_registry: ToolRegistry::new(),
             resource_cache: None,
             capabilities: None,
@@ -249,22 +237,28 @@ impl McpClient {
     /// Create a new MCP client with timeout (enhanced version of 0.1.2 API)
     pub async fn new_with_timeout(timeout_secs: u64) -> Result<Self> {
         let mut client = Self::new_stateful();
-        client.timeout = Duration::from_secs(timeout_secs.max({{ min_timeout_seconds | default(value="5") }}));
+        client.timeout = Duration::from_secs(timeout_secs.max(5));
         
-        // Initialize SQLite cache for resources (integrated from original client.rs)
-        let cache_db_path = Self::get_cache_db_path()?;
-        let cache_config = CacheConfig {
-            database_path: cache_db_path,
-            ..Default::default()
-        };
-        
-        match ResourceCache::new(cache_config).await {
-            Ok(cache) => {
-                client.resource_cache = Some(cache);
-                tracing::info!("SQLite resource cache initialized");
+        // Initialize unified database for all client data
+        match DatabaseManager::new().await {
+            Ok(db_manager) => {
+                let db: Arc<DatabaseManager> = Arc::new(db_manager);
+                client.database = Some(db.clone());
+                
+                // Initialize resource cache with shared database
+                let cache_config = CacheConfig::default();
+                match ResourceCache::new(cache_config, db.clone()).await {
+                    Ok(cache) => {
+                        client.resource_cache = Some(cache);
+                        tracing::info!("Resource cache initialized with unified database");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize resource cache: {}", e);
+                    }
+                }
             }
             Err(e) => {
-                tracing::warn!("Failed to initialize resource cache, running without cache: {}", e);
+                tracing::warn!("Failed to initialize database, running without persistence: {}", e);
             }
         }
         
@@ -292,7 +286,14 @@ impl McpClient {
 
     /// Enable resource caching with the given configuration
     pub async fn with_cache(mut self, cache_config: CacheConfig) -> Result<Self> {
-        let cache = ResourceCache::new(cache_config).await?;
+        // Initialize database if not already initialized
+        if self.database.is_none() {
+            let db_manager = DatabaseManager::new().await?;
+            self.database = Some(Arc::new(db_manager));
+        }
+        
+        let db = self.database.as_ref().unwrap().clone();
+        let cache = ResourceCache::new(cache_config, db).await?;
         self.resource_cache = Some(cache);
         Ok(self)
     }
@@ -326,11 +327,26 @@ impl McpClient {
         self.state = ConnectionState::Connecting;
         self.config = Some(config.clone());
 
-        // Initialize cache if configured
+        // Initialize database and cache if configured
         if let Some(cache_config) = config.cache() {
-            match ResourceCache::new(cache_config.clone()).await {
-                Ok(cache) => self.resource_cache = Some(cache),
-                Err(e) => tracing::warn!("Failed to initialize cache: {}", e),
+            // Initialize database if not already initialized
+            if self.database.is_none() {
+                match DatabaseManager::new().await {
+                    Ok(db_manager) => {
+                        self.database = Some(Arc::new(db_manager));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize database: {}", e);
+                        return Ok(());
+                    }
+                }
+            }
+            
+            if let Some(db) = &self.database {
+                match ResourceCache::new(cache_config.clone(), db.clone()).await {
+                    Ok(cache) => self.resource_cache = Some(cache),
+                    Err(e) => tracing::warn!("Failed to initialize cache: {}", e),
+                }
             }
         }
 
@@ -912,6 +928,26 @@ impl McpClient {
     #[cfg(test)]
     pub fn registry_mut(&mut self) -> &mut ToolRegistry {
         &mut self.tool_registry
+    }
+
+    /// Get access to the database manager if initialized
+    pub fn database(&self) -> Option<&Arc<DatabaseManager>> {
+        self.database.as_ref()
+    }
+
+    /// Get the server name from the MCP server info
+    pub fn server_name(&self) -> Option<String> {
+        self.service.as_ref()?.peer_info().map(|info| info.server_info.name.clone())
+    }
+
+    /// Get the server version from the MCP server info
+    pub fn server_version(&self) -> Option<String> {
+        self.service.as_ref()?.peer_info().map(|info| info.server_info.version.clone())
+    }
+
+    /// Get the protocol version from the MCP server info
+    pub fn protocol_version(&self) -> Option<String> {
+        self.service.as_ref()?.peer_info().map(|info| info.protocol_version.to_string())
     }
 
     /// Validate parameters for a tool call using the tool registry

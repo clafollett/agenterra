@@ -25,6 +25,9 @@ files:
   - source: "src/cache.rs.tera"
     destination: "src/cache.rs"
     
+  - source: "src/database.rs.tera"
+    destination: "src/database.rs"
+    
   - source: "src/registry.rs.tera"
     destination: "src/registry.rs"
     

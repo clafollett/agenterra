@@ -1,10 +1,10 @@
-//! MCP Session Manager - Multi-session architecture with clean single-session API for {{ project_name | default(value="MCP Client") }}
+//! MCP Session Manager - Multi-session architecture with clean single-session API for {{ project_name }}
 //!
-//! {{ description | default(value="Provides session lifecycle management for MCP clients with future support for") }}
+//! {{ description }}
 //! multiple named sessions (different LLMs, environments, etc.)
 //!
-//! Version: {{ version | default(value="0.1.0") }}
-//! Max sessions: {{ max_concurrent_sessions | default(value="10") }}
+//! Version: {{ version }}
+//! Max sessions: 10
 
 use crate::client::McpClient;
 use crate::error::{ClientError, Result};
@@ -24,11 +24,11 @@ pub struct McpSessionManager;
 
 impl McpSessionManager {
     /// Default session name for single-session API
-    const DEFAULT_SESSION: &'static str = "{{ default_session_name | default(value="default") }}";
-    
+    const DEFAULT_SESSION: &'static str = "default";
+
     /// Maximum number of concurrent sessions
     #[allow(dead_code)]
-    const MAX_SESSIONS: usize = {{ max_concurrent_sessions | default(value="10") }};
+    const MAX_SESSIONS: usize = 10;
 
     /// Internal multi-session storage (future-ready architecture)
     ///
@@ -38,8 +38,7 @@ impl McpSessionManager {
     /// - "anthropic-claude" -> future multi-session support
     /// - etc.
     fn sessions() -> &'static Lazy<SessionMap> {
-        static SESSIONS: Lazy<SessionMap> =
-            Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+        static SESSIONS: Lazy<SessionMap> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
         &SESSIONS
     }
 
@@ -76,7 +75,9 @@ impl McpSessionManager {
         let mut client_guard = client.lock().await;
         let result = client_guard.call_tool(name, args).await?;
         // Convert CallToolResult to JSON
-        serde_json::to_value(result).map_err(|e| crate::error::ClientError::Protocol(format!("Failed to serialize tool result: {}", e)))
+        serde_json::to_value(result).map_err(|e| {
+            crate::error::ClientError::Protocol(format!("Failed to serialize tool result: {}", e))
+        })
     }
 
     /// List available resources from the connected MCP server
@@ -156,8 +157,17 @@ impl McpSessionManager {
     ///
     /// This is the core implementation that supports future multi-session functionality.
     /// Currently used internally, but designed to be exposed in future versions.
-    async fn connect_session(session_name: &str, server_command: String, args: Vec<String>, timeout: u64) -> Result<()> {
-        tracing::info!("Connecting MCP session '{}' to server: {}", session_name, server_command);
+    async fn connect_session(
+        session_name: &str,
+        server_command: String,
+        args: Vec<String>,
+        timeout: u64,
+    ) -> Result<()> {
+        tracing::info!(
+            "Connecting MCP session '{}' to server: {}",
+            session_name,
+            server_command
+        );
 
         // Create new client
         let mut client = McpClient::new_with_timeout(timeout).await?;

@@ -12,20 +12,32 @@ use crate::client::McpClient;
 pub struct McpRepl {
     client: McpClient,
     editor: DefaultEditor,
+    session_id: Option<String>,
+    server_name: String,
 }
 
 impl McpRepl {
     /// Create a new REPL instance
-    pub fn new(client: McpClient) -> Self {
+    pub fn new(client: McpClient, server_name: String) -> Self {
         let editor = DefaultEditor::new().expect("Failed to create readline editor");
         
-        Self { client, editor }
+        Self { 
+            client, 
+            editor,
+            session_id: None,
+            server_name,
+        }
+    }
+    
+    /// Set the session ID for tracking
+    pub fn set_session_id(&mut self, session_id: String) {
+        self.session_id = Some(session_id);
     }
 
     /// Run the interactive REPL
     pub async fn run(&mut self) -> Result<()> {
         info!("Starting MCP client REPL interface");
-        println!("{{ project_name | default(value="MCP Client") }} - Interactive REPL");
+        println!("{{ project_name }} - Interactive REPL");
         println!("Type 'help' for available commands, 'quit' to exit");
         println!();
 
@@ -155,6 +167,11 @@ impl McpRepl {
         let resources = self.client.get_resources();
         let prompts = self.client.get_prompts();
 
+        println!("Connected to: {}", self.server_name);
+        if let Some(version) = self.client.server_version() {
+            println!("Server version: {}", version);
+        }
+        println!();
         println!("Server Capabilities:");
         println!("  Tools: {}", tools.len());
         println!("  Resources: {}", resources.len());
@@ -274,6 +291,13 @@ impl McpRepl {
     /// Show connection status
     fn show_status(&self) {
         println!("Connection Status:");
+        println!("  Server: {}", self.server_name);
+        if let Some(version) = self.client.server_version() {
+            println!("  Version: {}", version);
+        }
+        if let Some(protocol) = self.client.protocol_version() {
+            println!("  Protocol: {}", protocol);
+        }
         println!("  Connected: {}", self.client.is_connected());
         println!("  Tools: {}", self.client.get_tools().len());
         println!("  Resources: {}", self.client.get_resources().len());

@@ -8,31 +8,38 @@
 pub mod rust;
 
 use crate::core::openapi::OpenApiOperation;
-use crate::core::templates::ServerTemplateKind;
+use crate::core::templates::{ClientTemplateKind, ServerTemplateKind};
 use serde_json::Value as JsonValue;
 
-/// Trait for converting an OpenApiOperation into a language-specific context.
+/// Trait for building language-specific contexts for code generation.
 ///
-/// Implementations of this trait are responsible for transforming generic OpenAPI
-/// operation definitions into structured contexts that templates can use to generate
+/// Implementations of this trait are responsible for transforming generic
+/// context data into structured contexts that templates can use to generate
 /// idiomatic code for specific programming languages.
 ///
 /// The builder should handle:
 /// - Language-specific naming conventions (e.g., snake_case for Rust, camelCase for JavaScript)
-/// - Type mappings from OpenAPI schemas to target language types
+/// - Type mappings and default values
 /// - Parameter and response structure organization
 /// - Any language-specific metadata needed for code generation
-pub trait EndpointContextBuilder {
-    /// Build a language-specific context from an OpenAPI operation.
+pub trait LanguageContextBuilder {
+    /// Build a language-specific context from generic input.
     ///
     /// # Arguments
-    /// * `op` - The OpenAPI operation to convert
+    /// * `context` - The generic context to transform
     ///
     /// # Returns
     /// A JSON value containing the language-specific context data for template rendering
     ///
     /// # Errors
-    /// Returns an error if the operation cannot be converted to the target language context
+    /// Returns an error if the context cannot be transformed
+    fn build(&self, context: &JsonValue) -> crate::core::error::Result<JsonValue>;
+}
+
+/// Legacy trait for OpenAPI endpoint context building.
+/// This is used for server generation from OpenAPI specs.
+pub trait EndpointContextBuilder {
+    /// Build a language-specific context from an OpenAPI operation.
     fn build(&self, op: &OpenApiOperation) -> crate::core::error::Result<JsonValue>;
 }
 
@@ -93,13 +100,13 @@ impl EndpointContext {
         Ok(contexts)
     }
 
-    /// Get the appropriate context builder for a given template kind.
+    /// Get the appropriate context builder for a given server template kind.
     ///
     /// # Arguments
-    /// * `template` - The template kind to get a builder for
+    /// * `template` - The server template kind to get a builder for
     ///
     /// # Returns
-    /// A boxed trait object implementing `EndpointContextBuilder` for the specified template
+    /// A boxed trait object implementing `EndpointContextBuilder` for the specified server template
     ///
     /// # Panics
     /// Panics if the template kind is not supported (via `unimplemented!` macro)
@@ -107,6 +114,26 @@ impl EndpointContext {
         match template {
             ServerTemplateKind::RustAxum => Box::new(rust::RustEndpointContextBuilder),
             _ => unimplemented!("Builder not implemented for template: {:?}", template),
+        }
+    }
+
+    /// Get the appropriate context builder for a given client template kind.
+    ///
+    /// # Arguments
+    /// * `template` - The client template kind to get a builder for
+    ///
+    /// # Returns
+    /// A boxed trait object implementing `LanguageContextBuilder` for the specified client template
+    ///
+    /// # Panics
+    /// Panics if the template kind is not supported (via `unimplemented!` macro)
+    pub fn get_client_builder(template: ClientTemplateKind) -> Box<dyn LanguageContextBuilder> {
+        match template {
+            ClientTemplateKind::RustReqwest => Box::new(rust::RustMcpClientContextBuilder),
+            _ => unimplemented!(
+                "Client builder not implemented for template: {:?}",
+                template
+            ),
         }
     }
 }

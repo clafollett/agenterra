@@ -1,8 +1,8 @@
-//! Tool registry for managing MCP tool metadata and validation in {{ project_name | default(value="MCP Client") }}
+//! Tool registry for managing MCP tool metadata and validation in {{ project_name }}
 //!
-//! {{ description | default(value="Manages tool metadata, schema validation, and parameter checking for MCP tools") }}
-//! Version: {{ version | default(value="0.1.0") }}
-//! Max tools: {{ max_tools_in_registry | default(value="1000") }}
+//! {{ description }}
+//! Version: {{ version }}
+//! Max tools: 1000
 
 use crate::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
@@ -27,20 +27,20 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
-    /// Create a new empty tool registry for {{ project_name | default(value="MCP Client") }}
+    /// Create a new empty tool registry for {{ project_name }}
     pub fn new() -> Self {
         Self {
-            tools: HashMap::with_capacity({{ initial_registry_capacity | default(value="16") }}),
+            tools: HashMap::with_capacity(16),
         }
     }
 
     /// Add a tool to the registry with validation
     pub fn add_tool(&mut self, tool: ToolInfo) -> Result<()> {
         // Prevent registry overflow
-        if self.tools.len() >= {{ max_tools_in_registry | default(value="1000") }} {
+        if self.tools.len() >= 1000 {
             return Err(ClientError::Validation(format!(
                 "Registry full: cannot add more than {} tools", 
-                {{ max_tools_in_registry | default(value="1000") }}
+                1000
             )));
         }
         
@@ -297,7 +297,7 @@ mod tests {
             input_schema: Some(json!({"type": "object"})),
         };
 
-        registry.add_tool(tool);
+        let _ = registry.add_tool(tool);
 
         // Valid object parameters
         assert!(

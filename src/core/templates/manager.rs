@@ -274,6 +274,7 @@ impl TemplateManager {
                 };
 
                 log::error!("Template rendering failed for '{}': {}", template_name, e);
+                log::error!("Tera error details: {:?}", e);
                 log::error!(
                     "Available context keys: {:?}",
                     context_map.keys().collect::<Vec<_>>()
@@ -396,6 +397,20 @@ impl TemplateManager {
         // Build client-specific context (no OpenAPI needed)
         let base_context = self.build_client_context(config, &template_opts).await?;
 
+        // Parse the client template kind from the config
+        let client_kind: crate::core::templates::ClientTemplateKind =
+            config.template_kind.parse().map_err(|e| {
+                crate::core::Error::Template(format!(
+                    "Invalid client template kind '{}': {}",
+                    config.template_kind, e
+                ))
+            })?;
+
+        let builder = crate::mcp::builders::EndpointContext::get_client_builder(client_kind);
+
+        // Normalize the context for the target language
+        let normalized_context = builder.build(&base_context)?;
+
         // Create output directory
         let output_dir = Path::new(&config.output_dir);
         tokio::fs::create_dir_all(output_dir).await?;
@@ -412,8 +427,8 @@ impl TemplateManager {
             // since they don't depend on OpenAPI operations
             let output_path = output_dir.join(&file.destination);
 
-            // Generate file with base context
-            self.generate_with_context(&file.source, &base_context, &output_path)
+            // Generate file with normalized context
+            self.generate_with_context(&file.source, &normalized_context, &output_path)
                 .await?;
         }
 
@@ -448,7 +463,7 @@ impl TemplateManager {
         }
 
         // Add default values - use workspace version
-        base_map.insert("version".to_string(), json!(env!("CARGO_PKG_VERSION")));
+        base_map.insert("version".to_string(), json!("0.1.0"));
         base_map.insert(
             "description".to_string(),
             json!(format!("MCP client for {}", config.project_name)),
@@ -456,6 +471,13 @@ impl TemplateManager {
 
         // Set CLI binary name to match project name by default
         base_map.insert("cli_binary_name".to_string(), json!(config.project_name));
+
+        // Add missing required template variables
+        base_map.insert("license".to_string(), json!("MIT"));
+        base_map.insert(
+            "contributing".to_string(),
+            json!("Contributions are welcome! Please submit pull requests or open issues."),
+        );
 
         Ok(json!(base_map))
     }

@@ -1,7 +1,7 @@
-//! Error types for the {{ project_name | default(value="MCP Client") }}
+//! Error types for the {{ project_name }}
 //!
-//! {{ description | default(value="Comprehensive error handling for MCP client operations") }}
-//! Version: {{ version | default(value="0.1.0") }}
+//! {{ description }}
+//! Version: {{ version }}
 
 use thiserror::Error;
 
@@ -47,7 +47,17 @@ pub enum ClientError {
     #[error("Spawn error: {0}")]
     Spawn(String),
 
-    /// {{ project_name | default(value="MCP Client") }}-specific runtime errors
+    /// {{ project_name }}-specific runtime errors
     #[error("Runtime error: {0}")]
     Runtime(String),
+
+    /// Configuration-related errors
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+}
+
+impl From<serde_json::Error> for ClientError {
+    fn from(err: serde_json::Error) -> Self {
+        ClientError::Protocol(format!("JSON serialization error: {}", err))
+    }
 }

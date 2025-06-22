@@ -1,19 +1,19 @@
-//! {{ project_name | default(value="MCP Client") }} - A robust Model Context Protocol client library
+//! {{ project_name }} - A robust Model Context Protocol client library
 //!
-//! {{ description | default(value="This library provides a complete implementation of the MCP specification with:") }}
+//! {{ description }}
 //! - Secure authentication and credential management
 //! - Advanced caching and resource management  
 //! - Tool registry with JSON Schema validation
 //! - Multi-session architecture for future expansion
 //! - Enhanced error handling and result processing
 //!
-//! Version: {{ version | default(value="0.1.0") }}
-//! Protocol: {{ mcp_protocol_version | default(value="2024-11-05") }}
+//! Version: {{ version }}
 
 // Core MCP client modules
 pub mod auth;
 pub mod cache;
 pub mod client;
+pub mod database;
 pub mod error;
 pub mod registry;
 pub mod result;
@@ -26,10 +26,10 @@ pub mod session_manager;
 // Configuration
 pub mod config;
 
-// Optional interfaces (may not be used in all deployments)
-{% if include_cli | default(value=true) %}pub mod cli;{% endif %}
-{% if include_headless | default(value=true) %}pub mod headless;{% endif %}
-{% if include_repl | default(value=true) %}pub mod repl;{% endif %}
+// User interfaces
+pub mod cli;
+pub mod headless;
+pub mod repl;
 
 // Re-export main types for convenient access
 pub use auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
@@ -37,28 +37,30 @@ pub use cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
 pub use client::{
     ConnectionConfig, ConnectionConfigBuilder, ConnectionState, McpClient, ServerCapabilities,
 };
-pub use config::AppConfig;
+pub use config::{ConfigManager, ServerProfile, AuthCredential, SessionHistory};
+pub use database::{DatabaseManager, DatabaseConfig};
 pub use error::{ClientError, Result};
+pub use headless::{HeadlessRunner, ServerStatus, ExitCode};
 pub use registry::{ToolInfo, ToolRegistry};
 pub use resource::{ResourceContent, ResourceInfo};
 pub use result::{ContentType, ToolResult};
 pub use session_manager::McpSessionManager;
 pub use transport::Transport;
 
-/// Current version of the {{ project_name | default(value="MCP Client") }}
+/// Current version of the {{ project_name }}
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Default timeout for MCP operations
-pub const DEFAULT_TIMEOUT_SECS: u64 = {{ default_client_timeout_seconds | default(value="30") }};
+pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
 
 /// Maximum number of retries for failed operations
-pub const DEFAULT_MAX_RETRIES: u32 = {{ default_max_retries | default(value="3") }};
+pub const DEFAULT_MAX_RETRIES: u32 = 3;
 
 /// Default cache TTL in seconds
-pub const DEFAULT_CACHE_TTL_SECS: u64 = {{ default_cache_ttl_seconds | default(value="3600") }};
+pub const DEFAULT_CACHE_TTL_SECS: u64 = 300;
 
 /// Maximum tools in registry
-pub const MAX_TOOLS_IN_REGISTRY: usize = {{ max_tools_in_registry | default(value="1000") }};
+pub const MAX_TOOLS_IN_REGISTRY: usize = 1000;
 
 /// MCP Protocol version
-pub const MCP_PROTOCOL_VERSION: &str = "{{ mcp_protocol_version | default(value="2024-11-05") }}";
+pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";

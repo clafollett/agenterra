@@ -1,0 +1,422 @@
+//! Unified database management for {{ project_name }}
+//!
+//! Provides a single SQLite database for all client data storage needs,
+//! following OS-specific best practices for data file locations.
+//!
+//! Version: {{ version }}
+
+use crate::error::{ClientError, Result};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::Connection;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+use tracing::{debug, info};
+
+// Global tracking of initialized databases (double-checked locking pattern)
+static INITIALIZED_DATABASES: OnceLock<Mutex<HashMap<String, ()>>> = OnceLock::new();
+
+/// Get the global database initialization tracker
+fn get_db_tracker() -> &'static Mutex<HashMap<String, ()>> {
+    INITIALIZED_DATABASES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Get the OS-specific database path following platform best practices
+pub fn get_database_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: %LOCALAPPDATA%\{{ project_name }}\data\{{ project_name }}.db
+        // Example: C:\Users\Username\AppData\Local\{{ project_name }}\data\{{ project_name }}.db
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("{{ project_name }}")
+            .join("data")
+            .join("{{ project_name }}.db")
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: ~/Library/Application Support/{{ project_name }}/{{ project_name }}.db
+        dirs::data_dir()
+            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+            .join("{{ project_name }}")
+            .join("{{ project_name }}.db")
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // Linux and other Unix-like: ~/.local/share/{{ project_name }}/{{ project_name }}.db
+        // Follows XDG Base Directory specification
+        dirs::data_dir()
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .map(|h| h.join(".local").join("share"))
+                    .unwrap_or_else(|| PathBuf::from("."))
+            })
+            .join("{{ project_name }}")
+            .join("{{ project_name }}.db")
+    }
+}
+
+/// Normalize database path to prevent double-initialization due to path differences
+fn normalize_db_path(db_path: &Path) -> String {
+    // First try canonicalize (resolves symlinks and relative components)
+    if let Ok(canonical) = db_path.canonicalize() {
+        return canonical.to_string_lossy().to_string();
+    }
+
+    // If canonicalize fails (file doesn't exist yet), make relative paths absolute
+    if db_path.is_relative() {
+        if let Ok(current_dir) = std::env::current_dir() {
+            let absolute_path = current_dir.join(db_path);
+            return absolute_path.to_string_lossy().to_string();
+        }
+    }
+
+    // Fallback to original path
+    db_path.to_string_lossy().to_string()
+}
+
+/// Configuration for the database manager
+///
+/// Controls database location, connection pooling, and performance settings
+/// for the unified SQLite database used by all {{ project_name }} components.
+#[derive(Debug, Clone)]
+pub struct DatabaseConfig {
+    /// Database file path (uses OS-specific defaults if not specified)
+    /// - Windows: %LOCALAPPDATA%\{{ project_name }}\data\{{ project_name }}.db
+    /// - macOS: ~/Library/Application Support/{{ project_name }}/{{ project_name }}.db
+    /// - Linux: ~/.local/share/{{ project_name }}/{{ project_name }}.db
+    pub database_path: PathBuf,
+    
+    /// Maximum number of connections in the pool
+    /// Higher values improve concurrent performance but use more resources
+    pub pool_max_connections: u32,
+    
+    /// Connection timeout for acquiring a connection from the pool
+    /// Prevents indefinite blocking when pool is exhausted
+    pub pool_connection_timeout: Option<Duration>,
+    
+    /// Maximum lifetime for pooled connections
+    /// Connections are recycled after this duration to prevent stale connections
+    pub pool_max_lifetime: Option<Duration>,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            database_path: get_database_path(),
+            pool_max_connections: 20,
+            pool_connection_timeout: Some(Duration::from_secs(30)),
+            pool_max_lifetime: Some(Duration::from_secs(300)),
+        }
+    }
+}
+
+/// Unified database manager for all {{ project_name }} data
+#[derive(Debug)]
+pub struct DatabaseManager {
+    /// Connection pool for database operations
+    pool: Pool<SqliteConnectionManager>,
+    /// Configuration
+    config: DatabaseConfig,
+}
+
+impl DatabaseManager {
+    /// Create a new database manager with default configuration
+    pub async fn new() -> Result<Self> {
+        Self::with_config(DatabaseConfig::default()).await
+    }
+
+    /// Create a new database manager with custom configuration
+    pub async fn with_config(config: DatabaseConfig) -> Result<Self> {
+        // Ensure parent directory exists
+        if let Some(parent) = config.database_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ClientError::ConfigError(format!(
+                    "Failed to create database directory {}: {}", 
+                    parent.display(), e
+                )))?;
+        }
+
+        // Create connection pool
+        let manager = SqliteConnectionManager::file(&config.database_path);
+        let mut pool_builder = Pool::builder()
+            .max_size(config.pool_max_connections);
+
+        if let Some(timeout) = config.pool_connection_timeout {
+            pool_builder = pool_builder.connection_timeout(timeout);
+        }
+
+        if let Some(max_lifetime) = config.pool_max_lifetime {
+            pool_builder = pool_builder.max_lifetime(Some(max_lifetime));
+        }
+
+        let pool = pool_builder.build(manager).map_err(|e| {
+            ClientError::Pool(format!("Failed to create connection pool: {}", e))
+        })?;
+
+        let db_path_display = config.database_path.display().to_string();
+        let manager = Self { pool, config };
+
+        // Initialize database schema
+        manager.init_schema().await?;
+        
+        info!("Database manager initialized at: {}", db_path_display);
+        Ok(manager)
+    }
+
+    /// Get the connection pool for direct access
+    pub fn pool(&self) -> &Pool<SqliteConnectionManager> {
+        &self.pool
+    }
+
+    /// Execute a function with a database connection from the pool
+    pub async fn with_connection<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let pool = self.pool.clone();
+        
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| {
+                ClientError::Pool(format!("Failed to get pooled connection: {}", e))
+            })?;
+            
+            f(&mut conn).map_err(|e| ClientError::Client(format!("Database operation failed: {}", e)))
+        })
+        .await
+        .map_err(|e| ClientError::Spawn(format!("Task execution failed: {}", e)))?
+    }
+
+    /// Initialize the complete database schema with proper double-checked locking
+    async fn init_schema(&self) -> Result<()> {
+        let db_path = normalize_db_path(&self.config.database_path);
+
+        // First check: Has this database path already been initialized globally?
+        {
+            let tracker = get_db_tracker().lock().unwrap();
+            if tracker.contains_key(&db_path) {
+                debug!("Database schema already initialized for: {}", db_path);
+                return Ok(());
+            }
+        }
+
+        // If not initialized, enter the critical section
+        self.with_connection(move |conn| {
+            debug!("Entering critical section for database schema initialization: {}", db_path);
+
+            // Double check pattern - check the global tracker again
+            {
+                let tracker = get_db_tracker().lock().unwrap();
+                if tracker.contains_key(&db_path) {
+                    debug!("Database schema was initialized by another thread: {}", db_path);
+                    return Ok(());
+                }
+            }
+
+            // Enable WAL mode for better concurrent access
+            conn.pragma_update(None, "journal_mode", "WAL")?;
+            conn.pragma_update(None, "synchronous", "NORMAL")?;
+            conn.pragma_update(None, "cache_size", 10000)?;
+            conn.pragma_update(None, "temp_store", "memory")?;
+            
+            // Set busy timeout to handle SQLITE_BUSY on slow filesystems
+            conn.busy_timeout(Duration::from_secs(5))?;
+
+            // Use a transaction for atomic schema creation
+            let tx = conn.transaction()?;
+
+            // Create all tables
+            create_cache_tables(&tx)?;
+            create_config_tables(&tx)?;
+
+            tx.commit()?;
+
+            // Mark this database as initialized
+            {
+                let mut tracker = get_db_tracker().lock().unwrap();
+                tracker.insert(db_path.clone(), ());
+            }
+
+            info!("Database schema initialized successfully: {}", db_path);
+            Ok(())
+        }).await
+    }
+}
+
+/// Create cache-related tables
+fn create_cache_tables(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    // Resources table for caching
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS resources (
+            id TEXT PRIMARY KEY,
+            uri TEXT UNIQUE NOT NULL,
+            content BLOB NOT NULL,
+            content_type TEXT,
+            metadata_json TEXT,
+            created_at INTEGER NOT NULL,
+            accessed_at INTEGER NOT NULL,
+            expires_at INTEGER,
+            access_count INTEGER DEFAULT 0,
+            size_bytes INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    // Create indexes for performance
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_resources_uri ON resources(uri)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_resources_expires ON resources(expires_at)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_resources_accessed ON resources(accessed_at)",
+        [],
+    )?;
+
+    // Cache analytics table
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS cache_analytics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            hit_rate REAL,
+            total_requests INTEGER,
+            cache_size_mb REAL,
+            eviction_count INTEGER
+        )",
+        [],
+    )?;
+
+    // Create cleanup trigger for expired resources
+    tx.execute(
+        "CREATE TRIGGER IF NOT EXISTS cleanup_expired_resources
+         AFTER INSERT ON resources
+         BEGIN
+           DELETE FROM resources 
+           WHERE expires_at IS NOT NULL 
+           AND expires_at < strftime('%s', 'now')
+           AND id != NEW.id;
+         END",
+        [],
+    )?;
+
+    Ok(())
+}
+
+/// Create configuration-related tables
+fn create_config_tables(tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+    // Enable foreign keys
+    tx.execute("PRAGMA foreign_keys = ON", [])?;
+    
+    // Server profiles table
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS servers (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            command TEXT NOT NULL,
+            args TEXT NOT NULL,              -- JSON array
+            environment TEXT,                -- JSON object
+            timeout INTEGER,
+            description TEXT,
+            is_default INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            last_used INTEGER
+        )",
+        [],
+    )?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_servers_name ON servers(name)", [])?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_servers_default ON servers(is_default)", [])?;
+    
+    // Authentication credentials table
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS credentials (
+            id TEXT PRIMARY KEY,
+            server_id TEXT,
+            service TEXT NOT NULL,
+            credential_type TEXT NOT NULL,
+            encrypted_value TEXT NOT NULL,
+            metadata TEXT,                   -- JSON object
+            created_at INTEGER NOT NULL,
+            last_used INTEGER,
+            FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_credentials_service ON credentials(service)", [])?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_credentials_server ON credentials(server_id)", [])?;
+    
+    // Sessions table
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            server_id TEXT NOT NULL,
+            started_at INTEGER NOT NULL,
+            ended_at INTEGER,
+            tools_called INTEGER DEFAULT 0,
+            errors_count INTEGER DEFAULT 0,
+            FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_sessions_server ON sessions(server_id)", [])?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at)", [])?;
+    
+    // Tool calls history
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS tool_calls (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            arguments TEXT,                  -- JSON
+            result TEXT,                     -- JSON
+            error TEXT,
+            success INTEGER NOT NULL,
+            duration_ms INTEGER,
+            called_at INTEGER NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id)", [])?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_tool ON tool_calls(tool_name)", [])?;
+    
+    // User preferences table
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS preferences (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_database_path() {
+        let path = get_database_path();
+        assert!(path.to_string_lossy().contains("{{ project_name }}"));
+        
+        #[cfg(target_os = "windows")]
+        assert!(path.to_string_lossy().contains("data"));
+        
+        #[cfg(target_os = "macos")]
+        assert!(path.to_string_lossy().contains("Application Support"));
+        
+        #[cfg(target_os = "linux")]
+        assert!(path.to_string_lossy().contains(".local/share") || 
+                path.to_string_lossy().contains("share"));
+    }
+}
