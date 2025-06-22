@@ -1,0 +1,67 @@
+//! {{ project_name }} - A robust Model Context Protocol client library
+//!
+//! {{ description }}
+//! - Secure authentication and credential management
+//! - Advanced caching and resource management  
+//! - Tool registry with JSON Schema validation
+//! - Multi-session architecture for future expansion
+//! - Enhanced error handling and result processing
+//!
+//! Version: {{ version }}
+
+// Core MCP client modules
+pub mod auth;
+pub mod cache;
+pub mod client;
+pub mod database;
+pub mod database_migrations;
+pub mod error;
+pub mod registry;
+pub mod result;
+pub mod transport;
+
+// Resource and session management
+pub mod resource;
+pub mod session_manager;
+
+// Configuration
+pub mod config;
+
+// User interfaces
+pub mod cli;
+pub mod headless;
+pub mod repl;
+
+// Re-export main types for convenient access
+pub use auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
+pub use cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
+pub use client::{
+    ConnectionConfig, ConnectionConfigBuilder, ConnectionState, McpClient, ServerCapabilities,
+};
+pub use config::{ConfigManager, ServerProfile, AuthCredential, SessionHistory};
+pub use database::{DatabaseManager, DatabaseConfig};
+pub use error::{ClientError, Result};
+pub use headless::{HeadlessRunner, ServerStatus, ExitCode};
+pub use registry::{ToolInfo, ToolRegistry};
+pub use resource::{ResourceContent, ResourceInfo};
+pub use result::{ContentType, ToolResult};
+pub use session_manager::McpSessionManager;
+pub use transport::Transport;
+
+/// Current version of the {{ project_name }}
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Default timeout for MCP operations
+pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
+
+/// Maximum number of retries for failed operations
+pub const DEFAULT_MAX_RETRIES: u32 = 3;
+
+/// Default cache TTL in seconds
+pub const DEFAULT_CACHE_TTL_SECS: u64 = 300;
+
+/// Maximum tools in registry
+pub const MAX_TOOLS_IN_REGISTRY: usize = 1000;
+
+/// MCP Protocol version
+pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";

@@ -10,12 +10,12 @@
 //! - Organizing parameters and responses into Rust-appropriate structures
 //! - Generating type names for structs, enums, and functions
 
-use super::EndpointContextBuilder;
+use super::{EndpointContextBuilder, LanguageContextBuilder};
 use crate::core::openapi::OpenApiOperation;
 use crate::core::templates::{ParameterKind, TemplateParameterInfo};
 use crate::core::utils::{to_proper_case, to_snake_case};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map as JsonMap, Value as JsonValue};
+use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
 /// Rust-specific property information with type mapping.
 ///
@@ -360,4 +360,70 @@ fn extract_schema_properties_map(schema: &JsonValue) -> Option<JsonMap<String, J
     }
 
     None
+}
+
+/// Builder for creating Rust-specific MCP client contexts.
+///
+/// This builder normalizes generic client configuration into Rust-appropriate
+/// formats, ensuring proper naming conventions and adding language-specific defaults.
+#[derive(Debug, Clone)]
+pub struct RustMcpClientContextBuilder;
+
+impl LanguageContextBuilder for RustMcpClientContextBuilder {
+    fn build(&self, context: &JsonValue) -> crate::core::error::Result<JsonValue> {
+        let mut normalized = if let Some(obj) = context.as_object() {
+            obj.clone()
+        } else {
+            return Err(crate::core::error::Error::Template(
+                "Context must be a JSON object".to_string(),
+            ));
+        };
+
+        // Get project name and normalize for Rust
+        let raw_project_name = normalized
+            .get("project_name")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("agenterra_mcp_client");
+
+        // Rust crate names must be snake_case
+        let project_name = to_snake_case(raw_project_name);
+
+        // Ensure it starts with letter/underscore (Rust requirement)
+        let project_name = if project_name.chars().next().is_some_and(char::is_numeric) {
+            format!("mcp_{}", project_name)
+        } else {
+            project_name
+        };
+
+        // Core naming conventions - these are what the builder should handle
+        normalized.insert("project_name".to_string(), json!(project_name));
+        normalized.insert("cli_binary_name".to_string(), json!(&project_name));
+        normalized.insert("crate_name".to_string(), json!(&project_name));
+
+        // Module and type names
+        normalized.insert(
+            "module_name".to_string(),
+            json!(to_snake_case(&project_name)),
+        );
+        normalized.insert(
+            "client_struct_name".to_string(),
+            json!(to_proper_case(&project_name)),
+        );
+
+        // Only provide essential defaults that depend on project name
+        if !normalized.contains_key("description")
+            || normalized
+                .get("description")
+                .and_then(|v| v.as_str())
+                .is_none_or(str::is_empty)
+        {
+            normalized.insert(
+                "description".to_string(),
+                json!(format!("MCP client for {}", project_name)),
+            );
+        }
+
+        Ok(json!(normalized))
+    }
 }

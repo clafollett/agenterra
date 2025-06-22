@@ -25,6 +25,8 @@ files:
     destination: src/main.rs
   - source: LICENSE
     destination: LICENSE
+  - source: README.md.tera
+    destination: README.md
 
 # Template variables that will be available during code generation
 template_variables:

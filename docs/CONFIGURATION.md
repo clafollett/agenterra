@@ -5,7 +5,6 @@ This guide explains how to configure Agenterra using different methods.
 ## Table of Contents
 - [Configuration Methods](#configuration-methods)
 - [Command-Line Options](#command-line-options)
-- [Configuration File](#configuration-file)
 - [Environment Variables](#environment-variables)
 - [Example Configurations](#example-configurations)
 
@@ -14,9 +13,8 @@ This guide explains how to configure Agenterra using different methods.
 Agenterra can be configured using the following methods (in order of precedence):
 
 1. **Command-Line Arguments** (highest priority)
-2. **Configuration File** (`agenterra.toml` in project root)
-3. **Environment Variables**
-4. **Default Values** (lowest priority)
+2. **Environment Variables**
+3. **Default Values** (lowest priority)
 
 ## Command-Line Options
 
@@ -62,59 +60,6 @@ agenterra scaffold mcp client --project-name <PROJECT_NAME> [OPTIONS]
 | `--output-dir <OUTPUT_DIR>` | Output directory for generated code | |
 | `--timeout <TIMEOUT>` | Connection timeout in seconds | `10` |
 
-## Configuration File
-
-Create a `agenterra.toml` file in your project root:
-
-### Server Configuration
-
-```toml
-[scaffold.mcp.server]
-schema_path = "openapi.yaml"
-project_name = "my_api_server"
-template = "rust_axum"
-output_dir = "generated-server"
-log_file = "my-server"
-port = 3000
-base_url = "https://api.example.com"
-
-# Custom template directory (optional)
-template_dir = "./custom-templates/server"
-```
-
-### Client Configuration
-
-```toml
-[scaffold.mcp.client]
-project_name = "my_api_client"
-template = "rust_reqwest"
-output_dir = "generated-client"
-timeout = 10
-
-# Custom template directory (optional)
-template_dir = "./custom-templates/client"
-```
-
-### Combined Configuration
-
-```toml
-# Server configuration
-[scaffold.mcp.server]
-schema_path = "api/openapi.yaml"
-project_name = "petstore_mcp_server"
-template = "rust_axum"
-output_dir = "petstore-server"
-log_file = "petstore-server"
-port = 3000
-base_url = "https://petstore3.swagger.io"
-
-# Client configuration
-[scaffold.mcp.client]
-project_name = "petstore_mcp_client"
-template = "rust_reqwest"
-output_dir = "petstore-client"
-timeout = 30
-```
 
 ## Environment Variables
 
@@ -155,94 +100,69 @@ export AGENTERRA_TIMEOUT=30
 
 ## Example Configurations
 
-### Minimal Server Configuration
+### Server Generation Example
 
-```toml
-[scaffold.mcp.server]
-schema_path = "api/openapi.yaml"
-output_dir = "generated-server"
+```bash
+# Basic server generation
+agenterra scaffold mcp server --schema-path api/openapi.yaml
+
+# Full server configuration with all options
+agenterra scaffold mcp server \
+  --schema-path api/openapi.yaml \
+  --project-name petstore_mcp_server \
+  --template rust_axum \
+  --output-dir petstore-server \
+  --log-file petstore-server \
+  --port 3000 \
+  --base-url https://petstore3.swagger.io
 ```
 
-### Minimal Client Configuration
+### Client Generation Example
 
-```toml
-[scaffold.mcp.client]
-project_name = "my-client"
-output_dir = "generated-client"
-```
+```bash
+# Basic client generation
+agenterra scaffold mcp client --project-name my-client
 
-### Full Server Configuration
-
-```toml
-[scaffold.mcp.server]
-schema_path = "api/openapi.yaml"
-project_name = "petstore_mcp_server"
-template = "rust_axum"
-output_dir = "petstore-server"
-log_file = "petstore-server"
-port = 3000
-base_url = "https://petstore3.swagger.io"
-```
-
-### Full Client Configuration
-
-```toml
-[scaffold.mcp.client]
-project_name = "petstore_mcp_client"
-template = "rust_reqwest"
-output_dir = "petstore-client"
-timeout = 30
+# Full client configuration with all options
+agenterra scaffold mcp client \
+  --project-name petstore_mcp_client \
+  --template rust_reqwest \
+  --output-dir petstore-client \
+  --timeout 30
 ```
 
 ### Environment Variables Example
 
 ```bash
-# .env file for server generation
-AGENTERRA_SCHEMA_PATH=api/openapi.yaml
-AGENTERRA_OUTPUT_DIR=generated-server
-AGENTERRA_PROJECT_NAME=my_api_server
-AGENTERRA_TEMPLATE=rust_axum
-AGENTERRA_PORT=3000
-AGENTERRA_BASE_URL=https://api.example.com
+# Set default output directory for all generations
+export AGENTERRA_OUTPUT_DIR=~/my-projects
 
-# .env file for client generation
-AGENTERRA_OUTPUT_DIR=generated-client
-AGENTERRA_PROJECT_NAME=my_api_client
-AGENTERRA_TEMPLATE=rust_reqwest
-AGENTERRA_TIMEOUT=30
+# Set custom template directory for development
+export AGENTERRA_TEMPLATE_DIR=~/my-custom-templates
+
+# Server generation using environment variables
+export AGENTERRA_SCHEMA_PATH=api/openapi.yaml
+export AGENTERRA_PROJECT_NAME=my_api_server
+export AGENTERRA_TEMPLATE=rust_axum
+export AGENTERRA_PORT=3000
+export AGENTERRA_BASE_URL=https://api.example.com
+
+agenterra scaffold mcp server
+
+# Client generation using environment variables
+export AGENTERRA_PROJECT_NAME=my_api_client
+export AGENTERRA_TEMPLATE=rust_reqwest
+export AGENTERRA_TIMEOUT=30
+
+agenterra scaffold mcp client
 ```
 
 ## Configuration Precedence
 
 1. Command-line arguments (highest priority)
 2. Environment variables
-3. Configuration file (`agenterra.toml`)
-4. Default values (lowest priority)
+3. Default values (lowest priority)
 
-## Migration from Previous Versions
-
-If you're upgrading from a previous version, update your configuration files:
-
-**Old format (deprecated):**
-```toml
-[scaffold]
-schema_path = "openapi.yaml"
-template_kind = "rust_axum"
-output_dir = "generated"
-```
-
-**New format:**
-```toml
-[scaffold.mcp.server]
-schema_path = "openapi.yaml"
-template = "rust_axum"
-output_dir = "generated-server"
-
-[scaffold.mcp.client]
-project_name = "my-client"
-template = "rust_reqwest"
-output_dir = "generated-client"
-```
 
 ## Next Steps
 

@@ -1,0 +1,254 @@
+//! Unified database management for {{ project_name }}
+//!
+//! Provides a single SQLite database for all client data storage needs,
+//! following OS-specific best practices for data file locations.
+//!
+//! Version: {{ version }}
+
+use crate::database_migrations;
+use crate::error::{ClientError, Result};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::Connection;
+use rusqlite_migration::Migrations;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tracing::{debug, info};
+
+/// Get the OS-specific database path following platform best practices
+pub fn get_database_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: %LOCALAPPDATA%\{{ project_name }}\data\{{ project_name }}.db
+        // Example: C:\Users\Username\AppData\Local\{{ project_name }}\data\{{ project_name }}.db
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("{{ project_name }}")
+            .join("data")
+            .join("{{ project_name }}.db")
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: ~/Library/Application Support/{{ project_name }}/{{ project_name }}.db
+        dirs::data_dir()
+            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+            .join("{{ project_name }}")
+            .join("{{ project_name }}.db")
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // Linux and other Unix-like: ~/.local/share/{{ project_name }}/{{ project_name }}.db
+        // Follows XDG Base Directory specification
+        dirs::data_dir()
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .map(|h| h.join(".local").join("share"))
+                    .unwrap_or_else(|| PathBuf::from("."))
+            })
+            .join("{{ project_name }}")
+            .join("{{ project_name }}.db")
+    }
+}
+
+/// Normalize database path to prevent double-initialization due to path differences
+fn normalize_db_path(db_path: &Path) -> String {
+    // First try canonicalize (resolves symlinks and relative components)
+    if let Ok(canonical) = db_path.canonicalize() {
+        return canonical.to_string_lossy().to_string();
+    }
+
+    // If canonicalize fails (file doesn't exist yet), make relative paths absolute
+    if db_path.is_relative() {
+        if let Ok(current_dir) = std::env::current_dir() {
+            let absolute_path = current_dir.join(db_path);
+            return absolute_path.to_string_lossy().to_string();
+        }
+    }
+
+    // Fallback to original path
+    db_path.to_string_lossy().to_string()
+}
+
+/// Configuration for the database manager
+///
+/// Controls database location, connection pooling, and performance settings
+/// for the unified SQLite database used by all {{ project_name }} components.
+#[derive(Debug, Clone)]
+pub struct DatabaseConfig {
+    /// Database file path (uses OS-specific defaults if not specified)
+    /// - Windows: %LOCALAPPDATA%\{{ project_name }}\data\{{ project_name }}.db
+    /// - macOS: ~/Library/Application Support/{{ project_name }}/{{ project_name }}.db
+    /// - Linux: ~/.local/share/{{ project_name }}/{{ project_name }}.db
+    pub database_path: PathBuf,
+    
+    /// Maximum number of connections in the pool
+    /// Higher values improve concurrent performance but use more resources
+    pub pool_max_connections: u32,
+    
+    /// Connection timeout for acquiring a connection from the pool
+    /// Prevents indefinite blocking when pool is exhausted
+    pub pool_connection_timeout: Option<Duration>,
+    
+    /// Maximum lifetime for pooled connections
+    /// Connections are recycled after this duration to prevent stale connections
+    pub pool_max_lifetime: Option<Duration>,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            database_path: get_database_path(),
+            pool_max_connections: 20,
+            pool_connection_timeout: Some(Duration::from_secs(30)),
+            pool_max_lifetime: Some(Duration::from_secs(300)),
+        }
+    }
+}
+
+/// Unified database manager for all {{ project_name }} data
+#[derive(Debug)]
+pub struct DatabaseManager {
+    /// Connection pool for database operations
+    pool: Pool<SqliteConnectionManager>,
+    /// Configuration
+    config: DatabaseConfig,
+}
+
+impl DatabaseManager {
+    /// Create a new database manager with default configuration
+    pub async fn new() -> Result<Self> {
+        Self::with_config(DatabaseConfig::default()).await
+    }
+
+    /// Create a new database manager with custom configuration
+    pub async fn with_config(config: DatabaseConfig) -> Result<Self> {
+        // Ensure parent directory exists
+        if let Some(parent) = config.database_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ClientError::ConfigError(format!(
+                    "Failed to create database directory {}: {}", 
+                    parent.display(), e
+                )))?;
+        }
+
+        // Create connection pool
+        let manager = SqliteConnectionManager::file(&config.database_path);
+        let mut pool_builder = Pool::builder()
+            .max_size(config.pool_max_connections);
+
+        if let Some(timeout) = config.pool_connection_timeout {
+            pool_builder = pool_builder.connection_timeout(timeout);
+        }
+
+        if let Some(max_lifetime) = config.pool_max_lifetime {
+            pool_builder = pool_builder.max_lifetime(Some(max_lifetime));
+        }
+
+        let pool = pool_builder.build(manager).map_err(|e| {
+            ClientError::Pool(format!("Failed to create connection pool: {}", e))
+        })?;
+
+        let db_path_display = config.database_path.display().to_string();
+        let manager = Self { pool, config };
+
+        // Initialize database schema
+        manager.init_schema().await?;
+        
+        info!("Database manager initialized at: {}", db_path_display);
+        Ok(manager)
+    }
+
+    /// Get the connection pool for direct access
+    pub fn pool(&self) -> &Pool<SqliteConnectionManager> {
+        &self.pool
+    }
+
+    /// Execute a function with a database connection from the pool
+    pub async fn with_connection<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let pool = self.pool.clone();
+        
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| {
+                ClientError::Pool(format!("Failed to get pooled connection: {}", e))
+            })?;
+            
+            f(&mut conn).map_err(|e| ClientError::Client(format!("Database operation failed: {}", e)))
+        })
+        .await
+        .map_err(|e| ClientError::Spawn(format!("Task execution failed: {}", e)))?
+    }
+
+    /// Initialize the database schema using migrations
+    async fn init_schema(&self) -> Result<()> {
+        self.with_connection(|conn| {
+            debug!("Initializing database schema with migrations");
+
+            // Enable WAL mode for better concurrent access
+            conn.pragma_update(None, "journal_mode", "WAL")?;
+            conn.pragma_update(None, "synchronous", "NORMAL")?;
+            conn.pragma_update(None, "cache_size", 10000)?;
+            conn.pragma_update(None, "temp_store", "memory")?;
+            
+            // Set busy timeout to handle SQLITE_BUSY on slow filesystems
+            conn.busy_timeout(Duration::from_secs(5))?;
+
+            // Create migrations instance from our defined migrations
+            let migrations = Migrations::new(database_migrations::get_migrations());
+            
+            // Get current version before applying migrations
+            let current_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))
+                .unwrap_or(0);
+            
+            debug!("Current database version: {}", current_version);
+            
+            // Apply migrations up to the latest version
+            // This is idempotent - if already at latest version, does nothing
+            // Apply migrations - proper error handling
+            if let Err(e) = migrations.to_latest(conn) {
+                // Return a descriptive error that will be converted by with_connection
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                    Some(format!("Migration failed: {}", e))
+                ));
+            }
+            
+            let new_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))
+                .unwrap_or(0);
+            
+            if new_version > current_version {
+                info!("Database schema migrated from version {} to {}", current_version, new_version);
+            } else {
+                debug!("Database schema is up to date (version {})", new_version);
+            }
+            
+            Ok(())
+        }).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_database_path() {
+        let path = get_database_path();
+        assert!(path.to_string_lossy().contains("{{ project_name }}"));
+        
+        #[cfg(target_os = "windows")]
+        assert!(path.to_string_lossy().contains("data"));
+        
+        #[cfg(target_os = "macos")]
+        assert!(path.to_string_lossy().contains("Application Support"));
+        
+        #[cfg(target_os = "linux")]
+        assert!(path.to_string_lossy().contains(".local/share") || 
+                path.to_string_lossy().contains("share"));
+    }
+}

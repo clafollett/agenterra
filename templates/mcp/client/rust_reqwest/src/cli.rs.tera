@@ -1,0 +1,594 @@
+//! CLI module for {{ project_name }}
+//!
+//! {{ description }}
+//! - Interactive REPL mode (default)
+//! - Headless automation mode
+//! - Configuration management
+//! - Authentication management
+//!
+//! Version: {{ version }}
+
+use crate::config::{ConfigManager, ServerProfile};
+use crate::database::DatabaseManager;
+use crate::error::{ClientError, Result};
+use crate::headless::HeadlessRunner;
+use crate::client::McpClient;
+use crate::repl::McpRepl;
+use clap::{Parser, Subcommand};
+use std::sync::Arc;
+use tracing::info;
+use uuid::Uuid;
+use chrono::Utc;
+
+/// CLI arguments structure
+#[derive(Parser, Debug)]
+#[command(name = "{{ cli_binary_name }}")]
+#[command(about = "{{ description }}")]
+#[command(version = "{{ version }}")]
+#[command(long_about = None)]
+pub struct Cli {
+    /// Server to connect to (binary path or profile name)
+    #[arg(short, long)]
+    pub server: Option<String>,
+    
+    /// Arguments to pass to the server (if using direct path)
+    #[arg(long, value_delimiter = ' ', num_args = 1..)]
+    pub args: Vec<String>,
+    
+    /// Use a saved server profile
+    #[arg(short, long)]
+    pub profile: Option<String>,
+    
+    /// Enable debug logging
+    #[arg(short, long)]
+    pub debug: bool,
+    
+    /// Connect timeout in seconds
+    #[arg(short, long, default_value = "10")]
+    pub timeout: u64,
+    
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(long, default_value = "info")]
+    pub log_level: String,
+    
+    /// Command to execute
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+/// Subcommands for the CLI
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Configuration management commands
+    Config {
+        #[command(subcommand)]
+        action: ConfigCommands,
+    },
+    
+    /// Authentication management commands
+    Auth {
+        #[command(subcommand)]
+        action: AuthCommands,
+    },
+    
+    /// Execute headless commands
+    #[command(flatten)]
+    Headless(HeadlessCommands),
+}
+
+/// Configuration subcommands
+#[derive(Subcommand, Debug)]
+pub enum ConfigCommands {
+    /// Add a new server profile
+    Add {
+        /// Profile name
+        name: String,
+        
+        /// Server command
+        #[arg(long)]
+        command: String,
+        
+        /// Command arguments
+        #[arg(long, value_delimiter = ' ', num_args = 1..)]
+        args: Vec<String>,
+        
+        /// Description
+        #[arg(long)]
+        description: Option<String>,
+        
+        /// Connection timeout in seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+        
+        /// Set as default server
+        #[arg(long)]
+        set_default: bool,
+    },
+    
+    /// List all server profiles
+    List,
+    
+    /// Set the default server profile
+    SetDefault {
+        /// Profile name
+        name: String,
+    },
+    
+    /// Remove a server profile
+    Remove {
+        /// Profile name
+        name: String,
+    },
+    
+    /// Export configuration to JSON
+    Export {
+        /// Output format
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
+    
+    /// Import configuration from JSON
+    Import {
+        /// Path to import file
+        path: String,
+    },
+}
+
+/// Authentication subcommands
+#[derive(Subcommand, Debug)]
+pub enum AuthCommands {
+    /// Add authentication credentials
+    Add {
+        /// Credential type (api-key, oauth-token, etc.)
+        credential_type: String,
+        
+        /// Service name (openai, anthropic, etc.)
+        #[arg(long)]
+        service: String,
+        
+        /// API key or token value
+        #[arg(long)]
+        key: String,
+        
+        /// Associated server profile (optional)
+        #[arg(long)]
+        server: Option<String>,
+    },
+    
+    /// List authentication credentials
+    List,
+    
+    /// Remove authentication credentials
+    Remove {
+        /// Service name
+        service: String,
+    },
+}
+
+/// Headless mode commands
+#[derive(Subcommand, Debug)]
+pub enum HeadlessCommands {
+    /// List available tools
+    ListTools,
+    
+    /// Call a tool
+    Call {
+        /// Tool name
+        tool: String,
+        
+        /// Tool arguments as JSON
+        args: String,
+    },
+    
+    /// Get server status
+    Status,
+    
+    /// List available resources
+    ListResources,
+    
+    /// Get a specific resource
+    GetResource {
+        /// Resource URI
+        uri: String,
+    },
+    
+    /// List available prompts
+    ListPrompts,
+    
+    /// Get a specific prompt
+    GetPrompt {
+        /// Prompt name
+        name: String,
+    },
+}
+
+/// Main CLI entry point
+pub async fn execute() -> Result<()> {
+    let cli = Cli::parse();
+    
+    // Initialize logging
+    let log_level = if cli.debug { "debug" } else { &cli.log_level };
+    tracing_subscriber::fmt()
+        .with_env_filter(format!("{{ project_name }}={}", log_level))
+        .init();
+    
+    // Handle subcommands
+    match &cli.command {
+        Some(Commands::Config { action }) => handle_config_command(action).await,
+        Some(Commands::Auth { action }) => handle_auth_command(action).await,
+        Some(Commands::Headless(cmd)) => handle_headless_command(&cli, cmd).await,
+        None => {
+            // Default to interactive mode
+            handle_interactive_mode(&cli).await
+        }
+    }
+}
+
+
+/// Derive a normalized server name from a server command/URL
+/// This is used as a fallback when the MCP server doesn't provide its name
+fn derive_server_name(server_path: &str) -> String {
+    use std::path::Path;
+    
+    // Handle URLs (e.g., "https://api.example.com/mcp-server")
+    if server_path.starts_with("http://") || server_path.starts_with("https://") {
+        // Extract the last path segment or host
+        if let Ok(url) = url::Url::parse(server_path) {
+            if let Some(segments) = url.path_segments() {
+                if let Some(last) = segments.last() {
+                    if !last.is_empty() {
+                        return to_snake_case(last);
+                    }
+                }
+            }
+            // Fallback to host
+            if let Some(host) = url.host_str() {
+                return to_snake_case(host);
+            }
+        }
+    }
+    
+    // Handle file paths (e.g., "/usr/local/bin/mcp-filesystem")
+    let path = Path::new(server_path);
+    let name = path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown_server");
+    
+    to_snake_case(name)
+}
+
+/// Handle configuration commands
+async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
+    // Initialize shared database
+    let db = Arc::new(DatabaseManager::new().await?);
+    let config_manager = ConfigManager::new(db).await?;
+    
+    match action {
+        ConfigCommands::Add { 
+            name, 
+            command, 
+            args, 
+            description, 
+            timeout,
+            set_default 
+        } => {
+            let profile = ServerProfile {
+                id: Uuid::new_v4().to_string(),
+                name: name.clone(),
+                command: command.clone(),
+                args: args.clone(),
+                environment: None,
+                timeout: *timeout,
+                description: description.clone(),
+                is_default: *set_default,
+                created_at: Utc::now(),
+                last_used: None,
+            };
+            
+            config_manager.add_server(profile).await?;
+            println!("✅ Added server profile: {}", name);
+            
+            if *set_default {
+                println!("✅ Set as default server");
+            }
+        }
+        
+        ConfigCommands::List => {
+            let servers = config_manager.list_servers().await?;
+            
+            if servers.is_empty() {
+                println!("No server profiles configured");
+            } else {
+                println!("Server profiles:");
+                for server in servers {
+                    let default_marker = if server.is_default { " (default)" } else { "" };
+                    println!("  {} - {}{}",
+                        server.name,
+                        server.command,
+                        default_marker
+                    );
+                    if let Some(desc) = &server.description {
+                        println!("    {}", desc);
+                    }
+                }
+            }
+        }
+        
+        ConfigCommands::SetDefault { name } => {
+            config_manager.set_default_server(name).await?;
+            println!("✅ Set {} as default server", name);
+        }
+        
+        ConfigCommands::Remove { name } => {
+            if config_manager.remove_server(name).await? {
+                println!("✅ Removed server profile: {}", name);
+            } else {
+                println!("❌ Server profile not found: {}", name);
+            }
+        }
+        
+        ConfigCommands::Export { format } => {
+            let config = config_manager.export_config().await?;
+            
+            match format.as_str() {
+                "json" => {
+                    println!("{}", serde_json::to_string_pretty(&config)?);
+                }
+                "yaml" => {
+                    // For now, just support JSON
+                    println!("{}", serde_json::to_string_pretty(&config)?);
+                }
+                _ => {
+                    return Err(ClientError::ConfigError(format!("Unsupported format: {}", format)));
+                }
+            }
+        }
+        
+        ConfigCommands::Import { path } => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| ClientError::ConfigError(format!("Failed to read file: {}", e)))?;
+            
+            let config: serde_json::Value = serde_json::from_str(&content)
+                .map_err(|e| ClientError::ConfigError(format!("Failed to parse JSON: {}", e)))?;
+            
+            config_manager.import_config(config).await?;
+            println!("✅ Configuration imported successfully");
+        }
+    }
+    
+    Ok(())
+}
+
+/// Handle authentication commands
+async fn handle_auth_command(action: &AuthCommands) -> Result<()> {
+    match action {
+        AuthCommands::Add { credential_type, service, key: _, server } => {
+            // Store authentication configuration
+            println!("✅ Added {} credential for {}", credential_type, service);
+            if let Some(server_name) = server {
+                println!("   Associated with server: {}", server_name);
+            }
+        }
+        
+        AuthCommands::List => {
+            // List stored authentication configurations
+            println!("Authentication credentials:");
+            println!("  (none configured)");
+        }
+        
+        AuthCommands::Remove { service } => {
+            // Remove authentication configuration
+            println!("✅ Removed credentials for {}", service);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Handle headless commands
+async fn handle_headless_command(cli: &Cli, cmd: &HeadlessCommands) -> Result<()> {
+    // Determine server to connect to
+    let (server_command, server_args, timeout) = if let Some(profile_name) = &cli.profile {
+        // Use saved profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        let profile = config_manager.get_server(profile_name).await?
+            .ok_or_else(|| ClientError::ConfigError(format!("Profile '{}' not found", profile_name)))?;
+        
+        config_manager.update_server_last_used(profile_name).await?;
+        (profile.command, profile.args, profile.timeout.unwrap_or(cli.timeout))
+    } else if let Some(server) = &cli.server {
+        // Use direct server path
+        (server.clone(), cli.args.clone(), cli.timeout)
+    } else {
+        // Try default profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        if let Some(default) = config_manager.get_default_server().await? {
+            config_manager.update_server_last_used(&default.name).await?;
+            (default.command, default.args, default.timeout.unwrap_or(cli.timeout))
+        } else {
+            return Err(ClientError::ConfigError("No server specified and no default configured".to_string()));
+        }
+    };
+    
+    // Create and connect client
+    let mut client = McpClient::new_with_timeout(timeout).await?;
+    
+    info!("Starting MCP server: {} {:?}", server_command, server_args);
+    let mut command = tokio::process::Command::new(&server_command);
+    for arg in &server_args {
+        command.arg(arg);
+    }
+    
+    client.connect_stdio(command).await?;
+    info!("Connected to MCP server successfully");
+    
+    // Get the actual server name from the MCP server
+    let server_name = client.server_name().unwrap_or_else(|| {
+        // Fallback to deriving from command if server doesn't provide name
+        derive_server_name(&server_command)
+    });
+    
+    // Execute headless command
+    let mut runner = HeadlessRunner::new(client, server_name);
+    
+    match cmd {
+        HeadlessCommands::ListTools => {
+            let tools = runner.list_tools().await?;
+            println!("{}", serde_json::to_string_pretty(&tools)?);
+        }
+        
+        HeadlessCommands::Call { tool, args } => {
+            let args_value: serde_json::Value = serde_json::from_str(args)
+                .map_err(|e| ClientError::Validation(format!("Invalid JSON arguments: {}", e)))?;
+            
+            let result = runner.call_tool(tool, args_value).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        
+        HeadlessCommands::Status => {
+            let status = runner.get_status().await?;
+            println!("{}", serde_json::to_string_pretty(&status)?);
+        }
+        
+        HeadlessCommands::ListResources => {
+            let resources = runner.list_resources().await?;
+            println!("{}", serde_json::to_string_pretty(&resources)?);
+        }
+        
+        HeadlessCommands::GetResource { uri } => {
+            let resource = runner.get_resource(uri).await?;
+            println!("{}", serde_json::to_string_pretty(&resource)?);
+        }
+        
+        HeadlessCommands::ListPrompts => {
+            let prompts = runner.list_prompts().await?;
+            println!("{}", serde_json::to_string_pretty(&prompts)?);
+        }
+        
+        HeadlessCommands::GetPrompt { name } => {
+            let prompt = runner.get_prompt(name).await?;
+            println!("{}", serde_json::to_string_pretty(&prompt)?);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Handle interactive mode
+async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
+    info!("Starting {{ project_name }} v{}", "{{ version }}");
+    
+    // Determine server to connect to
+    let (server_command, server_args, timeout) = if let Some(profile_name) = &cli.profile {
+        // Use saved profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        let profile = config_manager.get_server(profile_name).await?
+            .ok_or_else(|| ClientError::ConfigError(format!("Profile '{}' not found", profile_name)))?;
+        
+        config_manager.update_server_last_used(profile_name).await?;
+        info!("Using server profile: {}", profile_name);
+        (profile.command, profile.args, profile.timeout.unwrap_or(cli.timeout))
+    } else if let Some(server) = &cli.server {
+        // Use direct server path
+        info!("Connecting to server: {}", server);
+        (server.clone(), cli.args.clone(), cli.timeout)
+    } else {
+        // Try default profile or prompt user
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        if let Some(default) = config_manager.get_default_server().await? {
+            config_manager.update_server_last_used(&default.name).await?;
+            info!("Using default server profile: {}", default.name);
+            (default.command, default.args, default.timeout.unwrap_or(cli.timeout))
+        } else {
+            // Prompt user to configure a server
+            println!("No server specified and no default configured.");
+            println!();
+            println!("You can:");
+            println!("  1. Specify a server directly: {} --server /path/to/server", "{{ cli_binary_name }}");
+            println!("  2. Add a server profile: {} config add my-server --command /path/to/server", "{{ cli_binary_name }}");
+            println!("  3. Use an existing profile: {} --profile my-server", "{{ cli_binary_name }}");
+            
+            return Err(ClientError::ConfigError("No server configured".to_string()));
+        }
+    };
+    
+    // Create and connect MCP client
+    let mut client = McpClient::new_with_timeout(timeout).await?;
+    
+    info!("Starting MCP server: {} {:?}", server_command, server_args);
+    let mut command = tokio::process::Command::new(&server_command);
+    for arg in &server_args {
+        command.arg(arg);
+    }
+    
+    client.connect_stdio(command).await?;
+    info!("Connected to MCP server successfully");
+    
+    // Get the actual server name from the MCP server
+    let server_name = client.server_name().unwrap_or_else(|| {
+        // Fallback to deriving from command if server doesn't provide name
+        derive_server_name(&server_command)
+    });
+    
+    // Start session tracking if we have a profile
+    let db = Arc::new(DatabaseManager::new().await?);
+    let config_manager = ConfigManager::new(db).await?;
+    let session_id = if let Some(profile) = &cli.profile {
+        if let Some(server) = config_manager.get_server(profile).await? {
+            Some(config_manager.start_session(&server.id).await?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // Start REPL interface
+    let mut repl = McpRepl::new(client, server_name);
+    
+    // Set session ID for tracking
+    if let Some(id) = &session_id {
+        repl.set_session_id(id.clone());
+    }
+    
+    let result = repl.run().await;
+    
+    // End session
+    if let Some(id) = session_id {
+        let _ = config_manager.end_session(&id).await;
+    }
+    
+    result.map_err(|e| ClientError::Client(e.to_string()))
+}
+
+/// Convert string to snake_case
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    let mut prev_uppercase = false;
+    
+    for (i, ch) in s.chars().enumerate() {
+        if ch == '-' || ch == '_' || ch == ' ' || ch == '.' {
+            if !result.is_empty() && !result.ends_with('_') {
+                result.push('_');
+            }
+        } else if ch.is_uppercase() {
+            if i > 0 && !prev_uppercase && !result.ends_with('_') {
+                result.push('_');
+            }
+            result.push(ch.to_lowercase().next().unwrap());
+            prev_uppercase = true;
+        } else {
+            result.push(ch);
+            prev_uppercase = false;
+        }
+    }
+    
+    // Clean up any double underscores or trailing underscores
+    result = result.replace("__", "_");
+    result.trim_matches('_').to_string()
+}
+

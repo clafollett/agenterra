@@ -1,137 +1,268 @@
-# {{ project_name | default(value="MCP Client") }}
+# {{ project_name }}
 
-Interactive MCP (Model Context Protocol) client with REPL interface for tool discovery and invocation.
+{{ description }}
 
 ## Features
 
-- **Interactive REPL**: Command-line interface for exploring MCP servers
-- **Tool Discovery**: Automatically discovers available tools from connected servers
-- **Resource Access**: Browse and access server resources
-- **Prompt Interaction**: Work with server-provided prompts
-- **Real-time Communication**: Direct MCP protocol communication using rmcp
+- 🎯 **Interactive REPL** - Explore and test MCP servers interactively
+- 🤖 **Headless Mode** - Automate MCP operations for CI/CD and scripting
+- 💾 **Configuration Management** - SQLite-based server profiles and preferences
+- 🔐 **Authentication** - Secure credential storage (coming soon)
+- 📊 **Resource Caching** - SQLite-powered caching with analytics
+- 📈 **Session History** - Track tool usage and performance metrics
+- 🔄 **Multi-Server Support** - Save and switch between server profiles
+
+## Installation
+
+```bash
+cargo build --release
+```
 
 ## Usage
 
-### Basic Usage
+### Interactive Mode (Default)
 
+Start with a direct server path:
 ```bash
-# Connect to MCP server via stdio
-cargo run
+{{ cli_binary_name }} --server /path/to/mcp-server
+```
 
-# Connect with debug logging
-cargo run -- --debug
+Use a saved server profile:
+```bash
+{{ cli_binary_name }} --profile my-server
+```
 
-# Connect with custom timeout
-cargo run -- --timeout 30
+Use the default server:
+```bash
+{{ cli_binary_name }}
+```
+
+### Configuration Management
+
+Add a server profile:
+```bash
+{{ cli_binary_name }} config add my-server \
+  --command /path/to/server \
+  --args "arg1 arg2" \
+  --description "My MCP server" \
+  --set-default
+```
+
+List server profiles:
+```bash
+{{ cli_binary_name }} config list
+```
+
+Set default server:
+```bash
+{{ cli_binary_name }} config set-default my-server
+```
+
+Remove a server:
+```bash
+{{ cli_binary_name }} config remove my-server
+```
+
+Export configuration:
+```bash
+{{ cli_binary_name }} config export > config.json
+```
+
+Import configuration:
+```bash
+{{ cli_binary_name }} config import config.json
+```
+
+### Headless Mode (Automation)
+
+List available tools:
+```bash
+{{ cli_binary_name }} --server /path/to/server list-tools
+```
+
+Call a tool:
+```bash
+{{ cli_binary_name }} --server /path/to/server call tool-name '{"arg": "value"}'
+```
+
+Get server status:
+```bash
+{{ cli_binary_name }} --server /path/to/server status
+```
+
+List resources:
+```bash
+{{ cli_binary_name }} --server /path/to/server list-resources
+```
+
+Get a resource:
+```bash
+{{ cli_binary_name }} --server /path/to/server get-resource "resource://uri"
+```
+
+Using profiles in headless mode:
+```bash
+{{ cli_binary_name }} --profile my-server list-tools
 ```
 
 ### REPL Commands
 
-Once connected, use these commands in the interactive REPL:
+When in interactive mode, these commands are available:
 
-- `help` - Show available commands
-- `tools` - List available tools  
-- `resources` - List available resources
-- `prompts` - List available prompts
-- `call <tool> [args]` - Call a tool with optional JSON arguments
-- `get <uri>` - Get a resource by URI
-- `prompt <name> [args]` - Get a prompt with optional JSON arguments
-- `status` - Show connection status
-- `quit` - Exit the client
+- `help` or `h` - Show available commands
+- `tools` or `t` - List available tools
+- `call <tool> <args>` or `c` - Call a tool with JSON arguments
+- `resources` or `r` - List available resources
+- `get <uri>` or `g` - Get a specific resource
+- `prompts` or `p` - List available prompts
+- `prompt <name>` - Get a specific prompt
+- `status` or `s` - Show connection status
+- `quit` or `q` - Exit the REPL
 
-### Examples
+## Configuration Files
 
+Configuration is stored in SQLite databases:
+
+- **Config Database**: `~/.config/agenterra/{{ project_name }}_config.db`
+  - Server profiles
+  - User preferences
+  - Authentication credentials (encrypted)
+  - Session history
+
+- **Cache Database**: `~/.cache/agenterra/{{ project_name }}_cache.db`
+  - Cached resources
+  - Cache analytics
+  - Performance metrics
+
+## Environment Variables
+
+- `AGENTERRA_OUTPUT_DIR` - Override default output directory
+- `AGENTERRA_TEMPLATE_DIR` - Override template directory
+- `RUST_LOG` - Set logging level (e.g., `debug`, `info`, `warn`)
+
+## Exit Codes
+
+For scripting and automation:
+
+- `0` - Success
+- `1` - Connection failed
+- `2` - Tool call failed
+- `3` - Invalid arguments
+- `4` - Configuration error
+- `255` - Unknown error
+
+## Examples
+
+### Automation Script
+
+```bash
+#!/bin/bash
+# List all tools and save to file
+{{ cli_binary_name }} --profile my-server list-tools > tools.json
+
+# Call a tool and check result
+if {{ cli_binary_name }} --profile my-server call process-data '{"file": "data.csv"}'; then
+    echo "Processing succeeded"
+else
+    echo "Processing failed with code $?"
+fi
 ```
-mcp> tools
-Available tools:
-  calculate: Perform mathematical calculations
-  weather: Get weather information
 
-mcp> call calculate {"operation": "add", "a": 5, "b": 3}
-Tool result:
-{
-  "result": 8
-}
+### CI/CD Integration
 
-mcp> get file:///path/to/resource
-Resource content:
-{
-  "content": "File contents here..."
-}
+```yaml
+# GitHub Actions example
+- name: Run MCP Tools
+  run: |
+    {{ cli_binary_name }} config add ci-server \
+      --command {% raw %}${{ secrets.MCP_SERVER_PATH }}{% endraw %} \
+      --set-default
+    
+    {{ cli_binary_name }} list-tools
+    {{ cli_binary_name }} call deploy '{"version": "{% raw %}${{ github.sha }}{% endraw %}"}'
 ```
 
-## Configuration
+## Advanced Features
 
-The client supports the following command-line options:
+### Resource Caching
 
-- `--server <URL>` - MCP server URL (default: "stdio")
-- `--debug` - Enable debug logging
-- `--timeout <seconds>` - Connection timeout in seconds (default: 10)
+The client includes an SQLite-powered resource cache with connection pooling:
 
-### Cache Configuration
+- **Connection Pool**: 1-10 connections with 5-minute lifetime
+- **Cache TTL**: Configurable per resource (default: 1 hour)
+- **Analytics**: Track hit rates, access patterns, and performance
+- **Auto-cleanup**: Expired resources cleaned up automatically
 
-The client includes an SQLite-powered resource cache with connection pooling for optimal performance:
+### Session Tracking
 
-- **Default pool settings**: 1 minimum, 10 maximum connections
-- **Connection lifetime**: 5 minutes (auto-recycled to avoid stale WAL readers)
-- **Cache location**: `data/{{ project_name | default(value="mcp_client") }}_cache.db` (next to executable)
-- **Pool statistics**: Available via `get_pool_stats()` method
+All client sessions are tracked in the configuration database:
 
-The cache provides:
-- Resource caching with TTL support
-- Analytics and performance metrics
-- Concurrent access via connection pooling
-- Automatic cleanup of expired resources
+- Tool call history with arguments and results
+- Performance metrics (duration, success/failure)
+- Error tracking and debugging information
+- Session analytics for usage patterns
+
+## Development
+
+Run tests:
+```bash
+cargo test
+```
+
+Build with all features:
+```bash
+cargo build --release --all-features
+```
+
+Run with verbose logging:
+```bash
+RUST_LOG=debug {{ cli_binary_name }} --server /path/to/server
+```
+
+Format code:
+```bash
+cargo fmt
+```
+
+Lint code:
+```bash
+cargo clippy
+```
 
 ## Dependencies
 
-- **rmcp**: MCP protocol implementation
-- **reqwest**: HTTP client for network communication
-- **rustyline**: Interactive command-line editing
+### Core Dependencies
+- **rmcp**: Official MCP protocol SDK
 - **tokio**: Async runtime
-- **serde**: Serialization support
-- **rusqlite**: SQLite database engine for resource caching
-- **r2d2**: Connection pooling for database operations
-- **chrono**: Date and time handling for cache analytics
+- **clap**: Command-line argument parsing
+- **rustyline**: Interactive REPL
+
+### Storage & Configuration
+- **rusqlite**: SQLite database engine
+- **r2d2**: Connection pooling
+- **chrono**: Date/time handling
+- **uuid**: Unique identifiers
+
+### Serialization & Security
+- **serde**: Serialization framework
+- **serde_json**: JSON support
+- **zeroize**: Secure memory handling
+- **base64-simd**: Fast base64 encoding
 
 ## Publishing Limitation
 
 ⚠️ **Important**: This project uses git dependencies and cannot be published to crates.io in its current form.
 
-The `rmcp` dependency is referenced directly from the official ModelContextProtocol GitHub repository to ensure access to the latest features (including authentication support). To publish this project to crates.io, you would need to:
+The `rmcp` dependency is referenced directly from the official ModelContextProtocol GitHub repository. To publish to crates.io:
 
-1. Wait for an official `rmcp` release on crates.io that includes the `auth` feature
-2. Or remove features that require git dependencies
-3. Or vendor the dependencies locally
-
-This limitation ensures you have access to the full, official MCP SDK functionality during development.
-
-## Development
-
-### Building
-
-```bash
-cargo build
-```
-
-### Running Tests
-
-```bash
-cargo test
-```
-
-### Formatting
-
-```bash
-cargo fmt
-```
-
-### Linting
-
-```bash
-cargo clippy
-```
+1. Wait for an official `rmcp` release on crates.io
+2. Or vendor the dependencies locally
+3. Or use alternative MCP implementations
 
 ## License
 
-This project is licensed under the MIT License.
+{{ license }}
+
+## Contributing
+
+Contributions are welcome! Please submit pull requests or open issues.

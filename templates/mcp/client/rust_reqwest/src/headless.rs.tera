@@ -1,0 +1,302 @@
+//! Headless automation module for {{ project_name }}
+//!
+//! {{ description }}
+//! - Batch processing
+//! - Scripted operations
+//! - CI/CD integration
+//! - Machine-readable output
+//!
+//! Version: {{ version }}
+//! Max batch size: 100
+
+use crate::client::McpClient;
+use crate::error::{ClientError, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use tracing::{info, debug};
+
+/// Exit codes for headless operations
+#[derive(Debug, Clone, Copy)]
+pub enum ExitCode {
+    /// Operation completed successfully
+    Success = 0,
+    /// Connection to server failed
+    ConnectionFailed = 1,
+    /// Tool call failed
+    ToolCallFailed = 2,
+    /// Invalid arguments provided
+    InvalidArguments = 3,
+    /// Configuration error
+    ConfigurationError = 4,
+    /// Unknown or unexpected error
+    UnknownError = 255,
+}
+
+/// Server status information
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServerStatus {
+    /// Whether the server is connected
+    pub connected: bool,
+    /// Server name/identifier
+    pub server_name: Option<String>,
+    /// Server version
+    pub server_version: Option<String>,
+    /// Available capabilities
+    pub capabilities: Vec<String>,
+    /// Number of available tools
+    pub tool_count: usize,
+    /// Number of available resources
+    pub resource_count: usize,
+    /// Number of available prompts
+    pub prompt_count: usize,
+}
+
+/// Headless mode runner
+pub struct HeadlessRunner {
+    /// MCP client instance
+    client: McpClient,
+    /// Derived server name
+    server_name: String,
+}
+
+impl HeadlessRunner {
+    /// Create new headless runner
+    pub fn new(client: McpClient, server_name: String) -> Self {
+        Self { client, server_name }
+    }
+    
+    /// Get server status
+    pub async fn get_status(&mut self) -> Result<ServerStatus> {
+        debug!("Getting server status");
+        
+        // Check connection
+        let connected = self.client.is_connected();
+        
+        if !connected {
+            return Ok(ServerStatus {
+                connected: false,
+                server_name: None,
+                server_version: None,
+                capabilities: vec![],
+                tool_count: 0,
+                resource_count: 0,
+                prompt_count: 0,
+            });
+        }
+        
+        // Get capabilities
+        let capabilities = self.client.capabilities()
+            .map(|caps| {
+                let mut capabilities = Vec::new();
+                if !caps.tools().is_empty() {
+                    capabilities.push("tools".to_string());
+                }
+                if !caps.resources().is_empty() {
+                    capabilities.push("resources".to_string());
+                }
+                if !caps.prompts().is_empty() {
+                    capabilities.push("prompts".to_string());
+                }
+                capabilities
+            })
+            .unwrap_or_default();
+        
+        // Get counts
+        let tools = self.client.list_tools().await?;
+        let resources = self.client.list_resources().await?;
+        let prompts = self.client.list_prompts().await?;
+        
+        Ok(ServerStatus {
+            connected: true,
+            server_name: Some(self.server_name.clone()),
+            server_version: self.client.server_version(),
+            capabilities,
+            tool_count: tools.len(),
+            resource_count: resources.len(),
+            prompt_count: prompts.len(),
+        })
+    }
+    
+    /// List available tools
+    pub async fn list_tools(&mut self) -> Result<Vec<JsonValue>> {
+        debug!("Listing available tools");
+        
+        let tools = self.client.list_tools().await?;
+        
+        // Convert to JSON representation
+        let tool_list: Vec<JsonValue> = tools.into_iter()
+            .map(|name| serde_json::json!({
+                "name": name,
+            }))
+            .collect();
+        
+        info!("Found {} tools", tool_list.len());
+        Ok(tool_list)
+    }
+    
+    /// Call a specific tool
+    pub async fn call_tool(&mut self, tool_name: &str, args: JsonValue) -> Result<JsonValue> {
+        info!("Calling tool: {} with args: {}", tool_name, args);
+        
+        // Validate tool exists
+        let tools = self.client.list_tools().await?;
+        if !tools.iter().any(|t| t == tool_name) {
+            return Err(ClientError::Validation(format!("Tool '{}' not found", tool_name)));
+        }
+        
+        // Call the tool
+        let result = self.client.call_tool_typed(tool_name, args).await?;
+        
+        // Convert result to JSON
+        let json_result = if result.is_error {
+            serde_json::json!({
+                "type": "error",
+                "error": result.error_code.unwrap_or_else(|| "Unknown error".to_string()),
+                "raw_response": result.raw_response,
+            })
+        } else {
+            // Process the content items
+            let mut content_items = Vec::new();
+            for content in &result.content {
+                match content {
+                    crate::result::ContentType::Text { text } => {
+                        content_items.push(serde_json::json!({
+                            "type": "text",
+                            "content": text,
+                        }));
+                    }
+                    crate::result::ContentType::Json { json } => {
+                        content_items.push(serde_json::json!({
+                            "type": "json",
+                            "content": json,
+                        }));
+                    }
+                    crate::result::ContentType::Binary { data, mime_type } => {
+                        content_items.push(serde_json::json!({
+                            "type": "binary",
+                            "mime_type": mime_type,
+                            "size": data.len(),
+                            "content_base64": data,
+                        }));
+                    }
+                    crate::result::ContentType::Image { data, mime_type } => {
+                        content_items.push(serde_json::json!({
+                            "type": "image",
+                            "mime_type": mime_type,
+                            "content_base64": data,
+                        }));
+                    }
+                    crate::result::ContentType::Resource { uri, text } => {
+                        content_items.push(serde_json::json!({
+                            "type": "resource",
+                            "uri": uri,
+                            "text": text,
+                        }));
+                    }
+                }
+            }
+            
+            serde_json::json!({
+                "type": "success",
+                "content": content_items,
+            })
+        };
+        
+        debug!("Tool call completed successfully");
+        Ok(json_result)
+    }
+    
+    /// List available resources
+    pub async fn list_resources(&mut self) -> Result<Vec<JsonValue>> {
+        debug!("Listing available resources");
+        
+        let resources = self.client.list_resources().await?;
+        
+        // Convert to JSON representation
+        let resource_list: Vec<JsonValue> = resources.into_iter()
+            .map(|resource| serde_json::json!({
+                "uri": resource.uri,
+                "name": resource.name,
+                "mime_type": resource.mime_type,
+                "description": resource.description,
+            }))
+            .collect();
+        
+        info!("Found {} resources", resource_list.len());
+        Ok(resource_list)
+    }
+    
+    /// Get a specific resource
+    pub async fn get_resource(&mut self, uri: &str) -> Result<JsonValue> {
+        info!("Getting resource: {}", uri);
+        
+        let resource = self.client.get_resource(uri).await?;
+        
+        // Convert to JSON representation based on content type
+        let json_resource = serde_json::json!({
+            "uri": resource.info.uri,
+            "name": resource.info.name,
+            "mime_type": resource.info.mime_type,
+            "description": resource.info.description,
+            "encoding": resource.encoding,
+            "data_size": resource.data.len(),
+            "data_base64": base64::encode(&resource.data),
+        });
+        
+        debug!("Resource retrieved successfully");
+        Ok(json_resource)
+    }
+    
+    /// List available prompts
+    pub async fn list_prompts(&mut self) -> Result<Vec<JsonValue>> {
+        debug!("Listing available prompts");
+        
+        let prompts = self.client.list_prompts().await?;
+        
+        // Convert to JSON representation
+        let prompt_list: Vec<JsonValue> = prompts.into_iter()
+            .map(|name| serde_json::json!({
+                "name": name,
+            }))
+            .collect();
+        
+        info!("Found {} prompts", prompt_list.len());
+        Ok(prompt_list)
+    }
+    
+    /// Get a specific prompt
+    pub async fn get_prompt(&mut self, name: &str) -> Result<JsonValue> {
+        info!("Getting prompt: {}", name);
+        
+        // Check if the prompt exists
+        let prompts = self.client.list_prompts().await?;
+        if !prompts.iter().any(|p| p == name) {
+            return Err(ClientError::Validation(format!("Prompt '{}' not found", name)));
+        }
+        
+        // Get the prompt with no arguments for now
+        let prompt_result = self.client.get_prompt(name, None).await?;
+        
+        // Return the prompt result directly
+        let json_prompt = prompt_result;
+        
+        debug!("Prompt retrieved successfully");
+        Ok(json_prompt)
+    }
+}
+
+impl Default for HeadlessRunner {
+    fn default() -> Self {
+        // Can't implement default without a client and server name
+        panic!("HeadlessRunner requires a client instance and server name")
+    }
+}
+
+/// Helper module for base64 encoding
+mod base64 {
+    use base64_simd::STANDARD;
+    
+    pub fn encode(data: &[u8]) -> String {
+        STANDARD.encode_to_string(data)
+    }
+}

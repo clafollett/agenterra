@@ -1,0 +1,593 @@
+//! SQLite-powered configuration management for {{ project_name }}
+//!
+//! {{ description }}
+//! for server profiles, authentication settings, and user preferences.
+//!
+//! Version: {{ version }}
+//! Database: Unified SQLite database via DatabaseManager
+
+use crate::database::DatabaseManager;
+use crate::error::{ClientError, Result};
+use chrono::{DateTime, Utc};
+use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::info;
+use uuid::Uuid;
+
+/// Server profile configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerProfile {
+    /// Unique profile ID
+    pub id: String,
+    /// Profile name (user-friendly identifier)
+    pub name: String,
+    /// Server command
+    pub command: String,
+    /// Command arguments (stored as JSON array)
+    pub args: Vec<String>,
+    /// Environment variables (stored as JSON object)
+    pub environment: Option<HashMap<String, String>>,
+    /// Connection timeout in seconds
+    pub timeout: Option<u64>,
+    /// Description of the server
+    pub description: Option<String>,
+    /// Whether this is the default server
+    pub is_default: bool,
+    /// When the profile was created
+    pub created_at: DateTime<Utc>,
+    /// When the profile was last used
+    pub last_used: Option<DateTime<Utc>>,
+}
+
+/// Authentication credential
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthCredential {
+    /// Unique credential ID
+    pub id: String,
+    /// Associated server profile ID (optional)
+    pub server_id: Option<String>,
+    /// Service name (e.g., "openai", "anthropic")
+    pub service: String,
+    /// Credential type (e.g., "api_key", "oauth_token")
+    pub credential_type: String,
+    /// Encrypted credential value
+    pub value: Vec<u8>,
+    /// When the credential expires (if applicable)
+    pub expires_at: Option<DateTime<Utc>>,
+    /// When the credential was created
+    pub created_at: DateTime<Utc>,
+}
+
+/// Session history entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHistory {
+    /// Unique session ID
+    pub id: String,
+    /// Server profile ID used
+    pub server_id: String,
+    /// When the session started
+    pub started_at: DateTime<Utc>,
+    /// When the session ended
+    pub ended_at: Option<DateTime<Utc>>,
+    /// Number of tools called
+    pub tools_called: u32,
+    /// Number of errors encountered
+    pub errors_count: u32,
+}
+
+/// Configuration manager with unified SQLite backend
+///
+/// Uses the shared DatabaseManager for all database operations, ensuring
+/// a single consolidated database for the entire {{ project_name }} client.
+/// This eliminates the need for separate config databases and provides
+/// better resource management and consistency.
+pub struct ConfigManager {
+    /// Shared database manager providing connection pooling and
+    /// thread-safe access to the unified SQLite database
+    db: Arc<DatabaseManager>,
+}
+
+impl ConfigManager {
+    /// Create a new configuration manager using the shared database
+    ///
+    /// # Arguments
+    /// * `db` - Shared database manager for SQLite operations
+    ///
+    /// # Returns
+    /// A new ConfigManager instance ready for use
+    pub async fn new(db: Arc<DatabaseManager>) -> Result<Self> {
+        info!("Configuration manager initialized with shared database");
+        Ok(Self { db })
+    }
+
+    // Server profile management
+
+    /// Add a new server profile
+    ///
+    /// Stores a server profile in the unified database with all associated
+    /// metadata including command, arguments, environment variables, and
+    /// default status. If marked as default, automatically unsets any
+    /// existing default server.
+    pub async fn add_server(&self, profile: ServerProfile) -> Result<()> {
+        let args_json = serde_json::to_string(&profile.args)
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize args: {}", e)))?;
+
+        let env_json = profile.environment.as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize environment: {}", e)))?;
+
+        let is_default = profile.is_default;
+        let name = profile.name.clone();
+
+        self.db.with_connection(move |conn| {
+            conn.execute(
+                "INSERT INTO servers (id, name, command, args, environment, timeout, description, is_default, created_at, last_used)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    profile.id,
+                    profile.name,
+                    profile.command,
+                    args_json,
+                    env_json,
+                    profile.timeout,
+                    profile.description,
+                    profile.is_default as i32,
+                    profile.created_at.timestamp(),
+                    profile.last_used.map(|dt| dt.timestamp())
+                ]
+            )?;
+            Ok(())
+        }).await?;
+
+        // If this is set as default, unset other defaults
+        if is_default {
+            self.set_default_server(&name).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Get a server profile by name
+    ///
+    /// Retrieves a server profile from the unified database by its unique name.
+    /// Returns None if no server with the given name exists.
+    pub async fn get_server(&self, name: &str) -> Result<Option<ServerProfile>> {
+        let name_clone = name.to_string();
+
+        self.db.with_connection(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                 FROM servers WHERE name = ?1"
+            )?;
+
+            let profile = stmt.query_row(params![name_clone], |row| {
+                let args_json: String = row.get(3)?;
+                let args: Vec<String> = serde_json::from_str(&args_json)
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        3, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let env_json: Option<String> = row.get(4)?;
+                let environment = env_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        4, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                Ok(ServerProfile {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    command: row.get(2)?,
+                    args,
+                    environment,
+                    timeout: row.get(5)?,
+                    description: row.get(6)?,
+                    is_default: row.get::<_, i32>(7)? != 0,
+                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(9)?
+                        .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                })
+            }).optional()?;
+
+            Ok(profile)
+        }).await
+    }
+
+    /// List all server profiles
+    ///
+    /// Retrieves all server profiles from the unified database, ordered by name.
+    /// Each profile includes full configuration details and usage history.
+    pub async fn list_servers(&self) -> Result<Vec<ServerProfile>> {
+        self.db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                 FROM servers ORDER BY name"
+            )?;
+
+            let profiles = stmt.query_map(params![], |row| {
+                let args_json: String = row.get(3)?;
+                let args: Vec<String> = serde_json::from_str(&args_json)
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        3, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let env_json: Option<String> = row.get(4)?;
+                let environment = env_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        4, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                Ok(ServerProfile {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    command: row.get(2)?,
+                    args,
+                    environment,
+                    timeout: row.get(5)?,
+                    description: row.get(6)?,
+                    is_default: row.get::<_, i32>(7)? != 0,
+                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(9)?
+                        .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+            Ok(profiles)
+        }).await
+    }
+
+    /// Remove a server profile
+    ///
+    /// Deletes a server profile and all associated data (credentials, sessions)
+    /// from the unified database. Returns true if a server was deleted.
+    pub async fn remove_server(&self, name: &str) -> Result<bool> {
+        let name_clone = name.to_string();
+
+        self.db.with_connection(move |conn| {
+            let rows_affected = conn.execute(
+                "DELETE FROM servers WHERE name = ?1",
+                params![name_clone]
+            )?;
+
+            Ok(rows_affected > 0)
+        }).await
+    }
+
+    /// Set the default server
+    ///
+    /// Marks a server as the default, automatically unsetting any existing
+    /// default server. Uses a transaction to ensure atomicity.
+    pub async fn set_default_server(&self, name: &str) -> Result<()> {
+        let name_clone = name.to_string();
+
+        self.db.with_connection(move |conn| {
+            let tx = conn.unchecked_transaction()?;
+
+            // Unset all defaults
+            tx.execute("UPDATE servers SET is_default = 0", params![])?;
+
+            // Set new default
+            let rows_affected = tx.execute(
+                "UPDATE servers SET is_default = 1 WHERE name = ?1",
+                params![name_clone]
+            )?;
+
+            if rows_affected == 0 {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+
+            tx.commit()?;
+            Ok(())
+        }).await.map_err(|e| match e {
+            ClientError::Client(msg) if msg.contains("QueryReturnedNoRows") => {
+                ClientError::ConfigError(format!("Server '{}' not found", name))
+            }
+            _ => e
+        })
+    }
+
+    /// Get the default server profile
+    ///
+    /// Retrieves the server profile marked as default, if any exists.
+    /// Only one server can be marked as default at a time.
+    pub async fn get_default_server(&self) -> Result<Option<ServerProfile>> {
+        self.db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                 FROM servers WHERE is_default = 1 LIMIT 1"
+            )?;
+
+            let profile = stmt.query_row(params![], |row| {
+                let args_json: String = row.get(3)?;
+                let args: Vec<String> = serde_json::from_str(&args_json)
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        3, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let env_json: Option<String> = row.get(4)?;
+                let environment = env_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        4, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                Ok(ServerProfile {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    command: row.get(2)?,
+                    args,
+                    environment,
+                    timeout: row.get(5)?,
+                    description: row.get(6)?,
+                    is_default: row.get::<_, i32>(7)? != 0,
+                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(9)?
+                        .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                })
+            }).optional()?;
+
+            Ok(profile)
+        }).await
+    }
+
+    /// Update last used timestamp for a server
+    ///
+    /// Updates the last_used timestamp to track server usage patterns.
+    /// Called automatically when a server is connected to.
+    pub async fn update_server_last_used(&self, name: &str) -> Result<()> {
+        let name_clone = name.to_string();
+        let now = Utc::now();
+
+        self.db.with_connection(move |conn| {
+            conn.execute(
+                "UPDATE servers SET last_used = ?1 WHERE name = ?2",
+                params![now.timestamp(), name_clone]
+            )?;
+            Ok(())
+        }).await
+    }
+
+    // Session history management
+
+    /// Start a new session
+    ///
+    /// Creates a new session record for tracking tool usage and errors.
+    /// Returns the generated session ID for future reference.
+    pub async fn start_session(&self, server_id: &str) -> Result<String> {
+        let session_id = Uuid::new_v4().to_string();
+        let server_id_clone = server_id.to_string();
+        let session_id_clone = session_id.clone();
+        let now = Utc::now();
+
+        self.db.with_connection(move |conn| {
+            conn.execute(
+                "INSERT INTO sessions (id, server_id, started_at, tools_called, errors_count)
+                 VALUES (?1, ?2, ?3, 0, 0)",
+                params![session_id_clone, server_id_clone, now.timestamp()]
+            )?;
+            Ok(())
+        }).await?;
+
+        Ok(session_id)
+    }
+
+    /// End a session
+    ///
+    /// Marks a session as ended by setting the ended_at timestamp.
+    /// Session statistics remain available for historical analysis.
+    pub async fn end_session(&self, session_id: &str) -> Result<()> {
+        let session_id_clone = session_id.to_string();
+        let now = Utc::now();
+
+        self.db.with_connection(move |conn| {
+            conn.execute(
+                "UPDATE sessions SET ended_at = ?1 WHERE id = ?2",
+                params![now.timestamp(), session_id_clone]
+            )?;
+            Ok(())
+        }).await
+    }
+
+    /// Record a tool call
+    ///
+    /// Records detailed information about a tool call including arguments,
+    /// results, success status, and duration. Automatically updates session
+    /// statistics for monitoring and analysis.
+    pub async fn record_tool_call(
+        &self,
+        session_id: &str,
+        tool_name: &str,
+        args: Option<&str>,
+        result: Option<&str>,
+        success: bool,
+        duration_ms: Option<u64>
+    ) -> Result<()> {
+        let tool_call_id = Uuid::new_v4().to_string();
+        let session_id_clone = session_id.to_string();
+        let tool_name_clone = tool_name.to_string();
+        let args_clone = args.map(String::from);
+        let result_clone = result.map(String::from);
+        let now = Utc::now();
+
+        self.db.with_connection(move |conn| {
+            let tx = conn.unchecked_transaction()?;
+
+            // Insert tool call record
+            tx.execute(
+                "INSERT INTO tool_calls (id, session_id, tool_name, args, result, success, duration_ms, called_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    tool_call_id,
+                    session_id_clone,
+                    tool_name_clone,
+                    args_clone,
+                    result_clone,
+                    success as i32,
+                    duration_ms.map(|d| d as i64),
+                    now.timestamp()
+                ]
+            )?;
+
+            // Update session statistics
+            if success {
+                tx.execute(
+                    "UPDATE sessions SET tools_called = tools_called + 1 WHERE id = ?1",
+                    params![session_id_clone]
+                )?;
+            } else {
+                tx.execute(
+                    "UPDATE sessions SET tools_called = tools_called + 1, errors_count = errors_count + 1 WHERE id = ?1",
+                    params![session_id_clone]
+                )?;
+            }
+
+            tx.commit()?;
+            Ok(())
+        }).await
+    }
+
+    // User preferences management
+
+    /// Get a preference value
+    ///
+    /// Retrieves a user preference value by key from the unified database.
+    /// Returns None if the preference doesn't exist.
+    pub async fn get_preference(&self, key: &str) -> Result<Option<String>> {
+        let key_clone = key.to_string();
+
+        self.db.with_connection(move |conn| {
+            let value = conn.query_row(
+                "SELECT value FROM preferences WHERE key = ?1",
+                params![key_clone],
+                |row| row.get(0)
+            ).optional()?;
+
+            Ok(value)
+        }).await
+    }
+
+    /// Set a preference value
+    ///
+    /// Stores or updates a user preference in the unified database.
+    /// The updated_at timestamp is automatically set to track changes.
+    pub async fn set_preference(&self, key: &str, value: &str) -> Result<()> {
+        let key_clone = key.to_string();
+        let value_clone = value.to_string();
+        let now = Utc::now();
+
+        self.db.with_connection(move |conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES (?1, ?2, ?3)",
+                params![key_clone, value_clone, now.timestamp()]
+            )?;
+            Ok(())
+        }).await
+    }
+
+    /// Export configuration to JSON
+    ///
+    /// Exports all server profiles and preferences to a JSON format
+    /// suitable for backup or migration. Includes export timestamp.
+    pub async fn export_config(&self) -> Result<serde_json::Value> {
+        let servers = self.list_servers().await?;
+
+        let preferences = self.db.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT key, value FROM preferences")?;
+
+            let preferences: HashMap<String, String> = stmt.query_map(params![], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<std::result::Result<HashMap<_, _>, _>>()?;
+
+            Ok(preferences)
+        }).await?;
+
+        Ok(serde_json::json!({
+            "version": "1.0",
+            "servers": servers,
+            "preferences": preferences,
+            "exported_at": Utc::now().to_rfc3339(),
+        }))
+    }
+
+    /// Import configuration from JSON
+    ///
+    /// Imports server profiles and preferences from a JSON backup.
+    /// Server IDs are regenerated to avoid conflicts. The import is
+    /// performed in a transaction for atomicity.
+    pub async fn import_config(&self, config: serde_json::Value) -> Result<()> {
+        self.db.with_connection(move |conn| {
+            let tx = conn.unchecked_transaction()?;
+
+            // Import servers
+            if let Some(servers) = config.get("servers").and_then(|v| v.as_array()) {
+                for server_value in servers {
+                    let server: ServerProfile = serde_json::from_value(server_value.clone())
+                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                            0, rusqlite::types::Type::Text, Box::new(e)
+                        ))?;
+
+                    // Generate new ID to avoid conflicts
+                    let new_server = ServerProfile {
+                        id: Uuid::new_v4().to_string(),
+                        ..server
+                    };
+
+                    let args_json = serde_json::to_string(&new_server.args)
+                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                            0, rusqlite::types::Type::Text, Box::new(e)
+                        ))?;
+
+                    let env_json = new_server.environment.as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                            0, rusqlite::types::Type::Text, Box::new(e)
+                        ))?;
+
+                    tx.execute(
+                        "INSERT OR REPLACE INTO servers (id, name, command, args, environment, timeout, description, is_default, created_at, last_used)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                        params![
+                            new_server.id,
+                            new_server.name,
+                            new_server.command,
+                            args_json,
+                            env_json,
+                            new_server.timeout,
+                            new_server.description,
+                            new_server.is_default as i32,
+                            new_server.created_at.timestamp(),
+                            new_server.last_used.map(|dt| dt.timestamp())
+                        ]
+                    )?;
+                }
+            }
+
+            // Import preferences
+            if let Some(prefs) = config.get("preferences").and_then(|v| v.as_object()) {
+                for (key, value) in prefs {
+                    if let Some(val_str) = value.as_str() {
+                        tx.execute(
+                            "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES (?1, ?2, ?3)",
+                            params![key, val_str, Utc::now().timestamp()]
+                        )?;
+                    }
+                }
+            }
+
+            tx.commit()?;
+
+            Ok(())
+        }).await
+    }
+}
+

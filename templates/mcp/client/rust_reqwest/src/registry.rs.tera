@@ -1,6 +1,10 @@
-//! Tool registry for managing MCP tool metadata and validation
+//! Tool registry for managing MCP tool metadata and validation in {{ project_name }}
+//!
+//! {{ description }}
+//! Version: {{ version }}
+//! Max tools: 1000
 
-use crate::mcp::client::error::{ClientError, Result};
+use crate::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -23,16 +27,25 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
-    /// Create a new empty tool registry
+    /// Create a new empty tool registry for {{ project_name }}
     pub fn new() -> Self {
         Self {
-            tools: HashMap::new(),
+            tools: HashMap::with_capacity(16),
         }
     }
 
-    /// Add a tool to the registry
-    pub fn add_tool(&mut self, tool: ToolInfo) {
+    /// Add a tool to the registry with validation
+    pub fn add_tool(&mut self, tool: ToolInfo) -> Result<()> {
+        // Prevent registry overflow
+        if self.tools.len() >= 1000 {
+            return Err(ClientError::Validation(format!(
+                "Registry full: cannot add more than {} tools", 
+                1000
+            )));
+        }
+        
         self.tools.insert(tool.name.clone(), tool);
+        Ok(())
     }
 
     /// Get tool information by name
@@ -61,7 +74,8 @@ impl ToolRegistry {
             )));
         }
 
-        let tool_info = self.get_tool(tool_name).unwrap(); // Safe because we checked above
+        let tool_info = self.get_tool(tool_name)
+            .expect("Tool should exist after has_tool check");
 
         // If no schema is defined, accept any parameters
         let Some(schema) = &tool_info.input_schema else {
@@ -99,7 +113,8 @@ impl ToolRegistry {
         }
 
         // If parameters are null or empty, check for required fields
-        if params.is_null() || (params.is_object() && params.as_object().unwrap().is_empty()) {
+        let is_empty_object = params.as_object().map_or(false, |obj| obj.is_empty());
+        if params.is_null() || is_empty_object {
             if let Some(required) = schema.get("required") {
                 if let Some(required_array) = required.as_array() {
                     if !required_array.is_empty() {
@@ -151,19 +166,18 @@ impl ToolRegistry {
         if let Some(properties) = schema.get("properties") {
             if let Some(properties_obj) = properties.as_object() {
                 for (param_name, param_value) in params_obj {
-                    // Check if parameter is known
-                    if !properties_obj.contains_key(param_name) {
-                        return Err(ClientError::Validation(format!(
+                    // Get parameter schema
+                    let param_schema = properties_obj.get(param_name)
+                        .ok_or_else(|| ClientError::Validation(format!(
                             "unknown parameter '{}'",
                             param_name
-                        )));
-                    }
+                        )))?;
 
                     // Validate parameter type
                     self.validate_single_parameter_type(
                         param_name,
                         param_value,
-                        properties_obj.get(param_name).unwrap(),
+                        param_schema,
                     )?;
                 }
             }
@@ -224,7 +238,7 @@ impl ToolRegistry {
     }
 
     /// Update the registry with tools from list_tools response
-    pub fn update_from_rmcp_tools(&mut self, rmcp_tools: Vec<rmcp::model::Tool>) {
+    pub fn update_from_rmcp_tools(&mut self, rmcp_tools: Vec<rmcp::model::Tool>) -> Result<()> {
         self.tools.clear();
 
         for rmcp_tool in rmcp_tools {
@@ -233,8 +247,10 @@ impl ToolRegistry {
                 description: rmcp_tool.description.map(|d| d.to_string()),
                 input_schema: Some(serde_json::Value::Object((*rmcp_tool.input_schema).clone())),
             };
-            self.add_tool(tool_info);
+            self.add_tool(tool_info)?;
         }
+        
+        Ok(())
     }
 }
 
@@ -265,7 +281,7 @@ mod tests {
             })),
         };
 
-        registry.add_tool(tool);
+        registry.add_tool(tool).unwrap();
 
         assert!(registry.has_tool("get_pet_by_id"));
         assert!(!registry.has_tool("nonexistent_tool"));
@@ -282,7 +298,7 @@ mod tests {
             input_schema: Some(json!({"type": "object"})),
         };
 
-        registry.add_tool(tool);
+        let _ = registry.add_tool(tool);
 
         // Valid object parameters
         assert!(

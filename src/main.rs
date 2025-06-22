@@ -9,7 +9,8 @@ use core::{
     openapi::OpenApiContext,
     protocol::Protocol,
     templates::{
-        ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateManager, TemplateOptions,
+        ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
+        dir::resolve_output_dir,
     },
 };
 use std::path::PathBuf;
@@ -165,9 +166,8 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
         .map_err(|e| anyhow::anyhow!("Invalid server template '{}': {}", params.template, e))?;
 
     // Resolve output directory with workspace-aware defaults
-    let output_path =
-        TemplateDir::resolve_output_dir(params.project_name, params.output_dir.as_deref())
-            .context("Failed to resolve output directory")?;
+    let output_path = resolve_output_dir(params.project_name, params.output_dir.as_deref())
+        .context("Failed to resolve output directory")?;
 
     // Initialize the template manager with MCP protocol
     let template_manager = TemplateManager::new_with_protocol(
@@ -178,7 +178,12 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
     .await
     .context("Failed to initialize server template manager")?;
 
-    // Create output directory if it doesn't exist
+    // Load and validate OpenAPI schema BEFORE creating directories
+    let schema_obj = OpenApiContext::from_file_or_url(params.schema_path)
+        .await
+        .context("Failed to load OpenAPI schema")?;
+
+    // Create output directory only after all validations pass
     if !output_path.exists() {
         info!(path = %output_path.display(), "Creating output directory");
         tokio::fs::create_dir_all(&output_path).await.map_err(|e| {
@@ -186,11 +191,6 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
             anyhow::anyhow!("Failed to create output directory: {}", e)
         })?
     }
-
-    // Load OpenAPI schema
-    let schema_obj = OpenApiContext::from_file_or_url(params.schema_path)
-        .await
-        .context("Failed to load OpenAPI schema")?;
 
     // Create config
     let config = crate::core::config::Config {
@@ -250,7 +250,7 @@ async fn generate_mcp_client(
         .map_err(|e| anyhow::anyhow!("Invalid client template '{}': {}", template, e))?;
 
     // Resolve output directory with workspace-aware defaults
-    let output_path = TemplateDir::resolve_output_dir(project_name, output_dir.as_deref())
+    let output_path = resolve_output_dir(project_name, output_dir.as_deref())
         .context("Failed to resolve output directory")?;
 
     // Initialize template manager for the chosen client template with MCP protocol

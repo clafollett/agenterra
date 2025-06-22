@@ -1,12 +1,14 @@
-//! Secure authentication module for MCP client
+//! Secure authentication module for {{ project_name }}
 //!
-//! This module implements secure authentication with protection against:
+//! {{ description }}
 //! - Prompt injection attacks
 //! - Credential leakage
 //! - Header injection
 //! - Memory exposure
+//!
+//! Version: {{ version }}
 
-use crate::mcp::client::error::{ClientError, Result};
+use crate::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use zeroize::Zeroize;
@@ -21,7 +23,7 @@ pub struct SecureCredential {
 }
 
 impl SecureCredential {
-    /// Create a new secure credential with validation
+    /// Create a new secure credential with validation for {{ project_name }}
     pub fn new(value: String, credential_type: CredentialType) -> Result<Self> {
         // Security validation
         Self::validate_credential(&value, &credential_type)?;
@@ -197,7 +199,7 @@ pub enum CredentialType {
 }
 
 /// Secure authentication configuration
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AuthConfig {
     /// Primary authentication method
     primary_auth: Option<AuthMethod>,
@@ -230,7 +232,7 @@ impl AuthConfig {
         Ok(self)
     }
 
-    /// Set bearer token authentication  
+    /// Set bearer token authentication
     pub fn with_bearer_token(mut self, token: String) -> Result<Self> {
         let credential = SecureCredential::new(token, CredentialType::BearerToken)?;
 
@@ -344,7 +346,7 @@ impl Default for AuthConfig {
 }
 
 /// Authentication methods
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AuthMethod {
     /// API key in custom header
     ApiKey {

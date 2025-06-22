@@ -7,23 +7,63 @@ files:
   - source: "Cargo.toml.tera"
     destination: "Cargo.toml"
   
+  # Library structure
+  - source: "src/lib.rs.tera"
+    destination: "src/lib.rs"
+    
+  # Binary entry point
   - source: "src/main.rs.tera"
     destination: "src/main.rs"
     
+  # Core client modules
   - source: "src/client.rs.tera"
     destination: "src/client.rs"
     
-  - source: "src/repl.rs.tera"
-    destination: "src/repl.rs"
+  - source: "src/auth.rs.tera"
+    destination: "src/auth.rs"
     
   - source: "src/cache.rs.tera"
     destination: "src/cache.rs"
+    
+  - source: "src/database.rs.tera"
+    destination: "src/database.rs"
+    
+  - source: "src/database_migrations.rs.tera"
+    destination: "src/database_migrations.rs"
+    
+  - source: "src/registry.rs.tera"
+    destination: "src/registry.rs"
+    
+  - source: "src/result.rs.tera"
+    destination: "src/result.rs"
+    
+  - source: "src/transport.rs.tera"
+    destination: "src/transport.rs"
+    
+  - source: "src/session_manager.rs.tera"
+    destination: "src/session_manager.rs"
     
   - source: "src/error.rs.tera"
     destination: "src/error.rs"
     
   - source: "src/resource.rs.tera"
     destination: "src/resource.rs"
+    
+  # Configuration and CLI
+  - source: "src/config.rs.tera"
+    destination: "src/config.rs"
+    
+  # REPL interface
+  - source: "src/repl.rs.tera"
+    destination: "src/repl.rs"
+    
+  # Optional CLI interface
+  - source: "src/cli.rs.tera"
+    destination: "src/cli.rs"
+    
+  # Optional headless interface
+  - source: "src/headless.rs.tera"
+    destination: "src/headless.rs"
     
   - source: "README.md.tera"
     destination: "README.md"

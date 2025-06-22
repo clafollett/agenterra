@@ -1,4 +1,7 @@
-//! Error types for the {{ project_name | default(value="MCP Client") }}
+//! Error types for the {{ project_name }}
+//!
+//! {{ description }}
+//! Version: {{ version }}
 
 use thiserror::Error;
 
@@ -20,6 +23,10 @@ pub enum ClientError {
     #[error("Operation timed out after {timeout_ms}ms: {operation}")]
     Timeout { operation: String, timeout_ms: u64 },
 
+    /// Connection errors with configurable timeout
+    #[error("Connection error: {0}")]
+    Connection(String),
+
     /// Server returned an error response
     #[error("Server error: {message}")]
     Server { message: String },
@@ -39,4 +46,22 @@ pub enum ClientError {
     /// Thread pool spawn errors (tokio task spawn failures)
     #[error("Spawn error: {0}")]
     Spawn(String),
+    
+    /// Database migration errors
+    #[error("Migration error: {0}")]
+    Migration(String),
+
+    /// {{ project_name }}-specific runtime errors
+    #[error("Runtime error: {0}")]
+    Runtime(String),
+
+    /// Configuration-related errors
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+}
+
+impl From<serde_json::Error> for ClientError {
+    fn from(err: serde_json::Error) -> Self {
+        ClientError::Protocol(format!("JSON serialization error: {}", err))
+    }
 }

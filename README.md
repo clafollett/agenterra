@@ -42,25 +42,25 @@ git clone https://github.com/clafollett/agenterra.git
 cd agenterra
 
 # Generate MCP server from a local file without install:
-cargo run -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/cargo_run_petstore_mcp_server_local_file --base-url https://petstore3.swagger.io
+cargo run -- scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --project-name petstore-server --base-url https://petstore3.swagger.io
 
 # Generate MCP server from a remote URL without install:
-cargo run -- scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/cargo_run_petstore_mcp_server_remote_url
+cargo run -- scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --project-name petstore-remote
 
 # Generate MCP client without install:
-cargo run -- scaffold mcp client --project-name petstore-client --output-dir .agenterra/cargo_run_petstore_mcp_client
+cargo run -- scaffold mcp client --project-name petstore-client
 
 # Or install the CLI
 cargo install --path .
 
 # Generate your MCP server from a local file
-agenterra scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/installed_petstore_mcp_server_local_file --base-url https://petstore3.swagger.io
+agenterra scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --project-name petstore-server --base-url https://petstore3.swagger.io
 
 # Generate MCP server from a remote URL
-agenterra scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/installed_petstore_mcp_server_remote_url
+agenterra scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --project-name petstore-remote
 
 # Generate MCP client
-agenterra scaffold mcp client --project-name petstore-client --output-dir .agenterra/installed_petstore_mcp_client
+agenterra scaffold mcp client --project-name petstore-client
 
 ```
 
@@ -84,13 +84,13 @@ cargo install --git https://github.com/clafollett/agenterra.git --tag v<VERSION>
    chmod +x agenterra
    
    # Generate your MCP server from a local file
-   ./agenterra scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --output-dir .agenterra/installed_petstore_mcp_server_local_file --base-url https://petstore3.swagger.io
+   ./agenterra scaffold mcp server --schema-path ./tests/fixtures/openapi/petstore.openapi.v3.json --project-name petstore-server --base-url https://petstore3.swagger.io
 
    # Generate MCP server from a remote URL
-   ./agenterra scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir .agenterra/installed_petstore_mcp_server_remote_url
+   ./agenterra scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --project-name petstore-remote
    
    # Generate MCP client
-   ./agenterra scaffold mcp client --project-name petstore-client --output-dir .agenterra/installed_petstore_mcp_client
+   ./agenterra scaffold mcp client --project-name petstore-client
    ```
 
 ## 🔌 Integrating with MCP Clients
@@ -315,10 +315,10 @@ petstore-server/
 curl -o petstore.json https://petstore3.swagger.io/api/v3/openapi.json
 
 # Generate the MCP server
-agenterra scaffold mcp server --schema-path petstore.json --output-dir petstore-server
+agenterra scaffold mcp server --schema-path petstore.json --project-name petstore-server
 
 # Generate the MCP client
-agenterra scaffold mcp client --project-name petstore-client --output-dir petstore-client
+agenterra scaffold mcp client --project-name petstore-client
 
 # Build and run the server
 cd petstore-server
@@ -327,26 +327,23 @@ cargo run
 
 ### Configuration Options
 
-Agenterra can be configured through:
+Agenterra is configured through command-line arguments. By default, projects are created in the current directory (like `cargo new`):
 
-1. **Command-line arguments** (recommended)
-   ```bash
-   # Generate MCP server
-   agenterra scaffold mcp server --schema-path your_api_openapi_spec.json --output-dir my_server
-   
-   # Generate MCP client
-   agenterra scaffold mcp client --project-name my-client --output-dir my_client
-   ```
+```bash
+# Generate MCP server (creates ./my_server/)
+agenterra scaffold mcp server --schema-path your_api.json --project-name my_server
 
-2. **Configuration file** (`agenterra.toml` in project root)
-   ```toml
-   [scaffold]
-   schema_path = "your_api_openapi_spec.json"
-   output_dir = "my_server"
-   protocol = "mcp"
-   role = "server"
-   template = "rust_axum"
-   ```
+# Generate MCP client (creates ./my_client/)
+agenterra scaffold mcp client --project-name my_client
+
+# Specify a parent directory with --output-dir
+agenterra scaffold mcp server --schema-path api.json --project-name my_server --output-dir ~/projects
+# Creates: ~/projects/my_server/
+```
+
+**Environment Variables:**
+- `AGENTERRA_OUTPUT_DIR` - Default parent directory for generated projects
+- `AGENTERRA_TEMPLATE_DIR` - Custom template directory location
 
 ### Templates
 

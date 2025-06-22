@@ -1,4 +1,4 @@
-//! Resource data structures for {{ project_name | default(value="MCP Client") }}
+//! Resource data structures for {{ project_name }}
 //!
 //! Provides data structures for MCP resources. Resource functionality is available
 //! through the main client's `get_resource()` and `get_resources()` methods.
