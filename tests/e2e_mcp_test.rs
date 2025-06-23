@@ -13,6 +13,8 @@ use tokio::process::Command as AsyncCommand;
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
+const CLI_FLAG_TESTS_SANDBOX_DIR: &str = "target/tmp/cli_flag_tests";
+
 /// Clean up any SQLite database files for a given project name
 /// This ensures each test run starts with a fresh database state
 fn cleanup_project_databases(project_name: &str) -> Result<()> {
@@ -604,7 +606,9 @@ fn test_cli_help_output() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // Use sandbox directory under target/tmp to avoid polluting repo root
-    let sandbox_dir = project_dir.join("target/tmp/cli_flag_tests");
+    let sandbox_dir = project_dir
+        .join(CLI_FLAG_TESTS_SANDBOX_DIR)
+        .join("test_cli_help_output");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
 
@@ -636,7 +640,9 @@ fn test_new_cli_structure() {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // Use sandbox directory under target/tmp to avoid polluting repo root
-    let sandbox_dir = project_dir.join("target/tmp/cli_flag_tests");
+    let sandbox_dir = project_dir
+        .join(CLI_FLAG_TESTS_SANDBOX_DIR)
+        .join("test_new_cli_structure");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
 
@@ -671,7 +677,9 @@ fn test_cli_flag_combinations() -> Result<()> {
     let agenterra = env!("CARGO_BIN_EXE_agenterra");
     let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // Use sandbox directory under target/tmp to avoid polluting repo root
-    let sandbox_dir = project_dir.join("target/tmp/cli_flag_tests");
+    let sandbox_dir = project_dir
+        .join(CLI_FLAG_TESTS_SANDBOX_DIR)
+        .join("test_cli_flag_combinations");
     let _ = std::fs::remove_dir_all(&sandbox_dir);
     std::fs::create_dir_all(&sandbox_dir).unwrap();
 

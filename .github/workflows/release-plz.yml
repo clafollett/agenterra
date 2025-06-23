@@ -30,8 +30,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
-          cache-on-failure: true
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock', '.gitignore') }}
 
       - name: Run release-plz release
         uses: release-plz/action@v0.5.107
@@ -59,8 +58,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
-          cache-on-failure: true
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock', '.gitignore') }}
 
       - name: Run release-plz PR
         uses: release-plz/action@v0.5.107

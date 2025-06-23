@@ -1,8 +1,3 @@
 **/.DS_Store
 
 /target
-
-# Test project patterns (created in workspace root during dev)
-test_*/
-*_test/
-*_test_project/
