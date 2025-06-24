@@ -18,10 +18,12 @@ use tokio::time;
 
 // Import rmcp types for real MCP protocol integration
 use rmcp::{
-    RoleClient,
-    model::{CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam, CallToolResult},
+    model::{
+        CallToolRequestParam, CallToolResult, GetPromptRequestParam, ReadResourceRequestParam,
+    },
     service::{RunningService, ServiceExt},
     transport::TokioChildProcess,
+    RoleClient,
 };
 
 // ========================================
@@ -169,7 +171,9 @@ impl ConnectionConfigBuilder {
         // Require explicit timeout or document the default clearly
         let timeout = self.timeout.ok_or_else(|| {
             ClientError::Validation(
-                "Connection timeout is required. Use Duration::from_secs(30) for 30 seconds or Duration::MAX for no timeout".to_string()
+                "Connection timeout is required. Use Duration::from_secs(30) for 30 seconds or \
+                 Duration::MAX for no timeout"
+                    .to_string()
             )
         })?;
 
@@ -263,7 +267,10 @@ impl McpClient {
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to initialize database, running without persistence: {}", e);
+                tracing::warn!(
+                    "Failed to initialize database, running without persistence: {}",
+                    e
+                );
             }
         }
         
@@ -396,10 +403,14 @@ impl McpClient {
         tracing::info!("Connecting to MCP server via stdio");
         
         let transport = TokioChildProcess::new(command)
-            .map_err(|e| ClientError::Connection(format!("Failed to create child process transport: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Connection(format!("Failed to create child process transport: {}", e))
+            })?;
 
         let service = ().serve(transport).await
-            .map_err(|e| ClientError::Connection(format!("Failed to connect to MCP server: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Connection(format!("Failed to connect to MCP server: {}", e))
+            })?;
 
         self.service = Some(service);
         
@@ -477,7 +488,8 @@ impl McpClient {
 
         // Update capabilities
         let tool_names: Vec<String> = self.tools.keys().cloned().collect();
-        let resource_names: Vec<String> = self.resources.iter().map(|r| r.uri.to_string()).collect();
+        let resource_names: Vec<String> =
+            self.resources.iter().map(|r| r.uri.to_string()).collect();
         let prompt_names: Vec<String> = self.prompts.iter().map(|p| p.name.to_string()).collect();
         
         self.capabilities = Some(ServerCapabilities::new(tool_names, resource_names, prompt_names));

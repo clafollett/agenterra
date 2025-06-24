@@ -18,11 +18,11 @@ use crate::signal::{SignalEvent, spawn_signal_listener};
 use dotenvy::dotenv;
 use log::debug;
 use rmcp::{
-    ServiceExt,
     transport::{
         sse_server::{SseServer, SseServerConfig},
         stdio,
     },
+    ServiceExt,
 };
 use std::{process, sync::Arc, time::Duration};
 

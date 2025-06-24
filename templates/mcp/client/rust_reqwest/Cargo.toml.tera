@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 # MCP Protocol SDK (official)
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
+rmcp = { git = "https://github.com/clafollett/agenterra-rmcp.git", rev = "893969ac7780897bbb804d41fb98347553386f33", features = [
     "client",
     "transport-child-process"
 ] }

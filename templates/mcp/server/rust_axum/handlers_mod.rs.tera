@@ -10,36 +10,48 @@ use crate::config::Config;
 
 // External dependencies
 use log::debug;
-use rmcp::{ServerHandler, Error, model::*, service::*, tool};
+use rmcp::{
+    handler::server::tool::Parameters, model::*, service::*, tool, Error as McpError,
+    ServerHandler,
+};
 
-#[derive(Clone, Debug, Default)]
-pub struct McpServer;
+#[derive(Clone)]
+pub struct McpServer {
+    tool_router: rmcp::handler::server::router::tool::ToolRouter<McpServer>,
+}
 
 impl McpServer {
     /// Create a new MCP server instance
     pub fn new() -> Self {
-        Self
+        Self {
+            tool_router: Self::tool_router(),
+        }
     }
 }
 
-#[tool(tool_box)]
+#[rmcp::tool_router]
 impl McpServer {
     /// Returns MCP server status for Inspector/health validation
     #[tool(description = "Returns MCP server status for Inspector/health validation")]
-    pub async fn ping(&self) -> String {
-        "The MCP server is alive!".to_string()
+    pub async fn ping(&self) -> Result<CallToolResult, McpError> {
+        Ok(CallToolResult::success(vec![Content::text(
+            "The MCP server is alive!",
+        )]))
     }
 
     {%- for ep in endpoints %}
     /// MCP API `/{{ ep.endpoint }}` endpoint handler
     #[tool(description = r#"{{ ep.summary }} - {{ ep.description }} - {{ ep.tags.0 }}"#)]
-    pub async fn {{ ep.fn_name }}(&self, #[tool(aggr)] params: {{ ep.endpoint }}::{{ ep.parameters_type }}) -> Result<CallToolResult, rmcp::Error> {
+    pub async fn {{ ep.fn_name }}(
+        &self,
+        Parameters(params): Parameters<{{ ep.endpoint }}::{{ ep.parameters_type }}>,
+    ) -> Result<CallToolResult, McpError> {
         {{ ep.endpoint }}::{{ ep.fn_name }}_handler(&Config::default(), &params).await
     }
     {%- endfor %}
 }
 
-#[tool(tool_box)]
+#[rmcp::tool_handler]
 impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerInfo {
         debug!("[MCP] get_info() called - should show tools!");
@@ -79,7 +91,7 @@ impl ServerHandler for McpServer {
     /// Implements MCP resource enumeration for all schema resources (one per endpoint)
     fn list_resources(
         &self, _request: Option<PaginatedRequestParam>, _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListResourcesResult, Error>> + Send + '_ {
+    ) -> impl Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
         use rmcp::model::{Annotated, RawResource};
         let resources = vec![
             {%- for ep in endpoints %}
@@ -87,7 +99,10 @@ impl ServerHandler for McpServer {
                 raw: RawResource {
                     uri: format!("/schema/{}", "{{ ep.endpoint }}"),
                     name: "{{ ep.endpoint }}".to_string(),
-                    description: Some("JSON schema for the /{{ ep.endpoint }} endpoint (fields, types, docs, envelope)".to_string()),
+                    description: Some(
+                        "JSON schema for the /{{ ep.endpoint }} endpoint (fields, types, docs, envelope)"
+                            .to_string(),
+                    ),
                     mime_type: Some("application/json".to_string()),
                     size: None,
                 },
@@ -103,29 +118,31 @@ impl ServerHandler for McpServer {
         &self,
         request: ReadResourceRequestParam,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ReadResourceResult, Error>> + Send + '_ {
-        use rmcp::model::{ResourceContents, ErrorData, ReadResourceResult};
+    ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
+        use rmcp::model::{ResourceContents, ReadResourceResult};
         let uri = request.uri;
         let prefix = "/schema/";
         let result = if let Some(endpoint) = uri.strip_prefix(prefix) {
-            let schema_json = match endpoint.to_lowercase().as_str() {
+            let ep_lower = endpoint.to_lowercase();
+            let schema_json = match ep_lower.as_str() {
                 {%- for ep in endpoints %}
                 "{{ ep.endpoint }}" => include_str!("../../schemas/{{ ep.endpoint }}.json"),
                 {%- endfor %}
-                _ => return std::future::ready(Err(Error::from(ErrorData::resource_not_found(
+                _ => return std::future::ready(Err(McpError::resource_not_found(
                     format!("Schema not found for endpoint '{}': unknown endpoint", endpoint),
                     None,
-                )))),
+                ))),
             };
-            let resource = ResourceContents::text(schema_json, format!("/schema/{}", endpoint.to_lowercase()));
+            let resource =
+                ResourceContents::text(schema_json, format!("/schema/{}", ep_lower));
             Ok(ReadResourceResult {
                 contents: vec![resource],
             })
         } else {
-            Err(Error::from(ErrorData::resource_not_found(
+            Err(McpError::resource_not_found(
                 format!("Unknown resource URI: {}", uri),
                 None,
-            )))
+            ))
         };
         std::future::ready(result)
     }

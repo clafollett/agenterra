@@ -508,9 +508,9 @@ async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
             println!("No server specified and no default configured.");
             println!();
             println!("You can:");
-            println!("  1. Specify a server directly: {} --server /path/to/server", "{{ cli_binary_name }}");
-            println!("  2. Add a server profile: {} config add my-server --command /path/to/server", "{{ cli_binary_name }}");
-            println!("  3. Use an existing profile: {} --profile my-server", "{{ cli_binary_name }}");
+            println!("  1. Specify a server directly: {{ cli_binary_name }} --server /path/to/server");
+            println!("  2. Add a server profile: {{ cli_binary_name }} config add my-server --command /path/to/server");
+            println!("  3. Use an existing profile: {{ cli_binary_name }} --profile my-server");
             
             return Err(ClientError::ConfigError("No server configured".to_string()));
         }

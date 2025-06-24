@@ -13,7 +13,7 @@ jobs:
   test:
     name: Test Suite
     runs-on: ${{ matrix.os }}
-    if: github.actor != 'release-plz[bot]'
+    if: github.actor != 'github-actions[bot]'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -59,10 +59,7 @@ jobs:
         cargo build --release --target aarch64-unknown-linux-musl --bin agenterra
 
     - name: Run unit tests
-      run: cargo test --all-features --workspace --lib
-
-    - name: Run doc tests
-      run: cargo test --all-features --workspace --doc
+      run: cargo test --all-features
 
     - name: Run integration tests
       run: cargo test --test e2e_mcp_test
@@ -70,7 +67,7 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-latest
-    if: github.actor != 'release-plz[bot]'
+    if: github.actor != 'github-actions[bot]'
     steps:
     - name: Checkout sources
       uses: actions/checkout@v4
@@ -94,7 +91,7 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
-    if: github.actor != 'release-plz[bot]'
+    if: github.actor != 'github-actions[bot]'
     steps:
     - name: Checkout sources
       uses: actions/checkout@v4
