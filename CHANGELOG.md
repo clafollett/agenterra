@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/clafollett/agenterra/compare/agenterra-v0.1.3...agenterra-v0.1.4) - 2025-06-24
+
+### Fixed
+
+- update templates for rmcp API compatibility ([#95](https://github.com/clafollett/agenterra/pull/95)) ([#96](https://github.com/clafollett/agenterra/pull/96))
+
 ## [0.1.3](https://github.com/clafollett/agenterra/compare/agenterra-v0.1.2...agenterra-v0.1.3) - 2025-06-23
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "agenterra"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 license = "MIT"
 authors = ["LaFollett Labs LLC <contact@lafollettlabs.com>"]
