@@ -59,10 +59,10 @@ jobs:
         cargo build --release --target aarch64-unknown-linux-musl --bin agenterra
 
     - name: Run unit tests
-      run: cargo test --all-features --workspace --lib
+      run: cargo test --all-features
 
     - name: Run doc tests
-      run: cargo test --all-features --workspace --doc
+      run: cargo test --all-features --doc
 
     - name: Run integration tests
       run: cargo test --test e2e_mcp_test
