@@ -123,7 +123,8 @@ impl ServerHandler for McpServer {
         let uri = request.uri;
         let prefix = "/schema/";
         let result = if let Some(endpoint) = uri.strip_prefix(prefix) {
-            let schema_json = match endpoint.to_lowercase().as_str() {
+            let ep_lower = endpoint.to_lowercase();
+            let schema_json = match ep_lower.as_str() {
                 {%- for ep in endpoints %}
                 "{{ ep.endpoint }}" => include_str!("../../schemas/{{ ep.endpoint }}.json"),
                 {%- endfor %}
@@ -133,7 +134,7 @@ impl ServerHandler for McpServer {
                 ))),
             };
             let resource =
-                ResourceContents::text(schema_json, format!("/schema/{}", endpoint.to_lowercase()));
+                ResourceContents::text(schema_json, format!("/schema/{}", ep_lower));
             Ok(ReadResourceResult {
                 contents: vec![resource],
             })
