@@ -13,11 +13,39 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // External imports (alphabetized)
+use clap::Parser;
 use dotenvy::dotenv;
 use log::debug;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::fmt::writer::MakeWriterExt;
+
+/// {{ project_name }} MCP Server
+/// 
+/// Supports both STDIO and SSE (Server-Sent Events) transports for MCP protocol
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Transport type to use (stdio or sse)
+    #[arg(short, long, default_value = "stdio")]
+    transport: String,
+
+    /// SSE server bind address
+    #[arg(long, default_value = "127.0.0.1:{{ server_port | default(value=8080) }}")]
+    sse_addr: String,
+
+    /// SSE keep-alive interval in seconds
+    #[arg(long, default_value = "30")]
+    sse_keep_alive: u64,
+
+    /// Log directory path
+    #[arg(long)]
+    log_dir: Option<String>,
+
+    /// API URL for backend services
+    #[arg(long, default_value = "{{ base_api_url }}")]
+    api_url: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,8 +53,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     debug!("[{{ project_name }} MCP] main() reached ===");
     dotenv().ok();
 
-    // Load application config
-    let cfg = Arc::new(Mutex::new(Config::load()));
+    // Parse command line arguments
+    let args = Args::parse();
+
+    // Load application config from environment
+    let mut config = Config::load();
+    
+    // Apply CLI overrides (CLI args take precedence over env vars)
+    config.transport = args.transport;
+    config.api_url = args.api_url;
+    
+    if let Some(log_dir) = args.log_dir {
+        config.log_dir = std::path::PathBuf::from(log_dir);
+    }
+    
+    // Parse and apply SSE address
+    config.sse_addr = args.sse_addr.parse().unwrap_or_else(|_| {
+        "127.0.0.1:{{ server_port | default(value=8080) }}"
+            .parse()
+            .expect("Default SSE address should be valid")
+    });
+    
+    config.sse_keep_alive = std::time::Duration::from_secs(args.sse_keep_alive);
+
+    let cfg = Arc::new(Mutex::new(config));
 
     // Get log directory from config
     let log_dir = {

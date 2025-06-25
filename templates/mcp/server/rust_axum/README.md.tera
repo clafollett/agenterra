@@ -60,7 +60,7 @@ The server supports the following command-line options:
 Tools are defined in `src/handlers/` and registered in `src/main.rs`:
 
 ```rust
-use rmcp::prelude::*;
+use agenterra_rmcp::prelude::*;
 
 #[tool]
 async fn my_tool(
@@ -75,7 +75,7 @@ async fn my_tool(
 Resources are managed through the MCP protocol and can represent files, databases, or any accessible data:
 
 ```rust
-use rmcp::prelude::*;
+use agenterra_rmcp::prelude::*;
 
 async fn list_resources() -> Vec<Resource> {
     vec![
@@ -94,7 +94,7 @@ async fn list_resources() -> Vec<Resource> {
 Prompt templates can be defined for dynamic content generation:
 
 ```rust
-use rmcp::prelude::*;
+use agenterra_rmcp::prelude::*;
 
 async fn get_prompt(name: &str, args: &serde_json::Value) -> Option<PromptMessage> {
     match name {

@@ -5,8 +5,8 @@ use crate::common::*;
 use crate::config::Config;
 
 // External imports (alphabetized)
-use rmcp::handler::server::tool::IntoCallToolResult;
-use rmcp::model::*;
+use agenterra_rmcp::handler::server::tool::IntoCallToolResult;
+use agenterra_rmcp::model::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -102,7 +102,7 @@ Responses:
     503: Service Unavailable
     504: Gateway Timeout
 Tag: {{ tags.0 }}"#]
-pub async fn {{ endpoint }}_handler(config: &Config, params: &{{ parameters_type }}) -> Result<CallToolResult, rmcp::Error> {
+pub async fn {{ endpoint }}_handler(config: &Config, params: &{{ parameters_type }}) -> Result<CallToolResult, agenterra_rmcp::Error> {
     // Log incoming request parameters and request details as structured JSON
     info!(
         target = "handler",

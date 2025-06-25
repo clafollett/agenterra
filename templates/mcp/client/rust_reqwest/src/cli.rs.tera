@@ -39,6 +39,14 @@ pub struct Cli {
     #[arg(short, long)]
     pub profile: Option<String>,
     
+    /// Transport type to use (stdio or sse)
+    #[arg(long, default_value = "stdio")]
+    pub transport: String,
+    
+    /// SSE server URL (for SSE transport)
+    #[arg(long)]
+    pub sse_url: Option<String>,
+    
     /// Enable debug logging
     #[arg(short, long)]
     pub debug: bool,
@@ -235,7 +243,7 @@ fn derive_server_name(server_path: &str) -> String {
         // Extract the last path segment or host
         if let Ok(url) = url::Url::parse(server_path) {
             if let Some(segments) = url.path_segments() {
-                if let Some(last) = segments.last() {
+                if let Some(last) = segments.rev().next() {
                     if !last.is_empty() {
                         return to_snake_case(last);
                     }
@@ -415,13 +423,30 @@ async fn handle_headless_command(cli: &Cli, cmd: &HeadlessCommands) -> Result<()
     // Create and connect client
     let mut client = McpClient::new_with_timeout(timeout).await?;
     
-    info!("Starting MCP server: {} {:?}", server_command, server_args);
-    let mut command = tokio::process::Command::new(&server_command);
-    for arg in &server_args {
-        command.arg(arg);
+    // Connect based on transport type
+    match cli.transport.as_str() {
+        "sse" => {
+            // For SSE, we need a URL
+            if let Some(sse_url) = &cli.sse_url {
+                info!("Connecting to MCP server via SSE: {}", sse_url);
+                client.connect_sse(sse_url).await?;
+            } else {
+                return Err(ClientError::ConfigError(
+                    "SSE transport requires --sse-url to be specified".to_string()
+                ));
+            }
+        }
+        _ => {
+            // Default to stdio
+            info!("Starting MCP server: {} {:?}", server_command, server_args);
+            let mut command = tokio::process::Command::new(&server_command);
+            for arg in &server_args {
+                command.arg(arg);
+            }
+            
+            client.connect_stdio(command).await?;
+        }
     }
-    
-    client.connect_stdio(command).await?;
     info!("Connected to MCP server successfully");
     
     // Get the actual server name from the MCP server
@@ -519,13 +544,30 @@ async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
     // Create and connect MCP client
     let mut client = McpClient::new_with_timeout(timeout).await?;
     
-    info!("Starting MCP server: {} {:?}", server_command, server_args);
-    let mut command = tokio::process::Command::new(&server_command);
-    for arg in &server_args {
-        command.arg(arg);
+    // Connect based on transport type
+    match cli.transport.as_str() {
+        "sse" => {
+            // For SSE, we need a URL
+            if let Some(sse_url) = &cli.sse_url {
+                info!("Connecting to MCP server via SSE: {}", sse_url);
+                client.connect_sse(sse_url).await?;
+            } else {
+                return Err(ClientError::ConfigError(
+                    "SSE transport requires --sse-url to be specified".to_string()
+                ));
+            }
+        }
+        _ => {
+            // Default to stdio
+            info!("Starting MCP server: {} {:?}", server_command, server_args);
+            let mut command = tokio::process::Command::new(&server_command);
+            for arg in &server_args {
+                command.arg(arg);
+            }
+            
+            client.connect_stdio(command).await?;
+        }
     }
-    
-    client.connect_stdio(command).await?;
     info!("Connected to MCP server successfully");
     
     // Get the actual server name from the MCP server

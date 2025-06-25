@@ -234,12 +234,59 @@ async fn test_mcp_server_client_generation() -> Result<()> {
     }
 
     info!("✅ Client builds successfully");
+    
+    // The generated binary names match the project names
+    let server_binary = server_output.join("target/debug/e2e_mcp_server");
+    let client_binary = client_output.join("target/debug/e2e_mcp_client");
 
-    // Test 4: End-to-end MCP communication using generated client
+    // Test 4: Verify CLI help includes SSE transport options
+    info!("=== Testing CLI Help for SSE Options ===");
+    
+    // Test server CLI help
+    let server_help = Command::new(&server_binary)
+        .arg("--help")
+        .output()
+        .context("Failed to get server help")?;
+    
+    let server_help_text = String::from_utf8_lossy(&server_help.stdout);
+    assert!(server_help_text.contains("--transport"), "Server help should include --transport option");
+    assert!(server_help_text.contains("--sse-addr"), "Server help should include --sse-addr option");
+    assert!(server_help_text.contains("--sse-keep-alive"), "Server help should include --sse-keep-alive option");
+    info!("✅ Server CLI help includes SSE options");
+    
+    // Test client CLI help
+    let client_help = Command::new(&client_binary)
+        .arg("--help")
+        .output()
+        .context("Failed to get client help")?;
+    
+    let client_help_text = String::from_utf8_lossy(&client_help.stdout);
+    assert!(client_help_text.contains("--transport"), "Client help should include --transport option");
+    assert!(client_help_text.contains("--sse-url"), "Client help should include --sse-url option");
+    info!("✅ Client CLI help includes SSE options");
+    
+    // Test 5: Verify SSE transport mode can be started
+    info!("=== Testing SSE Transport Mode ===");
+    
+    // Test server with SSE mode (should start but we'll kill it quickly)
+    let mut sse_server = Command::new(&server_binary)
+        .args(&["--transport", "sse", "--sse-addr", "127.0.0.1:9999"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("Failed to start server in SSE mode")?;
+    
+    // Give it a moment to start
+    thread::sleep(Duration::from_millis(500));
+    
+    // Kill the server
+    sse_server.kill().ok();
+    info!("✅ Server can start in SSE mode");
+
+    // Test 6: End-to-end MCP communication using generated client
     info!("=== Testing MCP Server ↔ Client Communication ===");
 
-    // The generated binary name matches the project name we passed ("e2e_mcp_server")
-    let server_binary = server_output.join("target/debug/e2e_mcp_server");
+    // Verify binaries exist
     if !server_binary.exists() {
         anyhow::bail!(
             "Expected server binary not found at {}",

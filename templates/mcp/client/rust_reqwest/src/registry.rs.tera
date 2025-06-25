@@ -238,7 +238,7 @@ impl ToolRegistry {
     }
 
     /// Update the registry with tools from list_tools response
-    pub fn update_from_rmcp_tools(&mut self, rmcp_tools: Vec<rmcp::model::Tool>) -> Result<()> {
+    pub fn update_from_rmcp_tools(&mut self, rmcp_tools: Vec<agenterra_rmcp::model::Tool>) -> Result<()> {
         self.tools.clear();
 
         for rmcp_tool in rmcp_tools {

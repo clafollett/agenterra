@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use tokio::time;
 
 // Import rmcp types for real MCP protocol integration
-use rmcp::{
+use agenterra_rmcp::{
     model::{
         CallToolRequestParam, CallToolResult, GetPromptRequestParam, ReadResourceRequestParam,
     },
@@ -215,9 +215,9 @@ pub struct McpClient {
     
     // Legacy fields for backwards compatibility with 0.1.2
     timeout: Duration,
-    tools: HashMap<String, rmcp::model::Tool>,
-    resources: Vec<rmcp::model::Resource>,
-    prompts: Vec<rmcp::model::Prompt>,
+    tools: HashMap<String, agenterra_rmcp::model::Tool>,
+    resources: Vec<agenterra_rmcp::model::Resource>,
+    prompts: Vec<agenterra_rmcp::model::Prompt>,
 }
 
 impl McpClient {
@@ -422,6 +422,19 @@ impl McpClient {
         
         Ok(())
     }
+    
+    /// Connect via SSE (Server-Sent Events)
+    pub async fn connect_sse(&mut self, url: &str) -> Result<()> {
+        tracing::info!("Connecting to MCP server via SSE: {}", url);
+        
+        // TODO: Implement SSE client when agenterra-rmcp API stabilizes
+        // The SSE client configuration has changed in 0.1.5
+        // For now, return a helpful error message
+        
+        return Err(ClientError::Connection(
+            "SSE client support is pending API stabilization in agenterra-rmcp 0.1.5+".to_string()
+        ));
+    }
 
     /// Connect to child process (legacy compatibility method)
     pub async fn connect_to_child_process(
@@ -523,7 +536,7 @@ impl McpClient {
     }
 
     /// Get list of available tools (legacy API)
-    pub fn get_tools(&self) -> &HashMap<String, rmcp::model::Tool> {
+    pub fn get_tools(&self) -> &HashMap<String, agenterra_rmcp::model::Tool> {
         &self.tools
     }
 
@@ -637,10 +650,10 @@ impl McpClient {
     /// Execute the actual tool call via rmcp
     async fn execute_tool_call(
         &self,
-        service: &rmcp::service::RunningService<rmcp::RoleClient, ()>,
+        service: &agenterra_rmcp::service::RunningService<agenterra_rmcp::RoleClient, ()>,
         tool_name: &str,
         arguments: serde_json::Value,
-    ) -> Result<rmcp::model::CallToolResult> {
+    ) -> Result<agenterra_rmcp::model::CallToolResult> {
         let arguments_object = arguments.as_object().cloned();
         let request = CallToolRequestParam {
             name: tool_name.to_string().into(),
@@ -745,7 +758,7 @@ impl McpClient {
             .await
             .map_err(|e| ClientError::Protocol(format!("Failed to list resources: {}", e)))?;
 
-        // Convert rmcp::model::Resource to our ResourceInfo
+        // Convert agenterra_rmcp::model::Resource to our ResourceInfo
         let resources = rmcp_resources
             .into_iter()
             .map(|rmcp_resource| {
@@ -771,7 +784,7 @@ impl McpClient {
     }
 
     /// Get list of available resources (legacy API)
-    pub fn get_resources(&self) -> &[rmcp::model::Resource] {
+    pub fn get_resources(&self) -> &[agenterra_rmcp::model::Resource] {
         &self.resources
     }
 
@@ -805,10 +818,10 @@ impl McpClient {
         // Convert the first resource content to our format
         if let Some(content) = result.contents.into_iter().next() {
             let (data, encoding, mime_type) = match content {
-                rmcp::model::ResourceContents::TextResourceContents {
+                agenterra_rmcp::model::ResourceContents::TextResourceContents {
                     text, mime_type, ..
                 } => (text.into_bytes(), Some("utf-8".to_string()), mime_type),
-                rmcp::model::ResourceContents::BlobResourceContents {
+                agenterra_rmcp::model::ResourceContents::BlobResourceContents {
                     blob, mime_type, ..
                 } => {
                     // blob is base64 encoded
@@ -863,7 +876,7 @@ impl McpClient {
     }
 
     /// Get list of available prompts (legacy API)
-    pub fn get_prompts(&self) -> &[rmcp::model::Prompt] {
+    pub fn get_prompts(&self) -> &[agenterra_rmcp::model::Prompt] {
         &self.prompts
     }
 

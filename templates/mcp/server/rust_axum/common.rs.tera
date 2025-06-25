@@ -3,7 +3,7 @@ use crate::config::Config;
 use std::collections::HashMap;
 
 // Public/external imports (alphabetized)
-use rmcp::model::*;
+use agenterra_rmcp::model::*;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 
@@ -15,7 +15,10 @@ pub trait Endpoint {
 
 /// Proxies query parameters and endpoint-specific parameters to the API, executes the proxied HTTP request.
 /// Returns the result or our local ProxyError.
-pub async fn get_endpoint_response<E, R>(config: &Config, endpoint: &E) -> Result<R, rmcp::Error>
+pub async fn get_endpoint_response<E, R>(
+    config: &Config,
+    endpoint: &E,
+) -> Result<R, agenterra_rmcp::Error>
 where
     E: Endpoint + Clone + Send + Sync,
     R: Serialize + DeserializeOwned,
@@ -42,7 +45,11 @@ where
         params.remove(key);
     }
     
-    let url = format!("{}/{}", config.api_url.trim_end_matches('/'), path.trim_start_matches('/'));
+    let url = format!(
+        "{}/{}",
+        config.api_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
 
     log::debug!("Sending request: URL={}, Query={:?}", url, params);
 
@@ -90,12 +97,12 @@ where
                         "raw": val
                     })),
                 );
-                return Err(rmcp::Error::from(error_data));
+                return Err(agenterra_rmcp::Error::from(error_data));
             }
 
             let parsed: R = serde_json::from_value(val).map_err(|e| {
-                rmcp::model::ErrorData::new(
-                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                agenterra_rmcp::model::ErrorData::new(
+                    agenterra_rmcp::model::ErrorCode::INTERNAL_ERROR,
                     format!("Failed to deserialize API response: {e}"),
                     None,
                 )
@@ -104,15 +111,19 @@ where
             Ok(parsed)
         }
         Err(e) => {
-            log::error!("Failed to parse response as JSON: {}. Status: {}", e, status);
+            log::error!(
+                "Failed to parse response as JSON: {}. Status: {}",
+                e,
+                status
+            );
             Err(serde_json_to_rmcp_error(e))
         }
     }
 }
 
 
-// Map reqwest errors to rmcp::Error
-fn reqwest_to_rmcp_error(e: reqwest::Error) -> rmcp::Error {
+// Map reqwest errors to agenterra_rmcp::Error
+fn reqwest_to_rmcp_error(e: reqwest::Error) -> agenterra_rmcp::Error {
     let message = e.to_string();
     let status = e.status().map(|s| s.as_u16());
     let custom_code_str = match e {
@@ -134,11 +145,11 @@ fn reqwest_to_rmcp_error(e: reqwest::Error) -> rmcp::Error {
         })),
     );
 
-    rmcp::Error::from(error_data)
+    agenterra_rmcp::Error::from(error_data)
 }
 
-// Map serde_json errors to rmcp::Error
-fn serde_json_to_rmcp_error(e: serde_json::Error) -> rmcp::Error {
+// Map serde_json errors to agenterra_rmcp::Error
+fn serde_json_to_rmcp_error(e: serde_json::Error) -> agenterra_rmcp::Error {
     let error_data = ErrorData::new(
         ErrorCode::INVALID_PARAMS,
         e.to_string(),
@@ -149,5 +160,5 @@ fn serde_json_to_rmcp_error(e: serde_json::Error) -> rmcp::Error {
             "column": e.column(),
         })),
     );
-    rmcp::Error::from(error_data)
+    agenterra_rmcp::Error::from(error_data)
 }

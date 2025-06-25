@@ -16,9 +16,10 @@ path = "src/main.rs"
 
 [dependencies]
 # MCP Protocol SDK (official)
-rmcp = { git = "https://github.com/clafollett/agenterra-rmcp.git", rev = "893969ac7780897bbb804d41fb98347553386f33", features = [
+agenterra-rmcp = { version = "0.1.5", features = [
     "client",
-    "transport-child-process"
+    "transport-child-process",
+    "transport-sse-client"
 ] }
 
 # HTTP Client

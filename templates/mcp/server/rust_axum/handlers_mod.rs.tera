@@ -10,14 +10,14 @@ use crate::config::Config;
 
 // External dependencies
 use log::debug;
-use rmcp::{
+use agenterra_rmcp::{
     handler::server::tool::Parameters, model::*, service::*, tool, Error as McpError,
     ServerHandler,
 };
 
 #[derive(Clone)]
 pub struct McpServer {
-    tool_router: rmcp::handler::server::router::tool::ToolRouter<McpServer>,
+    tool_router: agenterra_rmcp::handler::server::router::tool::ToolRouter<McpServer>,
 }
 
 impl McpServer {
@@ -29,7 +29,7 @@ impl McpServer {
     }
 }
 
-#[rmcp::tool_router]
+#[agenterra_rmcp::tool_router]
 impl McpServer {
     /// Returns MCP server status for Inspector/health validation
     #[tool(description = "Returns MCP server status for Inspector/health validation")]
@@ -51,7 +51,7 @@ impl McpServer {
     {%- endfor %}
 }
 
-#[rmcp::tool_handler]
+#[agenterra_rmcp::tool_handler]
 impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerInfo {
         debug!("[MCP] get_info() called - should show tools!");
@@ -92,7 +92,7 @@ impl ServerHandler for McpServer {
     fn list_resources(
         &self, _request: Option<PaginatedRequestParam>, _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
-        use rmcp::model::{Annotated, RawResource};
+        use agenterra_rmcp::model::{Annotated, RawResource};
         let resources = vec![
             {%- for ep in endpoints %}
             Annotated {
@@ -119,7 +119,7 @@ impl ServerHandler for McpServer {
         request: ReadResourceRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
-        use rmcp::model::{ResourceContents, ReadResourceResult};
+        use agenterra_rmcp::model::{ResourceContents, ReadResourceResult};
         let uri = request.uri;
         let prefix = "/schema/";
         let result = if let Some(endpoint) = uri.strip_prefix(prefix) {

@@ -43,7 +43,7 @@ pub struct ToolResult {
 
 impl ToolResult {
     /// Create a new tool result from rmcp CallToolResult
-    pub fn from_rmcp_result(result: &rmcp::model::CallToolResult) -> Result<Self> {
+    pub fn from_rmcp_result(result: &agenterra_rmcp::model::CallToolResult) -> Result<Self> {
         let raw_response = serde_json::to_value(result)
             .map_err(|e| ClientError::Protocol(format!("Failed to serialize tool result: {}", e)))?;
 
@@ -106,7 +106,7 @@ impl ToolResult {
     }
 
     /// Parse individual content item from rmcp
-    fn parse_content_item(item: &rmcp::model::Content) -> Result<ContentType> {
+    fn parse_content_item(item: &agenterra_rmcp::model::Content) -> Result<ContentType> {
         // Extract the content based on rmcp Content enum variants
         // This is a simplified parser - we'll expand based on actual rmcp types
         let item_json = serde_json::to_value(item).map_err(|e| {

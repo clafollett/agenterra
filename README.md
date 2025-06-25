@@ -132,12 +132,32 @@ Add this to your Cursor settings (File > Preferences > Settings > Extensions > M
 Test your MCP server with the MCP Inspector:
 
 ```bash
-# Run directly with npx
+# Test STDIO mode (default)
 npx @modelcontextprotocol/inspector cargo run --manifest-path=/path/to/petstore-server/Cargo.toml
+
+# Test SSE mode
+npx @modelcontextprotocol/inspector cargo run --manifest-path=/path/to/petstore-server/Cargo.toml -- --transport sse
 
 # Or install globally
 npm install -g @modelcontextprotocol/inspector
 modelcontextprotocol-inspector cargo run --manifest-path=/path/to/petstore-server/Cargo.toml
+```
+
+#### Testing SSE Endpoints
+
+When running in SSE mode, the server exposes HTTP endpoints:
+
+```bash
+# Start server in SSE mode
+cargo run -- --transport sse --sse-addr 127.0.0.1:8080
+
+# Test SSE endpoint with curl
+curl -N -H "Accept: text/event-stream" http://localhost:8080/sse
+
+# Send MCP messages via POST
+curl -X POST http://localhost:8080/message \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
 
@@ -205,8 +225,36 @@ OpenAPI Spec (local file or URL)
 Generated Rust MCP Server (Axum, etc.)
 ```
 
-- The generated server uses [Stdio](https://modelcontextprotocol.io/introduction) as the primary MCP protocol for agent integration, but can be extended for HTTP/SSE and other transports.
-- All code is idiomatic Rust, ready for further customization and production deployment.
+- The generated servers support both **STDIO** and **SSE (Server-Sent Events)** transports for MCP protocol
+- All code is idiomatic Rust, ready for further customization and production deployment
+
+### 🚀 Transport Configuration
+
+Generated servers and clients support multiple transport modes:
+
+#### Server Transport Options
+```bash
+# STDIO mode (default) - for direct process communication
+./my-server
+
+# SSE mode - for HTTP-based communication
+./my-server --transport sse --sse-addr 127.0.0.1:8080
+
+# With custom keep-alive interval
+./my-server --transport sse --sse-addr 0.0.0.0:9000 --sse-keep-alive 60
+
+# Environment variables also supported
+TRANSPORT=sse SSE_ADDR=127.0.0.1:8080 ./my-server
+```
+
+#### Client Transport Options
+```bash
+# STDIO mode (default) - connects to server process
+./my-client --server /path/to/server
+
+# SSE mode - connects to HTTP endpoint
+./my-client --transport sse --sse-url http://localhost:8080
+```
 
 ## 💾 Resource Caching
 

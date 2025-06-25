@@ -17,7 +17,7 @@ use crate::signal::{SignalEvent, spawn_signal_listener};
 // External imports (alphabetized)
 use dotenvy::dotenv;
 use log::debug;
-use rmcp::{
+use agenterra_rmcp::{
     transport::{
         sse_server::{SseServer, SseServerConfig},
         stdio,
