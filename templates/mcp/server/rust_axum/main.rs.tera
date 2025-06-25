@@ -6,9 +6,11 @@ mod config;
 mod handlers;
 mod server;
 mod signal;
+mod transport;
 
 // Internal imports (std, crate)
 use crate::config::Config;
+use crate::transport::Transport;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -27,8 +29,8 @@ use tracing_subscriber::fmt::writer::MakeWriterExt;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Transport type to use (stdio or sse)
-    #[arg(short, long, default_value = "stdio")]
-    transport: String,
+    #[arg(short, long, value_enum, default_value_t = Transport::Stdio)]
+    transport: Transport,
 
     /// SSE server bind address
     #[arg(long, default_value = "127.0.0.1:{{ server_port | default(value=8080) }}")]
@@ -68,11 +70,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     // Parse and apply SSE address
-    config.sse_addr = args.sse_addr.parse().unwrap_or_else(|_| {
-        "127.0.0.1:{{ server_port | default(value=8080) }}"
-            .parse()
-            .expect("Default SSE address should be valid")
-    });
+    config.sse_addr = args.sse_addr.parse()
+        .map_err(|e| {
+            eprintln!("Invalid SSE address '{}': {}", args.sse_addr, e);
+            eprintln!("Using default address: 127.0.0.1:{{ server_port | default(value=8080) }}");
+        })
+        .unwrap_or_else(|_| {
+            "127.0.0.1:{{ server_port | default(value=8080) }}"
+                .parse()
+                .expect("Default SSE address should be valid")
+        });
     
     config.sse_keep_alive = std::time::Duration::from_secs(args.sse_keep_alive);
 

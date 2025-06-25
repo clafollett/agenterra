@@ -1,0 +1,106 @@
+//! Configuration command handlers for {{ project_name }}
+
+use crate::config::{ConfigManager, ServerProfile};
+use crate::database::DatabaseManager;
+use crate::error::{ClientError, Result};
+use crate::cli::args::ConfigCommands;
+use std::sync::Arc;
+use chrono::Utc;
+use uuid::Uuid;
+
+/// Handle configuration commands
+pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
+    // Initialize shared database
+    let db = Arc::new(DatabaseManager::new().await?);
+    let config_manager = ConfigManager::new(db).await?;
+    
+    match action {
+        ConfigCommands::Add { 
+            name, 
+            command, 
+            args, 
+            description, 
+            timeout,
+            set_default 
+        } => {
+            let profile = ServerProfile {
+                id: Uuid::new_v4().to_string(),
+                name: name.clone(),
+                command: command.clone(),
+                args: args.clone(),
+                environment: None,
+                timeout: *timeout,
+                description: description.clone(),
+                is_default: *set_default,
+                created_at: Utc::now(),
+                last_used: None,
+            };
+            
+            config_manager.add_server(profile).await?;
+            println!("✅ Added server profile: {}", name);
+            
+            if *set_default {
+                println!("✅ Set as default server");
+            }
+        }
+        
+        ConfigCommands::List => {
+            let servers = config_manager.list_servers().await?;
+            
+            if servers.is_empty() {
+                println!("No server profiles configured");
+            } else {
+                println!("Server profiles:");
+                for server in servers {
+                    let default_marker = if server.is_default { " (default)" } else { "" };
+                    println!("  {} - {}{}",
+                        server.name,
+                        server.command,
+                        default_marker
+                    );
+                    if let Some(desc) = &server.description {
+                        println!("    {}", desc);
+                    }
+                }
+            }
+        }
+        
+        ConfigCommands::SetDefault { name } => {
+            config_manager.set_default_server(name).await?;
+            println!("✅ Set '{}' as default server", name);
+        }
+        
+        ConfigCommands::Remove { name } => {
+            config_manager.remove_server(name).await?;
+            println!("✅ Removed server profile: {}", name);
+        }
+        
+        ConfigCommands::Export { format } => {
+            let servers = config_manager.list_servers().await?;
+            match format.as_str() {
+                "json" => {
+                    println!("{}", serde_json::to_string_pretty(&servers)?);
+                }
+                _ => {
+                    println!("{}", serde_json::to_string_pretty(&servers)?);
+                }
+            }
+        }
+        
+        ConfigCommands::Import { path } => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| ClientError::ConfigError(format!("Failed to read file: {}", e)))?;
+            
+            let servers: Vec<ServerProfile> = serde_json::from_str(&content)
+                .map_err(|e| ClientError::ConfigError(format!("Invalid JSON: {}", e)))?;
+            
+            for server in servers {
+                config_manager.add_server(server).await?;
+            }
+            
+            println!("✅ Imported configuration successfully");
+        }
+    }
+    
+    Ok(())
+}

@@ -1,0 +1,92 @@
+//! Authentication command handlers for {{ project_name }}
+
+use crate::error::{ClientError, Result};
+use crate::cli::args::AuthCommands;
+
+/// Handle authentication commands
+pub async fn handle_auth_command(_action: &AuthCommands) -> Result<()> {
+    // TODO: AuthManager is not yet implemented
+    // For now, return an error indicating this feature is not available
+    Err(ClientError::ConfigError(
+        "Authentication management is not yet implemented. This feature will be available in a future release.".to_string()
+    ))
+    
+    /* TODO: Implement when AuthManager is available
+    match action {
+        AuthCommands::Add { 
+            server, 
+            auth_type, 
+            username, 
+            password, 
+            api_key 
+        } => {
+            let auth_config = match auth_type.as_str() {
+                "basic" => {
+                    let username = username.clone()
+                        .ok_or_else(|| ClientError::ConfigError("Username required for basic auth".to_string()))?;
+                    
+                    let password = if let Some(pass) = password {
+                        pass.clone()
+                    } else {
+                        // Prompt for password
+                        rpassword::prompt_password("Password: ")
+                            .map_err(|e| ClientError::ConfigError(format!("Failed to read password: {}", e)))?
+                    };
+                    
+                    // Note: Basic auth is not directly supported in AuthConfig
+                    // You may need to implement this or use custom headers
+                    return Err(ClientError::ConfigError("Basic auth not yet implemented".to_string()));
+                }
+                "bearer" => {
+                    let token = api_key.clone()
+                        .ok_or_else(|| ClientError::ConfigError("API key required for bearer auth".to_string()))?;
+                    AuthConfig::new().with_bearer_token(token)?
+                }
+                "api_key" => {
+                    let key = api_key.clone()
+                        .ok_or_else(|| ClientError::ConfigError("API key required".to_string()))?;
+                    AuthConfig::new().with_api_key(key, Some("X-API-Key".to_string()))?
+                }
+                _ => {
+                    return Err(ClientError::ConfigError(format!("Unknown auth type: {}", auth_type)));
+                }
+            };
+            
+            auth_manager.store_credentials(server, auth_config).await?;
+            println!("✅ Stored authentication credentials for: {}", server);
+        }
+        
+        AuthCommands::List => {
+            let servers = auth_manager.list_servers().await?;
+            
+            if servers.is_empty() {
+                println!("No authentication credentials stored");
+            } else {
+                println!("Servers with stored credentials:");
+                for server in servers {
+                    println!("  {}", server);
+                }
+            }
+        }
+        
+        AuthCommands::Remove { server } => {
+            auth_manager.remove_credentials(server).await?;
+            println!("✅ Removed authentication credentials for: {}", server);
+        }
+        
+        AuthCommands::Test { server } => {
+            match auth_manager.get_credentials(server).await? {
+                Some(_) => {
+                    println!("✅ Authentication credentials found for: {}", server);
+                    println!("   (Actual authentication test requires connecting to the server)");
+                }
+                None => {
+                    println!("❌ No authentication credentials found for: {}", server);
+                }
+            }
+        }
+    }
+    
+    Ok(())
+    */
+}

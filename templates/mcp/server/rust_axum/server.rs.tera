@@ -13,6 +13,7 @@
 use crate::config::Config;
 use crate::handlers::McpServer;
 use crate::signal::{SignalEvent, spawn_signal_listener};
+use crate::transport::Transport;
 
 // External imports (alphabetized)
 use dotenvy::dotenv;
@@ -131,20 +132,23 @@ async fn run_sse_server(cfg: SseConfig) -> Result<(), Box<dyn std::error::Error>
 /// Reads config and selects the server mode (stdio or SSE/Axum).
 /// Returns the mode and a bool for SSE mode.
 fn select_server_mode(cfg: &Config) -> (ServerMode, bool) {
-    if cfg.transport.eq_ignore_ascii_case("sse") {
-        debug!("[{{ project_name }} MCP] SSE mode selected");
-        (
-            ServerMode::Sse(SseConfig {
-                addr: cfg.sse_addr,
-                sse_path: "/sse".to_string(),
-                post_path: "/message".to_string(),
-                keep_alive: Some(cfg.sse_keep_alive),
-            }),
-            true,
-        )
-    } else {
-        debug!("[{{ project_name }} MCP] Stdio mode selected");
-        (ServerMode::Stdio, false)
+    match cfg.transport {
+        Transport::Sse => {
+            debug!("[{{ project_name }} MCP] SSE mode selected");
+            (
+                ServerMode::Sse(SseConfig {
+                    addr: cfg.sse_addr,
+                    sse_path: "/sse".to_string(),
+                    post_path: "/message".to_string(),
+                    keep_alive: Some(cfg.sse_keep_alive),
+                }),
+                true,
+            )
+        }
+        Transport::Stdio => {
+            debug!("[{{ project_name }} MCP] Stdio mode selected");
+            (ServerMode::Stdio, false)
+        }
     }
 }
 

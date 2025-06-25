@@ -52,6 +52,7 @@ base64-simd = "0.8"
 
 # Security and memory management  
 zeroize = { version = "1.8", features = ["derive"] }
+rpassword = "7.3"
 
 # Concurrency primitives
 once_cell = "1.19"

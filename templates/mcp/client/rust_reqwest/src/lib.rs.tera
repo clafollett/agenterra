@@ -19,6 +19,7 @@ pub mod error;
 pub mod registry;
 pub mod result;
 pub mod transport;
+pub mod transport_mode;
 
 // Resource and session management
 pub mod resource;

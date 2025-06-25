@@ -1,0 +1,190 @@
+//! CLI argument definitions for {{ project_name }}
+
+use crate::transport_mode::TransportMode;
+use clap::{Parser, Subcommand};
+
+/// CLI arguments structure
+#[derive(Parser, Debug)]
+#[command(name = "{{ cli_binary_name }}")]
+#[command(about = "{{ description }}")]
+#[command(version = "{{ version }}")]
+#[command(long_about = None)]
+pub struct Cli {
+    /// Server to connect to (binary path or profile name)
+    #[arg(short, long)]
+    pub server: Option<String>,
+    
+    /// Arguments to pass to the server
+    #[arg(short, long, value_delimiter = ' ', num_args = 1..)]
+    pub args: Vec<String>,
+    
+    /// Use a saved server profile
+    #[arg(short, long)]
+    pub profile: Option<String>,
+    
+    /// Transport type to use (stdio or sse)
+    #[arg(long, value_enum, default_value_t = TransportMode::Stdio)]
+    pub transport: TransportMode,
+    
+    /// SSE server URL (for SSE transport)
+    #[arg(long)]
+    pub sse_url: Option<String>,
+    
+    /// Enable debug logging
+    #[arg(short, long)]
+    pub debug: bool,
+    
+    /// Connect timeout in seconds
+    #[arg(short, long, default_value = "10")]
+    pub timeout: u64,
+    
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(long, default_value = "info")]
+    pub log_level: String,
+    
+    /// Command to execute
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+/// Subcommands for the CLI
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Configuration management commands
+    Config {
+        #[command(subcommand)]
+        action: ConfigCommands,
+    },
+    
+    /// Authentication management commands
+    Auth {
+        #[command(subcommand)]
+        action: AuthCommands,
+    },
+    
+    /// Run a single command in headless mode
+    Run {
+        /// Tool to call
+        call: String,
+        
+        /// Arguments for the tool (JSON format)
+        #[arg(short, long)]
+        args: Option<String>,
+        
+        /// Server to connect to (overrides default)
+        #[arg(short, long)]
+        server: Option<String>,
+        
+        /// Profile to use (overrides default)
+        #[arg(short, long)]
+        profile: Option<String>,
+        
+        /// Connection timeout in seconds
+        #[arg(short, long)]
+        timeout: Option<u64>,
+    },
+}
+
+/// Configuration subcommands
+#[derive(Subcommand, Debug)]
+pub enum ConfigCommands {
+    /// Add a new server profile
+    Add {
+        /// Profile name
+        name: String,
+        
+        /// Server command
+        #[arg(long)]
+        command: String,
+        
+        /// Server arguments
+        #[arg(long, value_delimiter = ' ', num_args = 1..)]
+        args: Vec<String>,
+        
+        /// Description
+        #[arg(long)]
+        description: Option<String>,
+        
+        /// Connection timeout in seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+        
+        /// Set as default server
+        #[arg(long)]
+        set_default: bool,
+    },
+    
+    /// List all server profiles
+    List,
+    
+    /// Set the default server profile
+    SetDefault {
+        /// Profile name
+        name: String,
+    },
+    
+    /// Remove a server profile
+    Remove {
+        /// Profile name
+        name: String,
+    },
+    
+    /// Export configuration to JSON
+    Export {
+        /// Output format
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
+    
+    /// Import configuration from JSON
+    Import {
+        /// Path to import file
+        path: String,
+    },
+}
+
+/// Authentication subcommands
+#[derive(Subcommand, Debug)]
+pub enum AuthCommands {
+    /// Add authentication credentials
+    Add {
+        /// Server name
+        server: String,
+        
+        /// Authentication type
+        #[arg(long)]
+        auth_type: String,
+        
+        /// Username
+        #[arg(long)]
+        username: Option<String>,
+        
+        /// Password (will prompt if not provided)
+        #[arg(long)]
+        password: Option<String>,
+        
+        /// API key
+        #[arg(long)]
+        api_key: Option<String>,
+    },
+    
+    /// List authentication credentials
+    List,
+    
+    /// Remove authentication credentials
+    Remove {
+        /// Server name
+        server: String,
+    },
+    
+    /// Test authentication
+    Test {
+        /// Server name
+        server: String,
+    },
+}
+
+/// Parse command line arguments
+pub fn parse_args() -> Cli {
+    Cli::parse()
+}

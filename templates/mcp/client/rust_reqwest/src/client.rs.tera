@@ -9,21 +9,21 @@ use crate::cache::{CacheConfig, ResourceCache};
 use crate::database::DatabaseManager;
 use crate::error::{ClientError, Result};
 use crate::registry::ToolRegistry;
-use crate::result::ToolResult;
 use crate::resource::{ResourceContent, ResourceInfo};
+use crate::result::ToolResult;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use std::collections::HashMap;
 use tokio::time;
 
 // Import rmcp types for real MCP protocol integration
 use agenterra_rmcp::{
+    RoleClient,
     model::{
         CallToolRequestParam, CallToolResult, GetPromptRequestParam, ReadResourceRequestParam,
     },
     service::{RunningService, ServiceExt},
     transport::TokioChildProcess,
-    RoleClient,
 };
 
 // ========================================
@@ -158,9 +158,9 @@ impl ConnectionConfigBuilder {
     }
 
     pub fn build(self) -> Result<ConnectionConfig> {
-        let command = self.command.ok_or_else(|| {
-            ClientError::Validation("Connection command is required".to_string())
-        })?;
+        let command = self
+            .command
+            .ok_or_else(|| ClientError::Validation("Connection command is required".to_string()))?;
 
         if command.trim().is_empty() {
             return Err(ClientError::Validation(
@@ -173,7 +173,7 @@ impl ConnectionConfigBuilder {
             ClientError::Validation(
                 "Connection timeout is required. Use Duration::from_secs(30) for 30 seconds or \
                  Duration::MAX for no timeout"
-                    .to_string()
+                    .to_string(),
             )
         })?;
 
@@ -387,7 +387,6 @@ impl McpClient {
 
         match self.connect_stdio(command).await {
             Ok(()) => {
-                self.state = ConnectionState::Connected;
                 tracing::info!("Successfully connected to MCP server");
                 Ok(())
             }
@@ -415,25 +414,75 @@ impl McpClient {
         self.service = Some(service);
         
         // Discover available tools, resources, and prompts
-        self.discover_capabilities().await?;
-        
-        // Set connection state
-        self.state = ConnectionState::Connected;
-        
-        Ok(())
+        match self.discover_capabilities().await {
+            Ok(()) => {
+                // Set connection state only after successful discovery
+                self.state = ConnectionState::Connected;
+                Ok(())
+            }
+            Err(e) => {
+                // Connection established but capability discovery failed
+                self.state = ConnectionState::Failed(format!("Capability discovery failed: {}", e));
+                self.service = None; // Clean up the service
+                Err(e)
+            }
+        }
     }
     
     /// Connect via SSE (Server-Sent Events)
     pub async fn connect_sse(&mut self, url: &str) -> Result<()> {
         tracing::info!("Connecting to MCP server via SSE: {}", url);
         
-        // TODO: Implement SSE client when agenterra-rmcp API stabilizes
-        // The SSE client configuration has changed in 0.1.5
-        // For now, return a helpful error message
+        self.state = ConnectionState::Connecting;
         
-        return Err(ClientError::Connection(
-            "SSE client support is pending API stabilization in agenterra-rmcp 0.1.5+".to_string()
-        ));
+        // Parse the URL to ensure it's valid
+        let parsed_url = url::Url::parse(url)
+            .map_err(|e| ClientError::Connection(format!("Invalid URL: {}", e)))?;
+        
+        // Create SSE client transport using agenterra_rmcp
+        // Import the specific reqwest SSE client implementation
+        use agenterra_rmcp::transport::sse_client::{SseClientConfig, SseClientTransport};
+        use agenterra_rmcp::transport::reqwest::ReqwestSseClient;
+        use std::sync::Arc;
+        
+        // Create the SSE configuration
+        let sse_config = SseClientConfig {
+            sse_endpoint: Arc::from(parsed_url.to_string()),
+            retry_policy: Arc::new(agenterra_rmcp::transport::common::client_side_sse::FixedInterval::default()),
+            use_message_endpoint: Some("/message".to_string()),
+        };
+        
+        // Create a reqwest-based SSE client using the provided implementation
+        let reqwest_client = ReqwestSseClient::new();
+        
+        // Create the SSE transport
+        let transport = SseClientTransport::start_with_client(reqwest_client, sse_config)
+            .await
+            .map_err(|e| ClientError::Connection(format!("Failed to create SSE transport: {}", e)))?;
+        
+        // Create the service using ServiceExt trait (similar to stdio pattern)
+        let service = ().serve(transport).await
+            .map_err(|e| {
+                ClientError::Connection(format!("Failed to connect to SSE server: {}", e))
+            })?;
+        
+        // Store the running service
+        self.service = Some(service);
+        
+        // Discover available tools, resources, and prompts
+        match self.discover_capabilities().await {
+            Ok(()) => {
+                // Set connection state only after successful discovery
+                self.state = ConnectionState::Connected;
+                Ok(())
+            }
+            Err(e) => {
+                // Connection established but capability discovery failed
+                self.state = ConnectionState::Failed(format!("Capability discovery failed: {}", e));
+                self.service = None; // Clean up the service
+                Err(e)
+            }
+        }
     }
 
     /// Connect to child process (legacy compatibility method)
@@ -970,17 +1019,23 @@ impl McpClient {
 
     /// Get the server name from the MCP server info
     pub fn server_name(&self) -> Option<String> {
-        self.service.as_ref()?.peer_info().map(|info| info.server_info.name.clone())
+        self.service.as_ref().and_then(|s| {
+            s.peer_info().map(|info| info.server_info.name.clone())
+        })
     }
 
     /// Get the server version from the MCP server info
     pub fn server_version(&self) -> Option<String> {
-        self.service.as_ref()?.peer_info().map(|info| info.server_info.version.clone())
+        self.service.as_ref().and_then(|s| {
+            s.peer_info().map(|info| info.server_info.version.clone())
+        })
     }
 
     /// Get the protocol version from the MCP server info
     pub fn protocol_version(&self) -> Option<String> {
-        self.service.as_ref()?.peer_info().map(|info| info.protocol_version.to_string())
+        self.service.as_ref().and_then(|s| {
+            s.peer_info().map(|info| info.protocol_version.to_string())
+        })
     }
 
     /// Validate parameters for a tool call using the tool registry

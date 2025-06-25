@@ -1,6 +1,7 @@
 //! Configuration module for the generated server
 
 // Internal imports (std, crate)
+use crate::transport::Transport;
 use std::env;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -14,7 +15,7 @@ pub struct Config {
     /// Base API URL
     pub api_url: String,
     /// Transport type (stdio or sse)
-    pub transport: String,
+    pub transport: Transport,
     /// SSE server address
     pub sse_addr: std::net::SocketAddr,
     /// SSE keep alive duration
@@ -42,7 +43,9 @@ impl Config {
             .unwrap_or_else(|_| "{{ base_api_url }}".to_string());
             
         let transport = env::var("TRANSPORT")
-            .unwrap_or_else(|_| "stdio".to_string());
+            .ok()
+            .and_then(|s| s.parse::<Transport>().ok())
+            .unwrap_or(Transport::Stdio);
             
         let sse_addr = env::var("SSE_ADDR")
             .unwrap_or_else(|_| "127.0.0.1:{{ server_port | default(value=8080) }}".to_string())
@@ -85,7 +88,7 @@ impl Default for Config {
         Self {
             log_dir,
             api_url: "{{ base_api_url }}".to_string(),
-            transport: "stdio".to_string(),
+            transport: Transport::Stdio,
             sse_addr: "127.0.0.1:{{ server_port | default(value=8080) }}".parse()
                 .expect("Default SSE address should be valid"),
             sse_keep_alive: Duration::from_secs(30),

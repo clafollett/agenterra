@@ -40,6 +40,9 @@ files:
   - source: "src/transport.rs.tera"
     destination: "src/transport.rs"
     
+  - source: "src/transport_mode.rs.tera"
+    destination: "src/transport_mode.rs"
+    
   - source: "src/session_manager.rs.tera"
     destination: "src/session_manager.rs"
     
@@ -57,9 +60,21 @@ files:
   - source: "src/repl.rs.tera"
     destination: "src/repl.rs"
     
-  # Optional CLI interface
-  - source: "src/cli.rs.tera"
-    destination: "src/cli.rs"
+  # CLI submodules
+  - source: "src/cli/mod.rs.tera"
+    destination: "src/cli/mod.rs"
+    
+  - source: "src/cli/args.rs.tera"
+    destination: "src/cli/args.rs"
+    
+  - source: "src/cli/auth.rs.tera"
+    destination: "src/cli/auth.rs"
+    
+  - source: "src/cli/config.rs.tera"
+    destination: "src/cli/config.rs"
+    
+  - source: "src/cli/interactive.rs.tera"
+    destination: "src/cli/interactive.rs"
     
   # Optional headless interface
   - source: "src/headless.rs.tera"
@@ -70,6 +85,10 @@ files:
     
   - source: "LICENSE"
     destination: "LICENSE"
+
+required_directories:
+  - "src"
+  - "src/cli"
 
 hooks:
   post_generate:

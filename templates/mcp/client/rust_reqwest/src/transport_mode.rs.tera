@@ -1,0 +1,38 @@
+//! Transport mode selection for {{ project_name }}
+
+use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
+
+/// Transport mode for MCP connection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransportMode {
+    /// Standard I/O (process communication)
+    #[value(name = "stdio")]
+    Stdio,
+    
+    /// Server-Sent Events (HTTP-based)
+    #[value(name = "sse")]
+    Sse,
+}
+
+impl TransportMode {
+    /// Check if this is SSE transport
+    pub fn is_sse(&self) -> bool {
+        matches!(self, TransportMode::Sse)
+    }
+    
+    /// Check if this is STDIO transport
+    pub fn is_stdio(&self) -> bool {
+        matches!(self, TransportMode::Stdio)
+    }
+}
+
+impl std::fmt::Display for TransportMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportMode::Stdio => write!(f, "stdio"),
+            TransportMode::Sse => write!(f, "sse"),
+        }
+    }
+}
