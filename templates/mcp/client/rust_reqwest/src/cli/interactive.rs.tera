@@ -1,12 +1,12 @@
 //! Interactive mode handler for {{ project_name }}
 
 use crate::cli::args::Cli;
-use crate::client::McpClient;
-use crate::config::ConfigManager;
-use crate::database::DatabaseManager;
-use crate::error::{ClientError, Result};
-use crate::repl::McpRepl;
-use crate::transport_mode::TransportMode;
+use crate::domain::client::McpClient;
+use crate::application::config::ConfigManager;
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
+use crate::ui::repl::McpRepl;
+use crate::infrastructure::transport::TransportProtocol;
 use std::sync::Arc;
 use tracing::info;
 
@@ -63,7 +63,7 @@ pub async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
     
     // Connect based on transport type
     match cli.transport {
-        TransportMode::Sse => {
+        TransportProtocol::Sse => {
             // For SSE, we need a URL
             if let Some(sse_url) = &cli.sse_url {
                 info!("Connecting to MCP server via SSE: {}", sse_url);
@@ -74,7 +74,7 @@ pub async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
                 ));
             }
         }
-        TransportMode::Stdio => {
+        TransportProtocol::Stdio => {
             info!("Starting MCP server: {} {:?}", server_command, server_args);
             let mut command = tokio::process::Command::new(&server_command);
             for arg in &server_args {
@@ -137,8 +137,8 @@ fn derive_server_name(server_path: &str) -> String {
     if server_path.starts_with("http://") || server_path.starts_with("https://") {
         // Extract the last path segment or host
         if let Ok(url) = url::Url::parse(server_path) {
-            if let Some(segments) = url.path_segments() {
-                if let Some(last) = segments.last() {
+            if let Some(mut segments) = url.path_segments() {
+                if let Some(last) = segments.next_back() {
                     if !last.is_empty() {
                         return to_snake_case(last);
                     }

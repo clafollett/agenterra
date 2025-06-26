@@ -1,6 +1,6 @@
 //! Authentication command handlers for {{ project_name }}
 
-use crate::error::{ClientError, Result};
+use crate::infrastructure::error::{ClientError, Result};
 use crate::cli::args::AuthCommands;
 
 /// Handle authentication commands

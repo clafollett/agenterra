@@ -4,7 +4,7 @@
 //! Version: {{ version }}
 //! Max tools: 1000
 
-use crate::error::{ClientError, Result};
+use crate::infrastructure::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

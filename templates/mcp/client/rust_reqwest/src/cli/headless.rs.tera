@@ -1,0 +1,100 @@
+//! Headless mode command handling for {{ project_name }}
+
+use crate::cli::args::Cli;
+use crate::domain::client::McpClient;
+use crate::application::config::ConfigManager;
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
+use crate::ui::headless::{HeadlessRunner, ExitCode};
+use crate::infrastructure::transport::TransportProtocol;
+use std::sync::Arc;
+use tracing::info;
+
+/// Handle the Run command for headless mode
+pub async fn handle_run_command(
+    cli: &Cli,
+    call: &str,
+    args: &Option<String>,
+    server: &Option<String>,
+    profile: &Option<String>,
+    timeout: &Option<u64>,
+) -> Result<()> {
+    // Determine server to connect to
+    let (server_command, server_args, connect_timeout) = if let Some(profile_name) = profile {
+        // Use specified profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        let profile = config_manager.get_server(profile_name).await?
+            .ok_or_else(|| ClientError::ConfigError(format!("Profile '{}' not found", profile_name)))?;
+        
+        (
+            profile.command.clone(),
+            profile.args.clone(),
+            std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10)))
+        )
+    } else if let Some(server_path) = server {
+        // Use specified server
+        (
+            server_path.clone(),
+            cli.args.clone(),
+            std::time::Duration::from_secs(timeout.unwrap_or(cli.timeout))
+        )
+    } else {
+        // Try to use default profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        
+        if let Some(profile) = config_manager.get_default_server().await? {
+            (
+                profile.command.clone(),
+                profile.args.clone(),
+                std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10)))
+            )
+        } else {
+            return Err(ClientError::ConfigError(
+                "No server specified. Use --server, --profile, or set a default profile.".to_string()
+            ));
+        }
+    };
+    
+    // Create and connect client
+    let mut client = McpClient::new_with_timeout(connect_timeout.as_secs()).await?;
+    
+    // For headless mode, we only support STDIO transport for now
+    if matches!(cli.transport, TransportProtocol::Sse) {
+        return Err(ClientError::ConfigError(
+            "SSE transport is not yet supported in headless mode. Please use STDIO transport.".to_string()
+        ));
+    }
+    
+    info!("Connecting to MCP server: {} {:?}", server_command, server_args);
+    let mut command = tokio::process::Command::new(&server_command);
+    for arg in &server_args {
+        command.arg(arg);
+    }
+    client.connect_to_child_process(command).await?;
+    
+    // Create headless runner
+    let mut runner = HeadlessRunner::new(client, server_command.clone());
+    
+    // Parse arguments
+    let tool_args = if let Some(args_str) = args {
+        serde_json::from_str(args_str)
+            .map_err(|e| ClientError::Validation(format!("Invalid JSON arguments: {}", e)))?
+    } else {
+        serde_json::json!({})
+    };
+    
+    // Call the tool
+    match runner.call_tool(call, tool_args).await {
+        Ok(result) => {
+            // Print result as JSON
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(ExitCode::ToolCallFailed as i32);
+        }
+    }
+}

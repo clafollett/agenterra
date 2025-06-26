@@ -1,6 +1,6 @@
 //! CLI argument definitions for {{ project_name }}
 
-use crate::transport_mode::TransportMode;
+use crate::infrastructure::transport::TransportProtocol;
 use clap::{Parser, Subcommand};
 
 /// CLI arguments structure
@@ -23,8 +23,8 @@ pub struct Cli {
     pub profile: Option<String>,
     
     /// Transport type to use (stdio or sse)
-    #[arg(long, value_enum, default_value_t = TransportMode::Stdio)]
-    pub transport: TransportMode,
+    #[arg(long, value_enum, default_value_t = TransportProtocol::Stdio)]
+    pub transport: TransportProtocol,
     
     /// SSE server URL (for SSE transport)
     #[arg(long)]

@@ -9,45 +9,66 @@
 //!
 //! Version: {{ version }}
 
-// Core MCP client modules
-pub mod auth;
-pub mod cache;
-pub mod client;
-pub mod database;
-pub mod database_migrations;
-pub mod error;
-pub mod registry;
-pub mod result;
-pub mod transport;
-pub mod transport_mode;
+// Domain layer - Core business logic
+pub mod domain {
+    pub mod client;
+    pub mod capabilities;
+    pub mod connection;
+    pub mod operations;
+}
 
-// Resource and session management
-pub mod resource;
-pub mod session_manager;
+// Infrastructure layer - External dependencies
+pub mod infrastructure {
+    pub mod error;
+    pub mod transport;
+    pub mod database {
+        pub mod manager;
+        pub mod migrations;
+    }
+    pub mod cache {
+        pub mod resource_cache;
+    }
+}
 
-// Configuration
-pub mod config;
+// Application layer - Use cases and services  
+pub mod application {
+    pub mod auth;
+    pub mod config;
+    pub mod registry;
+    pub mod result;
+    pub mod session_manager;
+}
 
-// User interfaces
+// API layer - DTOs and external interfaces
+pub mod api {
+    pub mod resource;
+}
+
+// UI layer - User interfaces
+pub mod ui {
+    pub mod headless;
+    pub mod repl;
+}
+
+// CLI integration
 pub mod cli;
-pub mod headless;
-pub mod repl;
 
 // Re-export main types for convenient access
-pub use auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
-pub use cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
-pub use client::{
-    ConnectionConfig, ConnectionConfigBuilder, ConnectionState, McpClient, ServerCapabilities,
-};
-pub use config::{ConfigManager, ServerProfile, AuthCredential, SessionHistory};
-pub use database::{DatabaseManager, DatabaseConfig};
-pub use error::{ClientError, Result};
-pub use headless::{HeadlessRunner, ServerStatus, ExitCode};
-pub use registry::{ToolInfo, ToolRegistry};
-pub use resource::{ResourceContent, ResourceInfo};
-pub use result::{ContentType, ToolResult};
-pub use session_manager::McpSessionManager;
-pub use transport::Transport;
+pub use application::auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
+pub use infrastructure::cache::resource_cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
+pub use domain::client::McpClient;
+pub use domain::capabilities::DiscoveredCapabilities;
+pub use domain::connection::{ConnectionConfig, ConnectionConfigBuilder, ConnectionState};
+pub use domain::operations::OperationTimeouts;
+pub use application::config::{ConfigManager, ServerProfile, AuthCredential, SessionHistory};
+pub use infrastructure::database::manager::{DatabaseManager, DatabaseConfig};
+pub use infrastructure::error::{ClientError, Result};
+pub use ui::headless::{HeadlessRunner, ServerStatus, ExitCode};
+pub use application::registry::{ToolInfo, ToolRegistry};
+pub use api::resource::{ResourceContent, ResourceInfo};
+pub use application::result::{ContentType, ToolResult};
+pub use application::session_manager::McpSessionManager;
+pub use infrastructure::transport::{Transport, TransportProtocol};
 
 /// Current version of the {{ project_name }}
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

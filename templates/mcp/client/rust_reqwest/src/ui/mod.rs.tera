@@ -1,0 +1,9 @@
+//! User interface layer for {{ project_name }}
+//!
+//! Contains different user interface implementations.
+
+pub mod headless;
+pub mod repl;
+
+// Re-export main types
+pub use headless::{HeadlessRunner, ServerStatus, ExitCode};

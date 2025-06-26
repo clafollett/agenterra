@@ -4,8 +4,23 @@
 //! Version: {{ version }}
 //! Protocol: 2025-06-18
 
-use crate::error::Result;
+use crate::infrastructure::error::Result;
 use async_trait::async_trait;
+use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
+
+/// Transport protocol selection for MCP connection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransportProtocol {
+    /// Standard I/O (process communication)
+    #[value(name = "stdio")]
+    Stdio,
+    
+    /// Server-Sent Events (HTTP-based)
+    #[value(name = "sse")]
+    Sse,
+}
 
 /// Abstraction over different MCP transport mechanisms for {{ project_name }}
 #[async_trait]
@@ -50,7 +65,7 @@ impl MockTransport {
 #[async_trait]
 impl Transport for MockTransport {
     async fn send(&mut self, _message: serde_json::Value) -> Result<serde_json::Value> {
-        use crate::error::ClientError;
+        use crate::infrastructure::error::ClientError;
 
         // Check if we've exceeded the maximum allowed responses
         if self.call_count >= self.max_responses {

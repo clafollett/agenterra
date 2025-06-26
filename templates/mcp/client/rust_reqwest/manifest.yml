@@ -15,52 +15,88 @@ files:
   - source: "src/main.rs.tera"
     destination: "src/main.rs"
     
-  # Core client modules
-  - source: "src/client.rs.tera"
-    destination: "src/client.rs"
+  # Domain layer - Core business logic
+  - source: "src/domain/client.rs.tera"
+    destination: "src/domain/client.rs"
     
-  - source: "src/auth.rs.tera"
-    destination: "src/auth.rs"
+  - source: "src/domain/capabilities.rs.tera"
+    destination: "src/domain/capabilities.rs"
     
-  - source: "src/cache.rs.tera"
-    destination: "src/cache.rs"
+  - source: "src/domain/connection.rs.tera"
+    destination: "src/domain/connection.rs"
     
-  - source: "src/database.rs.tera"
-    destination: "src/database.rs"
+  - source: "src/domain/operations.rs.tera"
+    destination: "src/domain/operations.rs"
     
-  - source: "src/database_migrations.rs.tera"
-    destination: "src/database_migrations.rs"
+  - source: "src/domain/mod.rs.tera"
+    destination: "src/domain/mod.rs"
     
-  - source: "src/registry.rs.tera"
-    destination: "src/registry.rs"
+  # Infrastructure layer - External dependencies
+  - source: "src/infrastructure/mod.rs.tera"
+    destination: "src/infrastructure/mod.rs"
     
-  - source: "src/result.rs.tera"
-    destination: "src/result.rs"
+  - source: "src/infrastructure/error.rs.tera"
+    destination: "src/infrastructure/error.rs"
     
-  - source: "src/transport.rs.tera"
-    destination: "src/transport.rs"
+  - source: "src/infrastructure/transport.rs.tera"
+    destination: "src/infrastructure/transport.rs"
     
-  - source: "src/transport_mode.rs.tera"
-    destination: "src/transport_mode.rs"
+  - source: "src/infrastructure/database/mod.rs.tera"
+    destination: "src/infrastructure/database/mod.rs"
     
-  - source: "src/session_manager.rs.tera"
-    destination: "src/session_manager.rs"
+  - source: "src/infrastructure/database/manager.rs.tera"
+    destination: "src/infrastructure/database/manager.rs"
     
-  - source: "src/error.rs.tera"
-    destination: "src/error.rs"
+  - source: "src/infrastructure/database/migrations.rs.tera"
+    destination: "src/infrastructure/database/migrations.rs"
     
-  - source: "src/resource.rs.tera"
-    destination: "src/resource.rs"
+  - source: "src/infrastructure/cache/mod.rs.tera"
+    destination: "src/infrastructure/cache/mod.rs"
     
-  # Configuration and CLI
-  - source: "src/config.rs.tera"
-    destination: "src/config.rs"
+  - source: "src/infrastructure/cache/resource_cache.rs.tera"
+    destination: "src/infrastructure/cache/resource_cache.rs"
     
-  # REPL interface
-  - source: "src/repl.rs.tera"
-    destination: "src/repl.rs"
+  # Application layer - Use cases and services
+  - source: "src/application/mod.rs.tera"
+    destination: "src/application/mod.rs"
     
-  # CLI submodules
+  - source: "src/application/auth.rs.tera"
+    destination: "src/application/auth.rs"
+    
+  - source: "src/application/config.rs.tera"
+    destination: "src/application/config.rs"
+    
+  - source: "src/application/registry.rs.tera"
+    destination: "src/application/registry.rs"
+    
+  - source: "src/application/result.rs.tera"
+    destination: "src/application/result.rs"
+    
+  - source: "src/application/session_manager.rs.tera"
+    destination: "src/application/session_manager.rs"
+    
+  # API layer - DTOs and external interfaces
+  - source: "src/api/mod.rs.tera"
+    destination: "src/api/mod.rs"
+    
+  - source: "src/api/resource.rs.tera"
+    destination: "src/api/resource.rs"
+    
+  # UI layer - User interfaces
+  - source: "src/ui/mod.rs.tera"
+    destination: "src/ui/mod.rs"
+    
+  - source: "src/ui/headless.rs.tera"
+    destination: "src/ui/headless.rs"
+    
+  - source: "src/ui/repl.rs.tera"
+    destination: "src/ui/repl.rs"
+    
+  # CLI integration
+  - source: "src/cli/interactive.rs.tera"
+    destination: "src/cli/interactive.rs"
+    
+  # CLI submodules (if these still exist)
   - source: "src/cli/mod.rs.tera"
     destination: "src/cli/mod.rs"
     
@@ -73,22 +109,33 @@ files:
   - source: "src/cli/config.rs.tera"
     destination: "src/cli/config.rs"
     
-  - source: "src/cli/interactive.rs.tera"
-    destination: "src/cli/interactive.rs"
+  - source: "src/cli/headless.rs.tera"
+    destination: "src/cli/headless.rs"
     
-  # Optional headless interface
-  - source: "src/headless.rs.tera"
-    destination: "src/headless.rs"
+  - source: "src/cli/runner.rs.tera"
+    destination: "src/cli/runner.rs"
     
   - source: "README.md.tera"
     destination: "README.md"
     
   - source: "LICENSE"
     destination: "LICENSE"
+    
+  # Integration tests
+  - source: "tests/sse_integration_tests.rs.tera"
+    destination: "tests/sse_integration_tests.rs"
 
 required_directories:
   - "src"
+  - "src/domain"
+  - "src/infrastructure"
+  - "src/infrastructure/database"
+  - "src/infrastructure/cache"
+  - "src/application"
+  - "src/api"
+  - "src/ui"
   - "src/cli"
+  - "tests"
 
 hooks:
   post_generate:

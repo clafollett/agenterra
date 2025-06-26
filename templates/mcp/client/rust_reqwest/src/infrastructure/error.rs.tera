@@ -65,3 +65,40 @@ impl From<serde_json::Error> for ClientError {
         ClientError::Protocol(format!("JSON serialization error: {}", err))
     }
 }
+
+impl From<agenterra_rmcp::service::ServiceError> for ClientError {
+    fn from(err: agenterra_rmcp::service::ServiceError) -> Self {
+        use agenterra_rmcp::service::ServiceError;
+        match err {
+            ServiceError::McpError(mcp_err) => {
+                ClientError::Protocol(format!("MCP error {}: {}", mcp_err.code.0, mcp_err.message))
+            }
+            ServiceError::TransportSend(_) => {
+                ClientError::Transport(format!("Transport send error: {}", err))
+            }
+            ServiceError::TransportClosed => {
+                ClientError::Connection("Transport closed unexpectedly".to_string())
+            }
+            ServiceError::UnexpectedResponse => {
+                ClientError::Protocol("Unexpected response type from server".to_string())
+            }
+            ServiceError::Cancelled { reason } => {
+                ClientError::Client(format!("Operation cancelled: {}", reason.as_deref().unwrap_or("unknown reason")))
+            }
+            ServiceError::Timeout { timeout } => {
+                ClientError::Timeout {
+                    operation: "Service call".to_string(),
+                    timeout_ms: timeout.as_millis() as u64,
+                }
+            }
+            // Handle any future variants
+            _ => ClientError::Protocol(format!("Service error: {}", err)),
+        }
+    }
+}
+
+impl From<agenterra_rmcp::Error> for ClientError {
+    fn from(err: agenterra_rmcp::Error) -> Self {
+        ClientError::Protocol(format!("MCP error {}: {}", err.code.0, err.message))
+    }
+}

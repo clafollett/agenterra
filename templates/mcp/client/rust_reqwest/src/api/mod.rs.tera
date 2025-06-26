@@ -1,0 +1,8 @@
+//! API layer for {{ project_name }}
+//!
+//! Contains data transfer objects (DTOs) and external API definitions.
+
+pub mod resource;
+
+// Re-export main types
+pub use resource::{ResourceContent, ResourceInfo};

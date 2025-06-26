@@ -75,35 +75,53 @@ Import configuration:
 
 ### Headless Mode (Automation)
 
-List available tools:
+Run a tool with the `run` command:
 ```bash
-{{ cli_binary_name }} --server /path/to/server list-tools
+# Using a direct server path
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}' --server /path/to/server
+
+# Using a saved profile
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}' --profile my-server
+
+# Using the default server
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}'
+
+# Without arguments
+{{ cli_binary_name }} run tool-name --server /path/to/server
 ```
 
-Call a tool:
+The run command will:
+- Connect to the specified MCP server
+- Call the specified tool with the provided arguments
+- Print the result as JSON to stdout
+- Exit with appropriate status codes (0 for success, non-zero for errors)
+
+
+### Server-Sent Events (SSE) Transport
+
+The client supports connecting to MCP servers via SSE transport for web-based servers:
+
 ```bash
-{{ cli_binary_name }} --server /path/to/server call tool-name '{"arg": "value"}'
+# Connect to an SSE server
+{{ cli_binary_name }} --transport sse --sse-url https://api.example.com/mcp
+
+# Use SSE transport with a saved profile
+{{ cli_binary_name }} config add web-server \
+  --command "https://api.example.com/mcp" \
+  --transport sse \
+  --description "Web-based MCP server"
+
+# Run commands against SSE server
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}' \
+  --transport sse \
+  --sse-url https://api.example.com/mcp
 ```
 
-Get server status:
-```bash
-{{ cli_binary_name }} --server /path/to/server status
-```
-
-List resources:
-```bash
-{{ cli_binary_name }} --server /path/to/server list-resources
-```
-
-Get a resource:
-```bash
-{{ cli_binary_name }} --server /path/to/server get-resource "resource://uri"
-```
-
-Using profiles in headless mode:
-```bash
-{{ cli_binary_name }} --profile my-server list-tools
-```
+The SSE transport automatically handles:
+- Connection to `/sse` endpoint for event stream
+- POST requests to `/message` endpoint for client messages
+- Automatic reconnection with 5-second retry interval
+- Full MCP protocol support over HTTP
 
 ### REPL Commands
 

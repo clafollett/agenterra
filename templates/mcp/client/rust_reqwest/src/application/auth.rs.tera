@@ -8,7 +8,7 @@
 //!
 //! Version: {{ version }}
 
-use crate::error::{ClientError, Result};
+use crate::infrastructure::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use zeroize::Zeroize;

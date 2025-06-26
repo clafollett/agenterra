@@ -1,8 +1,8 @@
 //! Configuration command handlers for {{ project_name }}
 
-use crate::config::{ConfigManager, ServerProfile};
-use crate::database::DatabaseManager;
-use crate::error::{ClientError, Result};
+use crate::application::config::{ConfigManager, ServerProfile};
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
 use crate::cli::args::ConfigCommands;
 use std::sync::Arc;
 use chrono::Utc;

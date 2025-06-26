@@ -6,8 +6,8 @@
 //! Version: {{ version }}
 //! Database: Unified SQLite database via DatabaseManager
 
-use crate::database::DatabaseManager;
-use crate::error::{ClientError, Result};
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};

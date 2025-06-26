@@ -1,0 +1,60 @@
+//! Operation timeout management
+//!
+//! Provides configurable timeout handling for different MCP operations.
+
+use std::time::Duration;
+use std::collections::HashMap;
+
+/// Manages operation-specific timeouts
+#[derive(Debug, Clone)]
+pub struct OperationTimeouts {
+    global_timeout: Duration,
+    operation_timeouts: HashMap<String, Duration>,
+}
+
+impl OperationTimeouts {
+    pub fn new(global_timeout: Duration) -> Self {
+        Self {
+            global_timeout,
+            operation_timeouts: HashMap::new(),
+        }
+    }
+    
+    pub fn set_global_timeout(&mut self, timeout: Duration) {
+        self.global_timeout = timeout;
+    }
+    
+    pub fn set_operation_timeout(&mut self, operation: &str, timeout: Duration) {
+        self.operation_timeouts.insert(operation.to_string(), timeout);
+    }
+    
+    pub fn get_timeout(&self, operation: &str) -> Duration {
+        self.operation_timeouts.get(operation)
+            .copied()
+            .unwrap_or(self.global_timeout)
+    }
+    
+    pub fn global_timeout(&self) -> Duration {
+        self.global_timeout
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_operation_timeouts() {
+        let mut timeouts = OperationTimeouts::new(Duration::from_secs(30));
+        
+        // Global timeout
+        assert_eq!(timeouts.get_timeout("unknown"), Duration::from_secs(30));
+        
+        // Operation-specific timeout
+        timeouts.set_operation_timeout("call_tool", Duration::from_secs(5));
+        assert_eq!(timeouts.get_timeout("call_tool"), Duration::from_secs(5));
+        
+        // Still uses global for unknown operations
+        assert_eq!(timeouts.get_timeout("other_op"), Duration::from_secs(30));
+    }
+}

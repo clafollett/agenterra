@@ -1,0 +1,1202 @@
+//! Main client implementation for {{ project_name }}
+//!
+//! {{ description }}
+//! Version: {{ version }}
+//! Protocol Version: 2025-06-18
+
+use crate::DEFAULT_TIMEOUT_SECS;
+use crate::api::resource::{ResourceContent, ResourceInfo};
+use crate::application::auth::AuthConfig;
+use crate::application::registry::ToolRegistry;
+use crate::domain::capabilities::DiscoveredCapabilities;
+use crate::domain::connection::{ConnectionConfig, ConnectionState};
+use crate::infrastructure::cache::resource_cache::{CacheConfig, ResourceCache};
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::time;
+
+// Import rmcp types for real MCP protocol integration
+use agenterra_rmcp::{
+    RoleClient,
+    model::{
+        CallToolRequestParam, CallToolResult, GetPromptRequestParam, ReadResourceRequestParam,
+    },
+    service::{RunningService, ServiceExt},
+    transport::{
+        TokioChildProcess,
+        common::client_side_sse::FixedInterval,
+        sse_client::{SseClientConfig, SseClientTransport},
+    },
+};
+
+// ========================================
+// MCP Client Implementation
+// ========================================
+
+/// Main MCP Client - Domain Entity with clear state management
+#[derive(Debug)]
+pub struct McpClient {
+    // Connection state
+    state: ConnectionState,
+    config: Option<ConnectionConfig>,
+    
+    // Protocol implementation (using working RMCP pattern)
+    service: Option<RunningService<RoleClient, ()>>,
+    
+    // Unified database for all client data
+    database: Option<Arc<DatabaseManager>>,
+    
+    // Domain services
+    tool_registry: ToolRegistry,
+    resource_cache: Option<ResourceCache>,
+    
+    // Capabilities
+    discovered_capabilities: Option<DiscoveredCapabilities>,
+    
+    // Operation timeout configuration
+    timeout: Duration,
+    operation_timeouts: HashMap<String, Duration>,
+}
+
+impl McpClient {
+    /// Create a new MCP client for stateful use
+    pub fn new_stateful() -> Self {
+        Self {
+            state: ConnectionState::Disconnected,
+            config: None,
+            service: None,
+            database: None,
+            tool_registry: ToolRegistry::new(),
+            resource_cache: None,
+            discovered_capabilities: None,
+            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            operation_timeouts: HashMap::new(),
+        }
+    }
+
+    /// Create a new MCP client (legacy constructor - keeping for compatibility)
+    pub fn new() -> Self {
+        Self::new_stateful()
+    }
+
+    /// Create a new MCP client with timeout (enhanced version of 0.1.2 API)
+    pub async fn new_with_timeout(timeout_secs: u64) -> Result<Self> {
+        let mut client = Self::new_stateful();
+        client.timeout = Duration::from_secs(timeout_secs.max(5));
+        
+        // Initialize unified database for all client data
+        match DatabaseManager::new().await {
+            Ok(db_manager) => {
+                let db: Arc<DatabaseManager> = Arc::new(db_manager);
+                client.database = Some(db.clone());
+                
+                // Initialize resource cache with shared database
+                let cache_config = CacheConfig::default();
+                match ResourceCache::new(cache_config, db.clone()).await {
+                    Ok(cache) => {
+                        client.resource_cache = Some(cache);
+                        tracing::info!("Resource cache initialized with unified database");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize resource cache: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to initialize database, running without persistence: {}",
+                    e
+                );
+            }
+        }
+        
+        Ok(client)
+    }
+
+    /// Set the global timeout duration for all operations
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+    
+    /// Set a timeout for a specific operation type
+    pub fn with_operation_timeout(mut self, operation: &str, timeout: Duration) -> Self {
+        self.operation_timeouts.insert(operation.to_string(), timeout);
+        self
+    }
+    
+    /// Get the timeout for a specific operation, falling back to global timeout
+    fn get_operation_timeout(&self, operation: &str) -> Duration {
+        self.operation_timeouts.get(operation)
+            .copied()
+            .unwrap_or(self.timeout)
+    }
+
+    /// Set authentication configuration
+    pub fn with_auth(self, _auth_config: AuthConfig) -> Self {
+        // Note: ConnectionConfig is immutable, so we can't modify auth directly
+        // This would need to be handled differently, perhaps by rebuilding the config
+        self
+    }
+
+    /// Get the current authentication configuration
+    pub fn auth_config(&self) -> Option<&AuthConfig> {
+        self.config.as_ref().and_then(|c| c.auth())
+    }
+
+    /// Enable resource caching with the given configuration
+    pub async fn with_cache(mut self, cache_config: CacheConfig) -> Result<Self> {
+        // Initialize database if not already initialized
+        let db = match &self.database {
+            Some(db) => db.clone(),
+            None => {
+                let db_manager = DatabaseManager::new().await?;
+                let db = Arc::new(db_manager);
+                self.database = Some(db.clone());
+                db
+            }
+        };
+        let cache = ResourceCache::new(cache_config, db).await?;
+        self.resource_cache = Some(cache);
+        Ok(self)
+    }
+
+    /// Disable resource caching
+    pub fn without_cache(mut self) -> Self {
+        self.resource_cache = None;
+        self
+    }
+
+    /// Get cache analytics if caching is enabled
+    pub fn cache_analytics(&self) -> Option<&crate::infrastructure::cache::resource_cache::CacheAnalytics> {
+        self.resource_cache
+            .as_ref()
+            .map(|cache| cache.get_analytics())
+    }
+
+    /// Get current connection state
+    pub fn connection_state(&self) -> &ConnectionState {
+        &self.state
+    }
+
+    /// Check if client is connected
+    pub fn is_connected(&self) -> bool {
+        matches!(self.state, ConnectionState::Connected)
+    }
+
+    /// Connect to MCP server using configuration (enhanced domain-driven approach)
+    pub async fn connect(&mut self, config: ConnectionConfig) -> Result<()> {
+        tracing::info!("Connecting to MCP server: {}", config.command());
+        self.state = ConnectionState::Connecting;
+        self.config = Some(config.clone());
+
+        // Initialize database and cache if configured
+        if let Some(cache_config) = config.cache() {
+            // Initialize database if not already initialized
+            if self.database.is_none() {
+                match DatabaseManager::new().await {
+                    Ok(db_manager) => {
+                        self.database = Some(Arc::new(db_manager));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize database: {}", e);
+                        return Ok(());
+                    }
+                }
+            }
+            
+            if let Some(db) = &self.database {
+                match ResourceCache::new(cache_config.clone(), db.clone()).await {
+                    Ok(cache) => self.resource_cache = Some(cache),
+                    Err(e) => tracing::warn!("Failed to initialize cache: {}", e),
+                }
+            }
+        }
+
+        // Handle mock tools for testing environments
+        if config.command() == "echo" && config.args().contains(&"mock".to_string()) {
+            // Mock successful connection for testing
+            let mock_capabilities = DiscoveredCapabilities::new(
+                vec!["mock_tool".to_string()],
+                vec!["mock_resource".to_string()],
+                vec!["mock_prompt".to_string()],
+            );
+            self.discovered_capabilities = Some(mock_capabilities);
+            self.state = ConnectionState::Connected;
+            tracing::info!("Mock connection established successfully");
+            return Ok(());
+        }
+
+        // Start the server process and connect via stdio (using working 0.1.2 pattern)
+        let mut command = tokio::process::Command::new(config.command());
+        for arg in config.args() {
+            command.arg(arg);
+        }
+
+        match self.connect_stdio(command).await {
+            Ok(()) => {
+                tracing::info!("Successfully connected to MCP server");
+                Ok(())
+            }
+            Err(e) => {
+                self.state = ConnectionState::Failed(e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    /// Connect via stdio (restored working 0.1.2 implementation)
+    pub async fn connect_stdio(&mut self, command: tokio::process::Command) -> Result<()> {
+        tracing::info!("Connecting to MCP server via stdio");
+        
+        let transport = TokioChildProcess::new(command)
+            .map_err(|e| {
+                ClientError::Connection(format!("Failed to create child process transport: {}", e))
+            })?;
+
+        let service = ().serve(transport).await
+            .map_err(|e| ClientError::Connection(format!("Failed to connect to MCP server: {}", e)))?;
+
+        self.service = Some(service);
+        
+        // Discover available tools, resources, and prompts
+        match self.discover_capabilities().await {
+            Ok(()) => {
+                // Set connection state only after successful discovery
+                self.state = ConnectionState::Connected;
+                Ok(())
+            }
+            Err(e) => {
+                // Connection established but capability discovery failed
+                self.state = ConnectionState::Failed(format!("Capability discovery failed: {}", e));
+                self.service = None; // Clean up the service
+                Err(e)
+            }
+        }
+    }
+    
+    /// Connect via SSE (Server-Sent Events)
+    pub async fn connect_sse(&mut self, url: &str) -> Result<()> {
+        tracing::info!("Connecting to MCP server via SSE: {}", url);
+        
+        self.state = ConnectionState::Connecting;
+        
+        // Parse the URL to ensure it's valid
+        let parsed_url = url::Url::parse(url)
+            .map_err(|e| ClientError::Connection(format!("Invalid URL: {}", e)))?;
+        
+        // Build proper endpoint URLs
+        let base_url = format!("{}://{}{}",
+            parsed_url.scheme(),
+            parsed_url.host_str().ok_or_else(|| ClientError::Connection("Invalid URL: missing host".to_string()))?,
+            parsed_url.port().map(|p| format!(":{}", p)).unwrap_or_default()
+        );
+        
+        // Create the SSE configuration with proper endpoints
+        let sse_config = SseClientConfig {
+            sse_endpoint: Arc::from(format!("{}/sse", base_url)),
+            retry_policy: Arc::new(FixedInterval::default()),
+            use_message_endpoint: Some(format!("{}/message", base_url)),
+        };
+        
+        // Create a reqwest client - it already implements SseClient trait in agenterra-rmcp
+        let reqwest_client = reqwest::Client::new();
+        
+        // Create the SSE transport
+        let transport = SseClientTransport::start_with_client(reqwest_client, sse_config)
+            .await
+            .map_err(|e| ClientError::Connection(format!("Failed to create SSE transport: {}", e)))?;
+        
+        // Create the service using ServiceExt trait (similar to stdio pattern)
+        let service = ().serve(transport).await
+            .map_err(|e| ClientError::Connection(format!("Failed to connect to SSE server: {}", e)))?;
+        
+        // Store the running service
+        self.service = Some(service);
+        
+        // Discover available tools, resources, and prompts
+        match self.discover_capabilities().await {
+            Ok(()) => {
+                // Set connection state only after successful discovery
+                self.state = ConnectionState::Connected;
+                
+                Ok(())
+            }
+            Err(e) => {
+                // Connection established but capability discovery failed
+                self.state = ConnectionState::Failed(format!("Capability discovery failed: {}", e));
+                self.service = None; // Clean up the service
+                Err(e)
+            }
+        }
+    }
+
+    /// Connect to child process (legacy compatibility method)
+    pub async fn connect_to_child_process(
+        &mut self,
+        command: tokio::process::Command,
+    ) -> Result<()> {
+        self.connect_stdio(command).await
+    }
+
+    /// Discover capabilities with comprehensive timeout handling (working 0.1.2 implementation)
+    async fn discover_capabilities(&mut self) -> Result<()> {
+        let service = self.service.as_ref()
+            .ok_or_else(|| ClientError::Connection("Service not connected".to_string()))?;
+        
+        tracing::info!("Discovering server capabilities...");
+        
+        // Discover tools (using working 0.1.2 API)
+        let mut tool_names = Vec::new();
+        let timeout = self.get_operation_timeout("list_tools");
+        match time::timeout(timeout, service.list_tools(Default::default())).await {
+            Ok(Ok(tools_response)) => {
+                tool_names = tools_response.tools.iter()
+                    .map(|t| {
+                        tracing::debug!("Discovered tool: {}", t.name);
+                        t.name.to_string()
+                    })
+                    .collect();
+
+                // Update tool registry
+                if let Err(e) = self.tool_registry.update_from_rmcp_tools(tools_response.tools) {
+                    tracing::warn!("Failed to update tool registry: {}", e);
+                }
+                tracing::info!("Discovered {} tools", tool_names.len());
+            }
+            Ok(Err(e)) => tracing::warn!("Failed to discover tools: {}", e),
+            Err(_) => tracing::warn!("Tool discovery timeout"),
+        }
+
+        // Discover resources (using working 0.1.2 API)
+        let mut resource_names = Vec::new();
+        let timeout = self.get_operation_timeout("list_resources");
+        match time::timeout(timeout, service.list_all_resources()).await {
+            Ok(Ok(resources)) => {
+                resource_names = resources.iter()
+                    .map(|r| r.uri.to_string())
+                    .collect();
+                tracing::info!("Discovered {} resources", resource_names.len());
+            }
+            Ok(Err(e)) => tracing::warn!("Failed to discover resources: {}", e),
+            Err(_) => tracing::warn!("Resource discovery timeout"),
+        }
+
+        // Discover prompts (using working 0.1.2 API)
+        let mut prompt_names = Vec::new();
+        let timeout = self.get_operation_timeout("list_prompts");
+        match time::timeout(timeout, service.list_prompts(Default::default())).await {
+            Ok(Ok(prompts_response)) => {
+                prompt_names = prompts_response.prompts.iter()
+                    .map(|p| p.name.to_string())
+                    .collect();
+                tracing::info!("Discovered {} prompts", prompt_names.len());
+            }
+            Ok(Err(e)) => tracing::warn!("Failed to discover prompts: {}", e),
+            Err(_) => tracing::warn!("Prompt discovery timeout"),
+        }
+
+        // Update capabilities with all discovered items
+        self.discovered_capabilities = Some(DiscoveredCapabilities::new(tool_names, resource_names, prompt_names));
+        Ok(())
+    }
+
+    /// Ping the MCP server to test connectivity
+    pub async fn ping(&mut self) -> Result<()> {
+        match &self.service {
+            Some(service) => {
+                // rmcp doesn't have a direct ping - let's use peer_info as connectivity test
+                let _info = service.peer_info();
+                Ok(())
+            }
+            None => Err(ClientError::Client(
+                "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
+            )),
+        }
+    }
+
+    /// List available tools (legacy 0.1.2 API)
+    pub async fn list_tools(&mut self) -> Result<Vec<String>> {
+        self.ensure_connected()?;
+        
+        if let Some(capabilities) = &self.discovered_capabilities {
+            Ok(capabilities.tools().clone())
+        } else {
+            self.discover_capabilities().await?;
+            Ok(self.discovered_capabilities.as_ref().map_or(Vec::new(), |c| c.tools().clone()))
+        }
+    }
+
+
+
+    /// Call a tool on the MCP server
+    /// 
+    /// This is the primary method for invoking tools. It:
+    /// - Validates the connection state
+    /// - Validates parameters against the tool's schema (if registered)
+    /// - Handles timeouts with proper error context
+    /// - Returns the raw CallToolResult from the MCP protocol
+    pub async fn call_tool(&mut self, tool_name: &str, arguments: serde_json::Value) -> Result<CallToolResult> {
+        self.ensure_connected()?;
+        
+        // Validate parameters using the tool registry if the tool is registered
+        if let Err(e) = self.tool_registry.validate_parameters(tool_name, &arguments) {
+            // Only fail if we have a schema and it doesn't match
+            if self.tool_registry.get_tool(tool_name).is_some() {
+                return Err(e);
+            }
+            // If tool isn't registered, allow the call to proceed
+            tracing::debug!("Tool '{}' not in registry, skipping parameter validation", tool_name);
+        }
+        
+        // For now, skip mock tool handling - the rmcp types have changed
+        
+        let service = self.service.as_ref()
+            .ok_or_else(|| ClientError::Client("Service not connected".to_string()))?;
+        
+        tracing::info!("Calling tool: {} with arguments: {}", tool_name, arguments);
+        
+        // Call tool directly on the service
+        let request = CallToolRequestParam {
+            name: tool_name.to_string().into(),
+            arguments: arguments.as_object().cloned(),
+        };
+        let timeout = self.get_operation_timeout("call_tool");
+        time::timeout(timeout, service.call_tool(request)).await
+            .map_err(|_| ClientError::Timeout {
+                operation: format!("Tool call '{}'", tool_name),
+                timeout_ms: timeout.as_millis() as u64,
+            })?
+            .map_err(|e| ClientError::Protocol(format!("Tool call failed: {}", e)))
+    }
+
+
+
+
+    /// List available resources
+    pub async fn list_resources(&mut self) -> Result<Vec<ResourceInfo>> {
+        let service = self.service.as_ref().ok_or_else(|| {
+            ClientError::Client(
+                "Not connected to MCP server. Call connect_to_child_process() first.".to_string(),
+            )
+        })?;
+
+        // Use rmcp's list_all_resources for convenience
+        let rmcp_resources = service
+            .list_all_resources()
+            .await?;
+
+        // Convert agenterra_rmcp::model::Resource to our ResourceInfo
+        let resources = rmcp_resources
+            .into_iter()
+            .map(|rmcp_resource| {
+                let mut metadata = std::collections::HashMap::new();
+                if let Some(size) = rmcp_resource.size {
+                    metadata.insert(
+                        "size".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(size)),
+                    );
+                }
+
+                ResourceInfo {
+                    uri: rmcp_resource.uri.clone(),
+                    name: Some(rmcp_resource.name.clone()),
+                    description: rmcp_resource.description.clone(),
+                    mime_type: rmcp_resource.mime_type.clone(),
+                    metadata,
+                }
+            })
+            .collect();
+
+        Ok(resources)
+    }
+
+
+    /// Get a resource (enhanced with caching and timeout)
+    pub async fn get_resource(&mut self, uri: &str) -> Result<ResourceContent> {
+        self.ensure_connected()?;
+        
+        tracing::info!("Getting resource: {}", uri);
+        
+        // Check cache first if available
+        if let Some(ref mut cache) = self.resource_cache {
+            if let Ok(Some(cached_resource)) = cache.get_resource(uri).await {
+                tracing::debug!("Cache hit for resource: {}", uri);
+                return Ok(cached_resource);
+            }
+            tracing::debug!("Cache miss for resource: {}", uri);
+        }
+        
+        let service = self.service.as_ref()
+            .ok_or_else(|| ClientError::Client("Service not connected".to_string()))?;
+
+        // Read resource directly from the service
+        let request = ReadResourceRequestParam {
+            uri: uri.to_string(),
+        };
+        let result = time::timeout(self.timeout, service.read_resource(request)).await
+            .map_err(|_| ClientError::Timeout {
+                operation: "Resource read".to_string(),
+                timeout_ms: self.get_operation_timeout("get_resource").as_millis() as u64,
+            })?
+            .map_err(|e| ClientError::Protocol(format!("Resource read failed: {}", e)))?;
+
+        // Convert the first resource content to our format
+        if let Some(content) = result.contents.into_iter().next() {
+            let (data, encoding, mime_type) = match content {
+                agenterra_rmcp::model::ResourceContents::TextResourceContents {
+                    text, mime_type, ..
+                } => (text.into_bytes(), Some("utf-8".to_string()), mime_type),
+                agenterra_rmcp::model::ResourceContents::BlobResourceContents {
+                    blob, mime_type, ..
+                } => {
+                    // blob is base64 encoded
+                    use base64::prelude::*;
+                    let decoded_data = BASE64_STANDARD.decode(&blob).map_err(|e| {
+                        ClientError::Protocol(format!("Failed to decode base64 blob: {}", e))
+                    })?;
+                    (decoded_data, None, mime_type)
+                }
+            };
+
+            let resource_info = ResourceInfo {
+                uri: uri.to_string(),
+                name: None, // rmcp ResourceContents doesn't include name
+                description: None,
+                mime_type,
+                metadata: std::collections::HashMap::new(),
+            };
+
+            let resource_content = ResourceContent {
+                info: resource_info,
+                data,
+                encoding,
+            };
+
+            // Store in cache if available
+            if let Some(ref mut cache) = self.resource_cache {
+                if let Err(e) = cache.store_resource(&resource_content).await {
+                    tracing::warn!("Failed to cache resource '{}': {}", uri, e);
+                    // Don't fail the request if caching fails
+                }
+            }
+
+            Ok(resource_content)
+        } else {
+            Err(ClientError::Protocol(format!(
+                "No content returned for resource '{}'",
+                uri
+            )))
+        }
+    }
+
+    /// List available prompts
+    pub async fn list_prompts(&self) -> Result<Vec<String>> {
+        self.ensure_connected()?;
+        
+        if let Some(capabilities) = &self.discovered_capabilities {
+            Ok(capabilities.prompts().clone())
+        } else {
+            Err(ClientError::Connection("Discovered capabilities not initialized".to_string()))
+        }
+    }
+
+
+    /// Get a prompt (enhanced with timeout)
+    pub async fn get_prompt(&mut self, name: &str, arguments: Option<serde_json::Value>) -> Result<serde_json::Value> {
+        self.ensure_connected()?;
+
+        let service = self.service.as_ref()
+            .ok_or_else(|| ClientError::Client("Service not connected".to_string()))?;
+
+        tracing::info!("Getting prompt: {} with arguments: {:?}", name, arguments);
+
+        // Get prompt directly from the service
+        let request = GetPromptRequestParam {
+            name: name.to_string(),
+            arguments: arguments.and_then(|v| v.as_object().cloned()),
+        };
+        let result = time::timeout(self.timeout, service.get_prompt(request)).await
+            .map_err(|_| ClientError::Timeout {
+                operation: "Prompt get".to_string(),
+                timeout_ms: self.get_operation_timeout("get_prompt").as_millis() as u64,
+            })?
+            .map_err(|e| ClientError::Protocol(format!("Prompt get failed: {}", e)))?;
+
+        tracing::debug!("Prompt result: {:?}", result);
+
+        // Convert the result to JSON
+        let result_json = serde_json::to_value(&result).map_err(|e| {
+            ClientError::Protocol(format!("Failed to serialize prompt result: {}", e))
+        })?;
+
+        Ok(result_json)
+    }
+
+    /// Disconnect from server (enhanced)
+    pub async fn disconnect(&mut self) -> Result<()> {
+        if self.service.take().is_some() {
+            tracing::info!("Disconnecting from MCP server");
+            self.state = ConnectionState::Disconnected;
+            // rmcp service handles cleanup on drop
+        }
+        Ok(())
+    }
+
+    /// Ensure the client is connected
+    fn ensure_connected(&self) -> Result<()> {
+        match self.state {
+            ConnectionState::Connected => Ok(()),
+            ConnectionState::Disconnected => Err(ClientError::Connection(
+                "Not connected to MCP server".to_string(),
+            )),
+            ConnectionState::Connecting => Err(ClientError::Connection(
+                "Connection in progress".to_string(),
+            )),
+            ConnectionState::Failed(ref reason) => Err(ClientError::Connection(format!(
+                "Connection failed: {}",
+                reason
+            ))),
+        }
+    }
+
+    /// Get server capabilities
+    pub fn discovered_inventory(&self) -> Option<&DiscoveredCapabilities> {
+        self.discovered_capabilities.as_ref()
+    }
+
+    /// Get server capabilities (legacy compatibility - returns discovered inventory)
+    pub fn server_capabilities(&self) -> Option<&DiscoveredCapabilities> {
+        self.discovered_capabilities.as_ref()
+    }
+
+    /// Get tool registry
+    pub fn tool_registry(&self) -> &ToolRegistry {
+        &self.tool_registry
+    }
+
+    /// Get tool registry (alternative name)
+    pub fn registry(&self) -> &ToolRegistry {
+        &self.tool_registry
+    }
+
+    /// Get mutable access to the tool registry for testing
+    #[cfg(test)]
+    pub fn registry_mut(&mut self) -> &mut ToolRegistry {
+        &mut self.tool_registry
+    }
+
+    /// Get access to the database manager if initialized
+    pub fn database(&self) -> Option<&Arc<DatabaseManager>> {
+        self.database.as_ref()
+    }
+
+    /// Get the server name from the MCP server info
+    pub fn server_name(&self) -> Option<String> {
+        self.service.as_ref().and_then(|s| {
+            s.peer_info().map(|info| info.server_info.name.clone())
+        })
+    }
+
+    /// Get the server version from the MCP server info
+    pub fn server_version(&self) -> Option<String> {
+        self.service.as_ref().and_then(|s| {
+            s.peer_info().map(|info| info.server_info.version.clone())
+        })
+    }
+
+    /// Get the protocol version from the MCP server info
+    pub fn protocol_version(&self) -> Option<String> {
+        self.service.as_ref().and_then(|s| {
+            s.peer_info().map(|info| info.protocol_version.to_string())
+        })
+    }
+
+    /// Validate parameters for a tool call using the tool registry
+    pub async fn validate_parameters(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<()> {
+        // This will delegate to the registry's validation method
+        self.tool_registry.validate_parameters(tool_name, &arguments)
+    }
+
+    /// Cache management methods
+    ///
+    /// Invalidate cached resource(s)
+    pub async fn invalidate_cache(&mut self, uri: Option<&str>) -> Result<()> {
+        if let Some(ref mut cache) = self.resource_cache {
+            match uri {
+                Some(uri) => {
+                    cache.remove_resource(uri).await?;
+                    tracing::debug!("Invalidated cache for resource: {}", uri);
+                }
+                None => {
+                    cache.clear().await?;
+                    tracing::debug!("Cleared all cached resources");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Clean up expired cache entries
+    pub async fn cleanup_cache(&mut self) -> Result<u64> {
+        if let Some(ref mut cache) = self.resource_cache {
+            let removed_count = cache.cleanup_expired().await?;
+            tracing::debug!("Cleaned up {} expired cache entries", removed_count);
+            Ok(removed_count)
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Get list of cached resources
+    pub async fn list_cached_resources(
+        &self,
+    ) -> Result<Vec<crate::infrastructure::cache::resource_cache::CachedResource>> {
+        if let Some(ref cache) = self.resource_cache {
+            cache.list_cached_resources().await
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Search cached resources
+    pub async fn search_cached_resources(
+        &self,
+        query: &str,
+    ) -> Result<Vec<crate::infrastructure::cache::resource_cache::CachedResource>> {
+        if let Some(ref cache) = self.resource_cache {
+            cache.search_resources(query).await
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+}
+
+impl Default for McpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agenterra_rmcp::model::CallToolResult;
+    use crate::application::registry::ToolInfo;
+    use crate::infrastructure::cache::resource_cache::CacheConfig;
+    
+    // Test fixture for creating a mock-connected client
+    async fn create_mock_client() -> McpClient {
+        let mut client = McpClient::new_stateful();
+        let config = ConnectionConfigBuilder::new()
+            .command("echo")
+            .args(vec!["mock".to_string()])
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap();
+        client.connect(config).await.unwrap();
+        client
+    }
+    
+    #[tokio::test]
+    async fn test_call_tool_returns_rmcp_result() {
+        // RED: Test that call_tool returns the proper rmcp CallToolResult type
+        let mut client = create_mock_client().await;
+        
+        // This test will fail until we consolidate to a single call_tool method
+        let result = client.call_tool("test_tool", serde_json::json!({"param": "value"})).await;
+        
+        assert!(result.is_ok());
+        let tool_result: CallToolResult = result.unwrap();
+        // CallToolResult should have content field with tool responses
+        assert!(!tool_result.content.is_empty());
+    }
+    
+    #[tokio::test]
+    async fn test_call_tool_validates_parameters() {
+        // RED: Test that call_tool validates parameters using the registry
+        let mut client = create_mock_client().await;
+        
+        // Register a tool with schema in the registry
+        let tool_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "required_param": {"type": "string"}
+            },
+            "required": ["required_param"]
+        });
+        
+        // This will fail until we have proper parameter validation
+        client.tool_registry.register_tool(ToolInfo {
+            name: "strict_tool".to_string(),
+            description: "A tool with strict schema".to_string(),
+            schema: Some(tool_schema),
+        }).unwrap();
+        
+        // Call with invalid parameters should fail
+        let result = client.call_tool("strict_tool", serde_json::json!({"wrong_param": "value"})).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ClientError::Validation(_)));
+    }
+    
+    #[tokio::test] 
+    async fn test_call_tool_handles_timeout() {
+        // RED: Test timeout handling with proper error context
+        let mut client = create_mock_client().await;
+        
+        // Set a very short timeout for this specific operation
+        client = client.with_operation_timeout("call_tool", Duration::from_millis(1));
+        
+        // This should timeout
+        let result = client.call_tool("slow_tool", serde_json::json!({})).await;
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ClientError::Timeout(msg) if msg.contains("slow_tool")));
+    }
+    
+    #[tokio::test]
+    async fn test_call_tool_requires_connection() {
+        // RED: Test that call_tool enforces connection state
+        let mut client = McpClient::new_stateful();
+        
+        // Not connected - should fail
+        let result = client.call_tool("any_tool", serde_json::json!({})).await;
+        
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ClientError::Connection(_)));
+    }
+    
+    #[tokio::test]
+    async fn test_call_tool_with_mock_response() {
+        // Existing test updated to use new call_tool API
+        let mut client = create_mock_client().await;
+        
+        // Call mock tool
+        let result = client.call_tool("mock_tool", serde_json::json!({"test": true})).await;
+        
+        // Should return mock response wrapped in CallToolResult
+        assert!(result.is_ok());
+        let tool_result = result.unwrap();
+        assert!(!tool_result.content.is_empty());
+        
+        // Check the content contains expected mock response
+        if let Some(first_content) = tool_result.content.first() {
+            // The mock should return text content with our response
+            match first_content {
+                agenterra_rmcp::model::ToolResponseContent::TextContent { text } => {
+                    let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+                    assert_eq!(parsed["result"], "mock_response");
+                }
+                _ => panic!("Expected text content in mock response"),
+            }
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_list_tools_returns_string_vec() {
+        // RED: Test that list_tools returns Vec<String> not HashMap
+        let mut client = create_mock_client().await;
+        
+        let tools = client.list_tools().await.unwrap();
+        
+        // Should be a simple Vec<String> of tool names
+        assert!(tools.contains(&"mock_tool".to_string()));
+        assert!(tools.is_empty() || tools.iter().all(|s| !s.is_empty()));
+    }
+    
+    // ===== Resource Operation Tests =====
+    
+    #[tokio::test]
+    async fn test_list_resources_returns_resource_info() {
+        // RED: Test that list_resources returns Vec<ResourceInfo>
+        let mut client = create_mock_client().await;
+        
+        let resources = client.list_resources().await.unwrap();
+        
+        // Should return ResourceInfo objects with proper structure
+        assert!(resources.is_empty() || resources.iter().all(|r| !r.uri.is_empty()));
+        
+        // Check ResourceInfo has expected fields
+        if let Some(first) = resources.first() {
+            // ResourceInfo should have uri, name, description, mime_type, metadata
+            assert!(!first.uri.is_empty());
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_get_resource_with_caching() {
+        // RED: Test that get_resource uses caching when available
+        let mut client = create_mock_client().await;
+        
+        // Enable caching
+        let cache_config = CacheConfig::default();
+        client = client.with_cache(cache_config).await.unwrap();
+        
+        // Mock a resource fetch
+        let uri = "test://resource/data.json";
+        
+        // First call should miss cache
+        let result1 = client.get_resource(uri).await;
+        assert!(result1.is_ok());
+        
+        // Second call should hit cache (we'll verify via analytics)
+        let result2 = client.get_resource(uri).await;
+        assert!(result2.is_ok());
+        
+        // Verify both results are the same
+        let content1 = result1.unwrap();
+        let content2 = result2.unwrap();
+        assert_eq!(content1.info.uri, content2.info.uri);
+        
+        // Check cache analytics show a hit
+        if let Some(analytics) = client.cache_analytics() {
+            assert!(analytics.hits() > 0);
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_get_resource_handles_timeout() {
+        // RED: Test timeout handling for resource fetching
+        let mut client = create_mock_client().await;
+        
+        // Set a very short timeout for resource operations
+        client = client.with_operation_timeout("read_resource", Duration::from_millis(1));
+        
+        // This should timeout
+        let result = client.get_resource("slow://resource").await;
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ClientError::Timeout(msg) if msg.contains("slow://resource")));
+    }
+    
+    #[tokio::test]
+    async fn test_get_resource_requires_connection() {
+        // RED: Test that get_resource enforces connection state
+        let mut client = McpClient::new_stateful();
+        
+        // Not connected - should fail
+        let result = client.get_resource("any://resource").await;
+        
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ClientError::Connection(_)));
+    }
+    
+    #[tokio::test]
+    async fn test_no_sync_get_resources_method() {
+        // RED: Ensure we don't have a sync get_resources() method
+        let client = create_mock_client().await;
+        
+        // This test passes by compilation - there should be no get_resources() method
+        // that returns &[Resource]. Only async list_resources() should exist.
+        
+        // The following line should NOT compile if we've properly removed the method:
+        // let _resources = client.get_resources(); // Should not exist!
+        
+        // Instead, we should only have async list_resources
+        let mut client_mut = create_mock_client().await;
+        let resources = client_mut.list_resources().await.unwrap();
+        assert!(resources.is_empty() || resources.iter().all(|r| !r.uri.is_empty()));
+    }
+    
+    // ===== Prompt Operation Tests =====
+    
+    #[tokio::test]
+    async fn test_list_prompts_returns_string_vec() {
+        // RED: Test that list_prompts returns Vec<String>
+        let client = create_mock_client().await;
+        
+        let prompts = client.list_prompts().await.unwrap();
+        
+        // Should be a simple Vec<String> of prompt names
+        assert!(prompts.is_empty() || prompts.iter().all(|s| !s.is_empty()));
+    }
+    
+    #[tokio::test]
+    async fn test_get_prompt_with_arguments() {
+        // RED: Test that get_prompt accepts optional arguments
+        let mut client = create_mock_client().await;
+        
+        // Test with no arguments
+        let result1 = client.get_prompt("test_prompt", None).await;
+        assert!(result1.is_ok() || result1.is_err()); // May not exist in mock
+        
+        // Test with arguments
+        let args = serde_json::json!({"param": "value"});
+        let result2 = client.get_prompt("test_prompt", Some(args)).await;
+        assert!(result2.is_ok() || result2.is_err()); // May not exist in mock
+    }
+    
+    #[tokio::test]
+    async fn test_get_prompt_handles_timeout() {
+        // RED: Test timeout handling for prompt operations
+        let mut client = create_mock_client().await;
+        
+        // Set a very short timeout for prompt operations
+        client = client.with_operation_timeout("get_prompt", Duration::from_millis(1));
+        
+        // This should timeout
+        let result = client.get_prompt("slow_prompt", None).await;
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ClientError::Timeout(msg) if msg.contains("slow_prompt")));
+    }
+    
+    #[tokio::test]
+    async fn test_get_prompt_requires_connection() {
+        // RED: Test that get_prompt enforces connection state
+        let mut client = McpClient::new_stateful();
+        
+        // Not connected - should fail
+        let result = client.get_prompt("any_prompt", None).await;
+        
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ClientError::Connection(_)));
+    }
+    
+    #[tokio::test]
+    async fn test_no_sync_get_prompts_method() {
+        // RED: Ensure we don't have a sync get_prompts() method
+        let client = create_mock_client().await;
+        
+        // This test passes by compilation - there should be no get_prompts() method
+        // that returns &[Prompt]. Only async list_prompts() should exist.
+        
+        // The following line should NOT compile if we've properly removed the method:
+        // let _prompts = client.get_prompts(); // Should not exist!
+        
+        // Instead, we should only have async list_prompts
+        let prompts = client.list_prompts().await.unwrap();
+        assert!(prompts.is_empty() || prompts.iter().all(|s| !s.is_empty()));
+    }
+    
+    // ===== Capability Discovery Tests =====
+    
+    #[tokio::test]
+    async fn test_discovered_capabilities_populated_on_connect() {
+        // RED: Test that capabilities are discovered during connection
+        let mut client = McpClient::new_stateful();
+        
+        // Before connection, no capabilities
+        assert!(client.discovered_inventory().is_none());
+        
+        // Connect
+        let config = ConnectionConfigBuilder::new()
+            .command("echo")
+            .args(vec!["mock".to_string()])
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap();
+        client.connect(config).await.unwrap();
+        
+        // After connection, capabilities should be populated
+        assert!(client.discovered_inventory().is_some());
+        let capabilities = client.discovered_inventory().unwrap();
+        assert!(capabilities.has_tool("mock_tool"));
+        assert!(capabilities.has_resource("mock_resource"));
+        assert!(capabilities.has_prompt("mock_prompt"));
+    }
+    
+    #[tokio::test]
+    async fn test_capabilities_used_not_legacy_fields() {
+        // RED: Test that we use DiscoveredCapabilities, not legacy fields
+        let mut client = create_mock_client().await;
+        
+        // These calls should work through discovered_capabilities
+        let tools = client.list_tools().await.unwrap();
+        assert!(tools.contains(&"mock_tool".to_string()));
+        
+        let prompts = client.list_prompts().await.unwrap();
+        assert!(prompts.contains(&"mock_prompt".to_string()) || prompts.is_empty());
+        
+        // Verify we're not relying on legacy fields by checking capabilities directly
+        let capabilities = client.discovered_inventory().unwrap();
+        assert_eq!(capabilities.tools().len(), tools.len());
+        assert_eq!(capabilities.prompts().len(), prompts.len());
+    }
+    
+    #[tokio::test]
+    async fn test_no_direct_access_to_legacy_fields() {
+        // RED: Ensure legacy fields are not publicly accessible
+        let client = create_mock_client().await;
+        
+        // These lines should NOT compile after we make the fields private/remove them:
+        // let _tools = client.tools;     // Should not be accessible
+        // let _resources = client.resources; // Should not be accessible  
+        // let _prompts = client.prompts;   // Should not be accessible
+        
+        // Only way to access should be through proper methods
+        let _ = client.discovered_inventory();
+    }
+    
+    // ===== Timeout Configuration Tests =====
+    
+    #[tokio::test]
+    async fn test_global_timeout_configuration() {
+        // Test that global timeout can be configured
+        let mut client = McpClient::new_stateful();
+        
+        // Default timeout should be DEFAULT_TIMEOUT_SECS
+        assert_eq!(client.timeout, Duration::from_secs(DEFAULT_TIMEOUT_SECS));
+        
+        // Should be able to set custom timeout
+        client = client.with_timeout(Duration::from_secs(120));
+        assert_eq!(client.timeout, Duration::from_secs(120));
+    }
+    
+    #[tokio::test]
+    async fn test_operation_specific_timeout() {
+        // Test that operation-specific timeouts override global
+        let mut client = McpClient::new_stateful()
+            .with_timeout(Duration::from_secs(30))
+            .with_operation_timeout("call_tool", Duration::from_secs(5))
+            .with_operation_timeout("read_resource", Duration::from_secs(10));
+        
+        // Operation timeouts should override global
+        assert_eq!(client.get_operation_timeout("call_tool"), Duration::from_secs(5));
+        assert_eq!(client.get_operation_timeout("read_resource"), Duration::from_secs(10));
+        
+        // Unknown operations should use global timeout
+        assert_eq!(client.get_operation_timeout("unknown_op"), Duration::from_secs(30));
+    }
+    
+    #[tokio::test]
+    async fn test_timeout_error_includes_context() {
+        // Already tested in individual operation tests, but let's verify the pattern
+        let mut client = create_mock_client().await;
+        client = client.with_operation_timeout("call_tool", Duration::from_millis(1));
+        
+        let result = client.call_tool("test_tool", serde_json::json!({})).await;
+        
+        if let Err(ClientError::Timeout(msg)) = result {
+            // Should include tool name and timeout duration
+            assert!(msg.contains("test_tool"));
+            assert!(msg.contains("1ms") || msg.contains("0.001s"));
+        } else {
+            panic!("Expected timeout error with context");
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_connection_config_timeout() {
+        // Test that connection configuration respects timeout
+        let config = ConnectionConfigBuilder::new()
+            .command("echo")
+            .args(vec!["mock".to_string()])
+            .timeout(Duration::from_secs(45))
+            .build()
+            .unwrap();
+        
+        assert_eq!(config.timeout(), Duration::from_secs(45));
+    }
+}

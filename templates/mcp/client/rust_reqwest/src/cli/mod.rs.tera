@@ -8,64 +8,18 @@
 //!
 //! Version: {{ version }}
 
-// Module exports
+// Module declarations
 pub mod args;
 pub mod auth;
 pub mod config;
+pub mod headless;
 pub mod interactive;
+pub mod runner;
 
 // Re-export commonly used types
 pub use args::{Cli, Commands};
 pub use auth::handle_auth_command;
 pub use config::handle_config_command;
+pub use headless::handle_run_command;
 pub use interactive::handle_interactive_mode;
-
-use crate::error::{ClientError, Result};
-use tracing::info;
-
-/// Main CLI entry point
-pub async fn execute() -> Result<()> {
-    // Initialize logging
-    let cli = args::parse_args();
-    
-    // Configure logging
-    let log_level = if cli.debug {
-        "debug"
-    } else {
-        cli.log_level.as_str()
-    };
-    
-    tracing_subscriber::fmt()
-        .with_env_filter(log_level)
-        .with_target(false)
-        .init();
-    
-    info!("Starting {{ project_name }} v{}", "{{ version }}");
-    
-    // Validate SSE URL if SSE transport is selected
-    if cli.transport.is_sse() && cli.sse_url.is_none() && cli.command.is_none() {
-        return Err(ClientError::ConfigError(
-            "SSE transport requires --sse-url to be specified".to_string()
-        ));
-    }
-    
-    // Handle commands
-    match &cli.command {
-        Some(Commands::Config { action }) => {
-            handle_config_command(action).await
-        }
-        Some(Commands::Auth { action }) => {
-            handle_auth_command(action).await
-        }
-        Some(Commands::Run { call: _, args: _, server: _, profile: _, timeout: _ }) => {
-            // TODO: Headless mode is not yet fully implemented
-            Err(ClientError::ConfigError(
-                "Headless mode is not yet implemented. Please use interactive mode for now.".to_string()
-            ))
-        }
-        None => {
-            // Interactive mode
-            handle_interactive_mode(&cli).await
-        }
-    }
-}
+pub use runner::execute;

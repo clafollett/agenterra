@@ -1,0 +1,9 @@
+//! Database infrastructure
+//!
+//! Handles persistence for caching, logging, and session management.
+
+pub mod manager;
+pub mod migrations;
+
+// Re-export main types
+pub use manager::{DatabaseManager, DatabaseConfig};

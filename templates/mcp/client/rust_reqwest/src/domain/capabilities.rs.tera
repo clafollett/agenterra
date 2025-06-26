@@ -1,0 +1,65 @@
+//! Discovered capabilities value object
+//!
+//! Represents the discovered capabilities of an MCP server after connection.
+
+/// Discovered server capabilities (tools, resources, prompts) after connection
+/// This is different from rmcp's ServerCapabilities which handles protocol capabilities
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiscoveredCapabilities {
+    tools: Vec<String>,
+    resources: Vec<String>,
+    prompts: Vec<String>,
+}
+
+impl DiscoveredCapabilities {
+    pub fn new(tools: Vec<String>, resources: Vec<String>, prompts: Vec<String>) -> Self {
+        Self {
+            tools,
+            resources,
+            prompts,
+        }
+    }
+
+    pub fn tools(&self) -> &Vec<String> {
+        &self.tools
+    }
+
+    pub fn resources(&self) -> &Vec<String> {
+        &self.resources
+    }
+
+    pub fn prompts(&self) -> &Vec<String> {
+        &self.prompts
+    }
+
+    pub fn has_tool(&self, name: &str) -> bool {
+        self.tools.iter().any(|tool| tool == name)
+    }
+
+    pub fn has_resource(&self, name: &str) -> bool {
+        self.resources.iter().any(|resource| resource == name)
+    }
+
+    pub fn has_prompt(&self, name: &str) -> bool {
+        self.prompts.iter().any(|prompt| prompt == name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discovered_capabilities() {
+        let tools = vec!["tool1".to_string(), "tool2".to_string()];
+        let resources = vec!["resource1".to_string()];
+        let prompts = vec!["prompt1".to_string()];
+        
+        let caps = DiscoveredCapabilities::new(tools, resources, prompts);
+        
+        assert!(caps.has_tool("tool1"));
+        assert!(!caps.has_tool("tool3"));
+        assert!(caps.has_resource("resource1"));
+        assert!(caps.has_prompt("prompt1"));
+    }
+}

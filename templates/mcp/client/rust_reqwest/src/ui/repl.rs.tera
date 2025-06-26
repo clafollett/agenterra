@@ -6,7 +6,7 @@ use rustyline::DefaultEditor;
 use serde_json::{json, Value};
 use tracing::{error, info, debug};
 
-use crate::client::McpClient;
+use crate::domain::client::McpClient;
 
 /// REPL interface for MCP client
 pub struct McpRepl {
@@ -98,13 +98,13 @@ impl McpRepl {
                 self.show_help();
             }
             "tools" | "t" => {
-                self.show_tools();
+                self.show_tools().await;
             }
             "resources" | "r" => {
-                self.show_resources();
+                self.show_resources().await;
             }
             "prompts" | "p" => {
-                self.show_prompts();
+                self.show_prompts().await;
             }
             "call" | "c" => {
                 if parts.len() < 2 {
@@ -145,7 +145,7 @@ impl McpRepl {
                 }
             }
             "status" | "s" => {
-                self.show_status();
+                self.show_status().await;
             }
             "clear" => {
                 print!("\x1B[2J\x1B[1;1H");
@@ -162,10 +162,28 @@ impl McpRepl {
     }
 
     /// Show available capabilities
-    async fn show_capabilities(&self) {
-        let tools = self.client.get_tools();
-        let resources = self.client.get_resources();
-        let prompts = self.client.get_prompts();
+    async fn show_capabilities(&mut self) {
+        let tools = match self.client.list_tools().await {
+            Ok(tools) => tools,
+            Err(e) => {
+                error!("Failed to list tools: {}", e);
+                vec![]
+            }
+        };
+        let resources = match self.client.list_resources().await {
+            Ok(resources) => resources,
+            Err(e) => {
+                error!("Failed to list resources: {}", e);
+                vec![]
+            }
+        };
+        let prompts = match self.client.list_prompts().await {
+            Ok(prompts) => prompts,
+            Err(e) => {
+                error!("Failed to list prompts: {}", e);
+                vec![]
+            }
+        };
 
         println!("Connected to: {}", self.server_name);
         if let Some(version) = self.client.server_version() {
@@ -196,8 +214,14 @@ impl McpRepl {
     }
 
     /// Show available tools
-    fn show_tools(&self) {
-        let tools = self.client.get_tools();
+    async fn show_tools(&mut self) {
+        let tools = match self.client.list_tools().await {
+            Ok(tools) => tools,
+            Err(e) => {
+                error!("Failed to list tools: {}", e);
+                return;
+            }
+        };
         
         if tools.is_empty() {
             println!("No tools available");
@@ -205,15 +229,21 @@ impl McpRepl {
         }
 
         println!("Available tools:");
-        for (name, tool) in tools {
-            println!("  {}: {}", name, tool.description.as_deref().unwrap_or("No description"));
+        for tool_name in tools {
+            println!("  {}", tool_name);
         }
         println!();
     }
 
     /// Show available resources
-    fn show_resources(&self) {
-        let resources = self.client.get_resources();
+    async fn show_resources(&mut self) {
+        let resources = match self.client.list_resources().await {
+            Ok(resources) => resources,
+            Err(e) => {
+                error!("Failed to list resources: {}", e);
+                return;
+            }
+        };
         
         if resources.is_empty() {
             println!("No resources available");
@@ -228,8 +258,14 @@ impl McpRepl {
     }
 
     /// Show available prompts
-    fn show_prompts(&self) {
-        let prompts = self.client.get_prompts();
+    async fn show_prompts(&mut self) {
+        let prompts = match self.client.list_prompts().await {
+            Ok(prompts) => prompts,
+            Err(e) => {
+                error!("Failed to list prompts: {}", e);
+                return;
+            }
+        };
         
         if prompts.is_empty() {
             println!("No prompts available");
@@ -237,8 +273,8 @@ impl McpRepl {
         }
 
         println!("Available prompts:");
-        for prompt in prompts {
-            println!("  {}: {}", prompt.name, prompt.description.as_deref().unwrap_or("No description"));
+        for prompt_name in prompts {
+            println!("  {}", prompt_name);
         }
         println!();
     }
@@ -289,7 +325,7 @@ impl McpRepl {
     }
 
     /// Show connection status
-    fn show_status(&self) {
+    async fn show_status(&mut self) {
         println!("Connection Status:");
         println!("  Server: {}", self.server_name);
         if let Some(version) = self.client.server_version() {
@@ -299,9 +335,24 @@ impl McpRepl {
             println!("  Protocol: {}", protocol);
         }
         println!("  Connected: {}", self.client.is_connected());
-        println!("  Tools: {}", self.client.get_tools().len());
-        println!("  Resources: {}", self.client.get_resources().len());
-        println!("  Prompts: {}", self.client.get_prompts().len());
+        
+        // Get counts asynchronously
+        let tools_count = match self.client.list_tools().await {
+            Ok(tools) => tools.len(),
+            Err(_) => 0,
+        };
+        let resources_count = match self.client.list_resources().await {
+            Ok(resources) => resources.len(),
+            Err(_) => 0,
+        };
+        let prompts_count = match self.client.list_prompts().await {
+            Ok(prompts) => prompts.len(),
+            Err(_) => 0,
+        };
+        
+        println!("  Tools: {}", tools_count);
+        println!("  Resources: {}", resources_count);
+        println!("  Prompts: {}", prompts_count);
         println!();
     }
 }
