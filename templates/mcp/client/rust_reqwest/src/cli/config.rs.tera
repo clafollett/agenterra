@@ -1,6 +1,7 @@
 //! Configuration command handlers for {{ project_name }}
 
 use crate::application::config::{ConfigManager, ServerProfile};
+use crate::application::validation::InputValidator;
 use crate::infrastructure::database::manager::DatabaseManager;
 use crate::infrastructure::error::{ClientError, Result};
 use crate::cli::args::ServerCommands;
@@ -28,17 +29,25 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
             disabled_tools,
             set_default 
         } => {
-            // Parse environment variables if provided
+            // Validate inputs
+            InputValidator::validate_server_name(name)?;
+            InputValidator::validate_command(command)?;
+            InputValidator::validate_args(args)?;
+            
+            if let Some(desc) = description {
+                InputValidator::validate_description(desc)?;
+            }
+            
+            // Parse and validate environment variables if provided
             let environment = if let Some(env_str) = env {
-                Some(serde_json::from_str::<std::collections::HashMap<String, String>>(env_str)
-                    .map_err(|e| ClientError::ConfigError(format!("Invalid JSON for environment: {}", e)))?)
+                Some(InputValidator::validate_environment(env_str)?)
             } else {
                 None
             };
             
-            // Parse disabled tools if provided
+            // Parse and validate disabled tools if provided
             let disabled_tools_list = if let Some(tools_str) = disabled_tools {
-                Some(tools_str.split(',').map(|s| s.trim().to_string()).collect::<Vec<_>>())
+                Some(InputValidator::validate_disabled_tools(tools_str)?)
             } else {
                 None
             };
@@ -159,8 +168,37 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
         }
         
         ServerCommands::AddJson { name, json } => {
+            // Validate name
+            InputValidator::validate_server_name(name)?;
+            
+            // Validate JSON structure before parsing
+            InputValidator::validate_json_input(json)?;
+            
             let mut profile: ServerProfile = serde_json::from_str(json)
                 .map_err(|e| ClientError::ConfigError(format!("Invalid JSON: {}", e)))?;
+            
+            // Validate the parsed profile data
+            InputValidator::validate_command(&profile.command)?;
+            InputValidator::validate_args(&profile.args)?;
+            
+            if let Some(desc) = &profile.description {
+                InputValidator::validate_description(desc)?;
+            }
+            
+            if let Some(env) = &profile.environment {
+                // Validate each environment variable
+                for (key, value) in env {
+                    InputValidator::validate_identifier(key, "Environment variable name", false)?;
+                    InputValidator::check_dangerous_patterns(value)?;
+                    InputValidator::check_unicode_attacks(value)?;
+                }
+            }
+            
+            if let Some(tools) = &profile.disabled_tools {
+                for tool in tools {
+                    InputValidator::validate_identifier(tool, "Tool name", true)?;
+                }
+            }
             
             // Override the name with the provided one
             profile.name = name.clone();
