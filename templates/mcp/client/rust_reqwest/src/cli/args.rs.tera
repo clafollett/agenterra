@@ -50,10 +50,10 @@ pub struct Cli {
 /// Subcommands for the CLI
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Configuration management commands
-    Config {
+    /// Server management commands
+    Server {
         #[command(subcommand)]
-        action: ConfigCommands,
+        action: ServerCommands,
     },
     
     /// Authentication management commands
@@ -85,9 +85,9 @@ pub enum Commands {
     },
 }
 
-/// Configuration subcommands
+/// Server management subcommands
 #[derive(Subcommand, Debug)]
-pub enum ConfigCommands {
+pub enum ServerCommands {
     /// Add a new server profile
     Add {
         /// Profile name

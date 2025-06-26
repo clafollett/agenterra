@@ -3,20 +3,20 @@
 use crate::application::config::{ConfigManager, ServerProfile};
 use crate::infrastructure::database::manager::DatabaseManager;
 use crate::infrastructure::error::{ClientError, Result};
-use crate::cli::args::ConfigCommands;
+use crate::cli::args::ServerCommands;
 use std::sync::Arc;
 use chrono::Utc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-/// Handle configuration commands
-pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
+/// Handle server management commands
+pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
     // Initialize shared database
     let db = Arc::new(DatabaseManager::new().await?);
     let config_manager = ConfigManager::new(db).await?;
     
     match action {
-        ConfigCommands::Add { 
+        ServerCommands::Add { 
             name, 
             description, 
             command,
@@ -47,7 +47,7 @@ pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
             }
         }
         
-        ConfigCommands::List => {
+        ServerCommands::List => {
             let servers = config_manager.list_servers().await?;
             
             if servers.is_empty() {
@@ -68,17 +68,17 @@ pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
             }
         }
         
-        ConfigCommands::SetDefault { name } => {
+        ServerCommands::SetDefault { name } => {
             config_manager.set_default_server(name).await?;
             info!("✅ Set '{}' as default server", name);
         }
         
-        ConfigCommands::Remove { name } => {
+        ServerCommands::Remove { name } => {
             config_manager.remove_server(name).await?;
             info!("✅ Removed server profile: {}", name);
         }
         
-        ConfigCommands::Export { format } => {
+        ServerCommands::Export { format } => {
             let servers = config_manager.list_servers().await?;
             match format.as_str() {
                 "json" => {
@@ -90,7 +90,7 @@ pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
             }
         }
         
-        ConfigCommands::Import { path } => {
+        ServerCommands::Import { path } => {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| ClientError::ConfigError(format!("Failed to read file: {}", e)))?;
             

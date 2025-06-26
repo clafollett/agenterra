@@ -19,7 +19,7 @@ pub mod runner;
 // Re-export commonly used types
 pub use args::{Cli, Commands};
 pub use auth::handle_auth_command;
-pub use config::handle_config_command;
+pub use config::handle_server_command;
 pub use headless::handle_run_command;
 pub use interactive::handle_interactive_mode;
 pub use runner::execute;
