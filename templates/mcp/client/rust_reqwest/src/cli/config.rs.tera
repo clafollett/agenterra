@@ -8,6 +8,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use tracing::{info, warn};
 use uuid::Uuid;
+use serde_json;
 
 /// Handle server management commands
 pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
@@ -22,19 +23,37 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
             command,
             args, 
             timeout,
+            transport,
+            env,
+            disabled_tools,
             set_default 
         } => {
+            // Parse environment variables if provided
+            let environment = if let Some(env_str) = env {
+                Some(serde_json::from_str::<std::collections::HashMap<String, String>>(env_str)
+                    .map_err(|e| ClientError::ConfigError(format!("Invalid JSON for environment: {}", e)))?)
+            } else {
+                None
+            };
+            
+            // Parse disabled tools if provided
+            let disabled_tools_list = if let Some(tools_str) = disabled_tools {
+                Some(tools_str.split(',').map(|s| s.trim().to_string()).collect::<Vec<_>>())
+            } else {
+                None
+            };
+            
             let profile = ServerProfile {
                 id: Uuid::new_v4().to_string(),
                 name: name.clone(),
                 description: description.clone(),
                 command: command.clone(),
                 args: args.clone(),
-                environment: None,
+                environment,
                 timeout: *timeout,
                 is_default: *set_default,
-                transport: None, // Default to stdio
-                disabled_tools: None,
+                transport: transport.map(|t| t.to_string()),
+                disabled_tools: disabled_tools_list,
                 created_at: Utc::now(),
                 last_used: None,
             };
@@ -56,9 +75,11 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
                 info!("Server profiles:");
                 for server in servers {
                     let default_marker = if server.is_default { " (default)" } else { "" };
-                    info!("  {} - {}{}",
+                    let transport = server.transport.as_deref().unwrap_or("stdio");
+                    info!("  {} - {} [{}]{}",
                         server.name,
                         server.command,
+                        transport,
                         default_marker
                     );
                     if let Some(desc) = &server.description {
@@ -102,6 +123,52 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
             }
             
             info!("✅ Imported configuration successfully");
+        }
+        
+        ServerCommands::Get { name } => {
+            let server = config_manager.get_server(name).await?
+                .ok_or_else(|| ClientError::ConfigError(format!("Server '{}' not found", name)))?;
+            
+            info!("Server: {}", server.name);
+            info!("Command: {}", server.command);
+            if !server.args.is_empty() {
+                info!("Arguments: {}", server.args.join(" "));
+            }
+            if let Some(desc) = &server.description {
+                info!("Description: {}", desc);
+            }
+            if let Some(transport) = &server.transport {
+                info!("Transport: {}", transport);
+            } else {
+                info!("Transport: stdio (default)");
+            }
+            if let Some(timeout) = server.timeout {
+                info!("Timeout: {}s", timeout);
+            }
+            if let Some(env) = &server.environment {
+                info!("Environment: {}", serde_json::to_string_pretty(env)?);
+            }
+            if let Some(tools) = &server.disabled_tools {
+                info!("Disabled tools: {}", tools.join(", "));
+            }
+            info!("Default: {}", if server.is_default { "Yes" } else { "No" });
+            info!("Created: {}", server.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
+            if let Some(last_used) = server.last_used {
+                info!("Last used: {}", last_used.format("%Y-%m-%d %H:%M:%S UTC"));
+            }
+        }
+        
+        ServerCommands::AddJson { name, json } => {
+            let mut profile: ServerProfile = serde_json::from_str(json)
+                .map_err(|e| ClientError::ConfigError(format!("Invalid JSON: {}", e)))?;
+            
+            // Override the name with the provided one
+            profile.name = name.clone();
+            profile.id = Uuid::new_v4().to_string();
+            profile.created_at = Utc::now();
+            
+            config_manager.add_server(profile).await?;
+            info!("✅ Added server profile from JSON: {}", name);
         }
     }
     

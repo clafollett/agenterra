@@ -93,21 +93,32 @@ pub enum ServerCommands {
         /// Profile name
         name: String,
         
-        /// Server command
-        #[arg(long)]
+        /// Server command or URL
         command: String,
         
         /// Server arguments
-        #[arg(long, value_delimiter = ' ', num_args = 1..)]
+        #[arg(value_name = "ARGS", num_args = 0..)]
         args: Vec<String>,
         
         /// Description
-        #[arg(long)]
+        #[arg(short, long)]
         description: Option<String>,
         
         /// Connection timeout in seconds
-        #[arg(long)]
+        #[arg(short, long)]
         timeout: Option<u64>,
+        
+        /// Transport type (stdio or sse)
+        #[arg(long, value_enum)]
+        transport: Option<TransportProtocol>,
+        
+        /// Environment variables (JSON format)
+        #[arg(long)]
+        env: Option<String>,
+        
+        /// Disabled tools (comma-separated)
+        #[arg(long)]
+        disabled_tools: Option<String>,
         
         /// Set as default server
         #[arg(long)]
@@ -116,6 +127,12 @@ pub enum ServerCommands {
     
     /// List all server profiles
     List,
+    
+    /// Get details about a specific server
+    Get {
+        /// Server name
+        name: String,
+    },
     
     /// Set the default server profile
     SetDefault {
@@ -140,6 +157,15 @@ pub enum ServerCommands {
     Import {
         /// Path to import file
         path: String,
+    },
+    
+    /// Add a server with JSON configuration
+    AddJson {
+        /// Server name
+        name: String,
+        
+        /// JSON configuration
+        json: String,
     },
 }
 

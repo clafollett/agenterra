@@ -37,40 +37,65 @@ Use the default server:
 {{ cli_binary_name }}
 ```
 
-### Configuration Management
+### Server Management
 
 Add a server profile:
 ```bash
-{{ cli_binary_name }} config add my-server \
-  --command /path/to/server \
-  --args "arg1 arg2" \
+# Basic usage with positional arguments
+{{ cli_binary_name }} server add my-server /path/to/server arg1 arg2 \
   --description "My MCP server" \
   --set-default
+
+# With SSE transport
+{{ cli_binary_name }} server add web-server https://api.example.com/mcp \
+  --transport sse \
+  --description "Web-based MCP server"
+
+# With environment variables and disabled tools
+{{ cli_binary_name }} server add custom-server /path/to/server \
+  --env '{"API_KEY": "secret"}' \
+  --disabled-tools "dangerous-tool,debug-tool" \
+  --timeout 30
 ```
 
 List server profiles:
 ```bash
-{{ cli_binary_name }} config list
+{{ cli_binary_name }} server list
+```
+
+Get server details:
+```bash
+{{ cli_binary_name }} server get my-server
 ```
 
 Set default server:
 ```bash
-{{ cli_binary_name }} config set-default my-server
+{{ cli_binary_name }} server set-default my-server
 ```
 
 Remove a server:
 ```bash
-{{ cli_binary_name }} config remove my-server
+{{ cli_binary_name }} server remove my-server
+```
+
+Add server from JSON:
+```bash
+{{ cli_binary_name }} server add-json my-server '{
+  "command": "/path/to/server",
+  "args": ["arg1", "arg2"],
+  "transport": "sse",
+  "timeout": 30
+}'
 ```
 
 Export configuration:
 ```bash
-{{ cli_binary_name }} config export > config.json
+{{ cli_binary_name }} server export > servers.json
 ```
 
 Import configuration:
 ```bash
-{{ cli_binary_name }} config import config.json
+{{ cli_binary_name }} server import servers.json
 ```
 
 ### Headless Mode (Automation)
@@ -111,10 +136,9 @@ The client supports connecting to MCP servers via SSE transport for web-based se
   --sse-url https://api.example.com/mcp
 
 # Configure SSE transport in server profiles
-{{ cli_binary_name }} config add web-server \
-  --command "https://api.example.com/mcp" \
+{{ cli_binary_name }} server add web-server https://api.example.com/mcp \
+  --transport sse \
   --description "Web-based MCP server"
-# Note: Set transport to 'sse' in the database after adding
 ```
 
 The SSE transport automatically handles:
@@ -124,7 +148,7 @@ The SSE transport automatically handles:
 - Full MCP protocol support over HTTP
 - Support for both interactive and headless modes
 
-When using SSE transport with profiles, ensure the command field contains the base URL (without `/sse` or `/message` suffixes), and the transport field in the database is set to 'sse'.
+When using SSE transport with profiles, the command field should contain the base URL (without `/sse` or `/message` suffixes).
 
 ### REPL Commands
 
@@ -145,7 +169,7 @@ When in interactive mode, these commands are available:
 Configuration is stored in SQLite databases:
 
 - **Config Database**: `~/.config/agenterra/{{ project_name }}_config.db`
-  - Server profiles
+  - Server profiles (with transport, environment, disabled tools)
   - User preferences
   - Authentication credentials (encrypted)
   - Session history
@@ -178,11 +202,11 @@ For scripting and automation:
 
 ```bash
 #!/bin/bash
-# List all tools and save to file
-{{ cli_binary_name }} --profile my-server list-tools > tools.json
+# Get server details
+{{ cli_binary_name }} server get my-server
 
-# Call a tool and check result
-if {{ cli_binary_name }} --profile my-server call process-data '{"file": "data.csv"}'; then
+# Run a tool and check result
+if {{ cli_binary_name }} run process-data --args '{"file": "data.csv"}' --profile my-server; then
     echo "Processing succeeded"
 else
     echo "Processing failed with code $?"
@@ -195,12 +219,12 @@ fi
 # GitHub Actions example
 - name: Run MCP Tools
   run: |
-    {{ cli_binary_name }} config add ci-server \
-      --command {% raw %}${{ secrets.MCP_SERVER_PATH }}{% endraw %} \
+    {{ cli_binary_name }} server add ci-server {% raw %}${{ secrets.MCP_SERVER_PATH }}{% endraw %} \
+      --transport stdio \
       --set-default
     
-    {{ cli_binary_name }} list-tools
-    {{ cli_binary_name }} call deploy '{"version": "{% raw %}${{ github.sha }}{% endraw %}"}'
+    {{ cli_binary_name }} run list-tools --profile ci-server
+    {{ cli_binary_name }} run deploy --args '{"version": "{% raw %}${{ github.sha }}{% endraw %}"}' --profile ci-server
 ```
 
 ## Advanced Features
