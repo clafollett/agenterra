@@ -234,6 +234,77 @@ SSE_KEEP_ALIVE=30
 LOG_LEVEL=info
 ```
 
+## Server Control Features
+
+Generated MCP clients include granular server control capabilities for enhanced security:
+
+### Server Disable/Enable
+Completely disable a server to prevent any connections:
+
+```bash
+# Add a disabled server
+./client server add compromised-server /path/to/server --disabled
+
+# The client will refuse to connect
+./client --profile compromised-server
+# Error: Server profile 'compromised-server' is disabled
+```
+
+This feature is critical for:
+- **Incident Response**: Immediately disable compromised servers
+- **Maintenance Windows**: Temporarily disable servers during updates
+- **Access Control**: Disable servers for specific users or environments
+
+### Tool Permission Management
+
+#### Always Allowed Tools
+Bypass approval prompts for trusted tools to improve workflow efficiency:
+
+```bash
+./client server add github-server /path/to/server \
+  --always-allowed "list_issues,get_issue,list_pull_requests"
+```
+
+Benefits:
+- **Productivity**: No interruptions for read-only operations
+- **Automation**: Enable headless workflows for safe tools
+- **User Experience**: Reduce approval fatigue
+
+#### Disabled Tools
+Block specific tools from being called:
+
+```bash
+./client server add restricted-server /path/to/server \
+  --disabled-tools "delete_repository,force_push,merge_pull_request"
+```
+
+Protection against:
+- **Destructive Operations**: Prevent accidental data loss
+- **Privilege Escalation**: Block admin-only tools
+- **Compliance**: Enforce organizational policies
+
+### Implementation Details
+
+All server control features are:
+- **Stored Securely**: In the SQLite database with proper constraints
+- **Validated**: Tool names undergo full security validation
+- **Enforced Client-Side**: Checks happen before any server communication
+- **Auditable**: All permission checks are logged
+
+Example configuration:
+```json
+{
+  "mcpServers": {
+    "production-api": {
+      "command": "./mcp-server",
+      "disabled": false,
+      "alwaysAllowed": ["read_data", "list_resources"],
+      "disabledTools": ["delete_all", "admin_reset"]
+    }
+  }
+}
+```
+
 ## Best Practices
 
 1. **Always Validate Input**: Never trust user input, even from authenticated sources

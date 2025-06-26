@@ -26,6 +26,7 @@
 - **🚀 Production Ready** - Includes logging, error handling, and configuration out of the box
 - **🔌 MCP Protocol Support** - Full compatibility with Model Context Protocol
 - **💾 SQLite Resource Caching** - Built-in resource caching with connection pooling for MCP clients
+- **🚫 Server Control** - Enable/disable servers and manage tool permissions
 - **📦 Binary Distribution** - Easy installation and deployment
 
 ## 🔒 Enterprise Security
@@ -133,7 +134,10 @@ Add this to your Cursor settings (File > Preferences > Settings > Extensions > M
   "mcpServers": {
     "petstore": {
       "command": "cargo",
-      "args": ["run", "--manifest-path", "/path/to/petstore-server/Cargo.toml"]
+      "args": ["run", "--manifest-path", "/path/to/petstore-server/Cargo.toml"],
+      "disabled": false,
+      "alwaysAllowed": ["listPets", "showPetById"],
+      "disabledTools": ["deletePet"]
     }
   }
 }

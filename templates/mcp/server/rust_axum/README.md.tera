@@ -9,7 +9,6 @@ MCP (Model Context Protocol) server implementation using Rust and Axum.
 - **Tool Support**: Define and expose tools for AI model interaction
 - **Resource Management**: Serve resources with proper URI handling
 - **Prompt Templates**: Support for dynamic prompt templates
-- **Authentication**: OAuth2 authentication support via rmcp auth feature
 - **Real-time Communication**: SSE for real-time bidirectional communication
 - **Signal Handling**: Graceful shutdown with proper signal handling
 - **Enterprise Security**: Built-in security features for production deployments
