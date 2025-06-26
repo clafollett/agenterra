@@ -129,3 +129,79 @@ impl Transport for MockTransport {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transport_protocol_default() {
+        assert_eq!(TransportProtocol::default(), TransportProtocol::Stdio);
+    }
+
+    #[test]
+    fn test_transport_protocol_from_str() {
+        assert_eq!(TransportProtocol::from("stdio"), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from("STDIO"), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from("sse"), TransportProtocol::Sse);
+        assert_eq!(TransportProtocol::from("SSE"), TransportProtocol::Sse);
+        assert_eq!(TransportProtocol::from("unknown"), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from(""), TransportProtocol::Stdio);
+    }
+
+    #[test]
+    fn test_transport_protocol_from_option() {
+        assert_eq!(TransportProtocol::from(Some("sse")), TransportProtocol::Sse);
+        assert_eq!(TransportProtocol::from(None::<&str>), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from(Some("stdio".to_string())), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from(None::<String>), TransportProtocol::Stdio);
+    }
+
+    #[test]
+    fn test_transport_protocol_display() {
+        assert_eq!(TransportProtocol::Stdio.to_string(), "stdio");
+        assert_eq!(TransportProtocol::Sse.to_string(), "sse");
+    }
+
+    #[tokio::test]
+    async fn test_mock_transport() {
+        let responses = vec![
+            serde_json::json!({"result": "success"}),
+            serde_json::json!({"result": "another"}),
+        ];
+        
+        let mut transport = MockTransport::new(responses);
+        
+        // First call should return first response
+        let result = transport.send(serde_json::json!({"test": 1})).await.unwrap();
+        assert_eq!(result, serde_json::json!({"result": "success"}));
+        
+        // Second call should return second response
+        let result = transport.send(serde_json::json!({"test": 2})).await.unwrap();
+        assert_eq!(result, serde_json::json!({"result": "another"}));
+        
+        // Third call should error (no more responses)
+        let result = transport.send(serde_json::json!({"test": 3})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mock_transport_with_limit() {
+        let responses = vec![
+            serde_json::json!({"result": "1"}),
+            serde_json::json!({"result": "2"}),
+            serde_json::json!({"result": "3"}),
+        ];
+        
+        let mut transport = MockTransport::with_limit(responses, 2);
+        
+        // First two calls should succeed
+        assert!(transport.send(serde_json::json!({})).await.is_ok());
+        assert!(transport.send(serde_json::json!({})).await.is_ok());
+        
+        // Third call should fail due to limit
+        let result = transport.send(serde_json::json!({})).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Maximum response limit reached"));
+    }
+}

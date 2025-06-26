@@ -23,6 +23,8 @@ pub struct ServerProfile {
     pub id: String,
     /// Profile name (user-friendly identifier)
     pub name: String,
+    /// Description of the server
+    pub description: Option<String>,
     /// Server command
     pub command: String,
     /// Command arguments (stored as JSON array)
@@ -31,8 +33,6 @@ pub struct ServerProfile {
     pub environment: Option<HashMap<String, String>>,
     /// Connection timeout in seconds
     pub timeout: Option<u64>,
-    /// Description of the server
-    pub description: Option<String>,
     /// Whether this is the default server
     pub is_default: bool,
     /// Transport protocol (stdio, sse)
@@ -133,16 +133,16 @@ impl ConfigManager {
 
         self.db.with_connection(move |conn| {
             conn.execute(
-                "INSERT INTO servers (id, name, command, args, environment, timeout, description, is_default, transport, disabled_tools, created_at, last_used)
+                "INSERT INTO servers (id, name, description, command, args, environment, timeout, is_default, transport, disabled_tools, created_at, last_used)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     profile.id,
                     profile.name,
+                    profile.description,
                     profile.command,
                     args_json,
                     env_json,
                     profile.timeout,
-                    profile.description,
                     profile.is_default as i32,
                     profile.transport.as_deref().unwrap_or("stdio"),
                     disabled_tools_json,
@@ -170,36 +170,46 @@ impl ConfigManager {
 
         self.db.with_connection(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, command, args, environment, timeout, description, is_default, transport, disabled_tools, created_at, last_used
+                "SELECT id, name, description, command, args, environment, timeout, is_default, transport, disabled_tools, created_at, last_used
                  FROM servers WHERE name = ?1"
             )?;
 
             let profile = stmt.query_row(params![name_clone], |row| {
-                let args_json: String = row.get(3)?;
+                let args_json: String = row.get(4)?;
                 let args: Vec<String> = serde_json::from_str(&args_json)
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        3, rusqlite::types::Type::Text, Box::new(e)
+                        4, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
-                let env_json: Option<String> = row.get(4)?;
+                let env_json: Option<String> = row.get(5)?;
                 let environment = env_json.as_ref()
                     .map(|json| serde_json::from_str(json))
                     .transpose()
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4, rusqlite::types::Type::Text, Box::new(e)
+                        5, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let disabled_tools_json: Option<String> = row.get(9)?;
+                let disabled_tools = disabled_tools_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        9, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
                 Ok(ServerProfile {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    command: row.get(2)?,
+                    description: row.get(2)?,
+                    command: row.get(3)?,
                     args,
                     environment,
-                    timeout: row.get(5)?,
-                    description: row.get(6)?,
+                    timeout: row.get(6)?,
                     is_default: row.get::<_, i32>(7)? != 0,
-                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
-                    last_used: row.get::<_, Option<i64>>(9)?
+                    transport: row.get(8)?,
+                    disabled_tools,
+                    created_at: DateTime::from_timestamp(row.get(10)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(11)?
                         .and_then(|ts| DateTime::from_timestamp(ts, 0)),
                 })
             }).optional()?;
@@ -215,36 +225,46 @@ impl ConfigManager {
     pub async fn list_servers(&self) -> Result<Vec<ServerProfile>> {
         self.db.with_connection(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                "SELECT id, name, description, command, args, environment, timeout, is_default, disabled_tools, transport, created_at, last_used
                  FROM servers ORDER BY name"
             )?;
 
             let profiles = stmt.query_map(params![], |row| {
-                let args_json: String = row.get(3)?;
+                let args_json: String = row.get(4)?;
                 let args: Vec<String> = serde_json::from_str(&args_json)
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        3, rusqlite::types::Type::Text, Box::new(e)
+                        4, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
-                let env_json: Option<String> = row.get(4)?;
+                let env_json: Option<String> = row.get(5)?;
                 let environment = env_json.as_ref()
                     .map(|json| serde_json::from_str(json))
                     .transpose()
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4, rusqlite::types::Type::Text, Box::new(e)
+                        5, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let disabled_tools_json: Option<String> = row.get(8)?;
+                let disabled_tools = disabled_tools_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        8, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
                 Ok(ServerProfile {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    command: row.get(2)?,
+                    description: row.get(2)?,
+                    command: row.get(3)?,
                     args,
                     environment,
-                    timeout: row.get(5)?,
-                    description: row.get(6)?,
+                    timeout: row.get(6)?,
                     is_default: row.get::<_, i32>(7)? != 0,
-                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
-                    last_used: row.get::<_, Option<i64>>(9)?
+                    disabled_tools,
+                    transport: row.get(9)?,
+                    created_at: DateTime::from_timestamp(row.get(10)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(11)?
                         .and_then(|ts| DateTime::from_timestamp(ts, 0)),
                 })
             })?

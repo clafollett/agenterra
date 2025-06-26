@@ -6,6 +6,7 @@ use crate::infrastructure::error::{ClientError, Result};
 use crate::cli::args::ConfigCommands;
 use std::sync::Arc;
 use chrono::Utc;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 /// Handle configuration commands
@@ -17,30 +18,32 @@ pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
     match action {
         ConfigCommands::Add { 
             name, 
-            command, 
-            args, 
             description, 
+            command,
+            args, 
             timeout,
             set_default 
         } => {
             let profile = ServerProfile {
                 id: Uuid::new_v4().to_string(),
                 name: name.clone(),
+                description: description.clone(),
                 command: command.clone(),
                 args: args.clone(),
                 environment: None,
                 timeout: *timeout,
-                description: description.clone(),
                 is_default: *set_default,
+                transport: None, // Default to stdio
+                disabled_tools: None,
                 created_at: Utc::now(),
                 last_used: None,
             };
             
             config_manager.add_server(profile).await?;
-            println!("✅ Added server profile: {}", name);
+            info!("✅ Added server profile: {}", name);
             
             if *set_default {
-                println!("✅ Set as default server");
+                info!("✅ Set as default server");
             }
         }
         
@@ -48,18 +51,18 @@ pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
             let servers = config_manager.list_servers().await?;
             
             if servers.is_empty() {
-                println!("No server profiles configured");
+                info!("No server profiles configured");
             } else {
-                println!("Server profiles:");
+                info!("Server profiles:");
                 for server in servers {
                     let default_marker = if server.is_default { " (default)" } else { "" };
-                    println!("  {} - {}{}",
+                    info!("  {} - {}{}",
                         server.name,
                         server.command,
                         default_marker
                     );
                     if let Some(desc) = &server.description {
-                        println!("    {}", desc);
+                        info!("    {}", desc);
                     }
                 }
             }
@@ -67,22 +70,22 @@ pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
         
         ConfigCommands::SetDefault { name } => {
             config_manager.set_default_server(name).await?;
-            println!("✅ Set '{}' as default server", name);
+            info!("✅ Set '{}' as default server", name);
         }
         
         ConfigCommands::Remove { name } => {
             config_manager.remove_server(name).await?;
-            println!("✅ Removed server profile: {}", name);
+            info!("✅ Removed server profile: {}", name);
         }
         
         ConfigCommands::Export { format } => {
             let servers = config_manager.list_servers().await?;
             match format.as_str() {
                 "json" => {
-                    println!("{}", serde_json::to_string_pretty(&servers)?);
+                    info!("{}", serde_json::to_string_pretty(&servers)?);
                 }
                 _ => {
-                    println!("{}", serde_json::to_string_pretty(&servers)?);
+                    info!("{}", serde_json::to_string_pretty(&servers)?);
                 }
             }
         }
@@ -98,7 +101,7 @@ pub async fn handle_config_command(action: &ConfigCommands) -> Result<()> {
                 config_manager.add_server(server).await?;
             }
             
-            println!("✅ Imported configuration successfully");
+            info!("✅ Imported configuration successfully");
         }
     }
     

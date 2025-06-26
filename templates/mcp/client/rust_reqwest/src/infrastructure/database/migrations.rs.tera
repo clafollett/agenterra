@@ -102,11 +102,11 @@ CREATE TABLE configuration (
 CREATE TABLE servers (
     id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
+    description TEXT,
     command TEXT NOT NULL,
     args TEXT, -- JSON array of arguments
     environment TEXT, -- JSON object of environment variables
     timeout INTEGER, -- Connection timeout in seconds
-    description TEXT,
     is_default INTEGER DEFAULT 0, -- SQLite doesn't have BOOLEAN, use 0/1
     disabled_tools TEXT, -- JSON array of tool names to disable
     transport TEXT NOT NULL DEFAULT 'stdio' CHECK(transport IN ('stdio', 'sse', 'http')),

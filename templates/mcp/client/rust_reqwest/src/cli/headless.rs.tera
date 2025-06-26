@@ -19,25 +19,32 @@ pub async fn handle_run_command(
     profile: &Option<String>,
     timeout: &Option<u64>,
 ) -> Result<()> {
-    // Determine server to connect to
-    let (server_command, server_args, connect_timeout) = if let Some(profile_name) = profile {
+    // Determine server to connect to based on transport type
+    let (server_command, server_args, connect_timeout, transport_type, sse_url) = if let Some(profile_name) = profile {
         // Use specified profile
         let db = Arc::new(DatabaseManager::new().await?);
         let config_manager = ConfigManager::new(db).await?;
         let profile = config_manager.get_server(profile_name).await?
             .ok_or_else(|| ClientError::ConfigError(format!("Profile '{}' not found", profile_name)))?;
         
+        // Use From trait to convert transport string
+        let transport: TransportProtocol = profile.transport.into();
+        
         (
             profile.command.clone(),
             profile.args.clone(),
-            std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10)))
+            std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10))),
+            transport,
+            None // SSE URL would come from profile.command for SSE transport
         )
     } else if let Some(server_path) = server {
-        // Use specified server
+        // Use specified server with CLI transport
         (
             server_path.clone(),
             cli.args.clone(),
-            std::time::Duration::from_secs(timeout.unwrap_or(cli.timeout))
+            std::time::Duration::from_secs(timeout.unwrap_or(cli.timeout)),
+            cli.transport,
+            cli.sse_url.clone()
         )
     } else {
         // Try to use default profile
@@ -45,10 +52,15 @@ pub async fn handle_run_command(
         let config_manager = ConfigManager::new(db).await?;
         
         if let Some(profile) = config_manager.get_default_server().await? {
+            // Use From trait to convert transport string
+            let transport: TransportProtocol = profile.transport.into();
+            
             (
                 profile.command.clone(),
                 profile.args.clone(),
-                std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10)))
+                std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10))),
+                transport,
+                None
             )
         } else {
             return Err(ClientError::ConfigError(
@@ -60,19 +72,32 @@ pub async fn handle_run_command(
     // Create and connect client
     let mut client = McpClient::new_with_timeout(connect_timeout.as_secs()).await?;
     
-    // For headless mode, we only support STDIO transport for now
-    if matches!(cli.transport, TransportProtocol::Sse) {
-        return Err(ClientError::ConfigError(
-            "SSE transport is not yet supported in headless mode. Please use STDIO transport.".to_string()
-        ));
+    // Connect based on transport type
+    match transport_type {
+        TransportProtocol::Stdio => {
+            info!("Connecting to MCP server via STDIO: {} {:?}", server_command, server_args);
+            let mut command = tokio::process::Command::new(&server_command);
+            for arg in &server_args {
+                command.arg(arg);
+            }
+            client.connect_to_child_process(command).await?;
+        }
+        TransportProtocol::Sse => {
+            // For SSE, the server_command should be the URL, or we use the sse_url parameter
+            let url = if let Some(url) = sse_url {
+                url
+            } else if server_command.starts_with("http://") || server_command.starts_with("https://") {
+                server_command.clone()
+            } else {
+                return Err(ClientError::ConfigError(
+                    "SSE transport requires a valid HTTP/HTTPS URL. Use --sse-url or provide URL as server path.".to_string()
+                ));
+            };
+            
+            info!("Connecting to MCP server via SSE: {}", url);
+            client.connect_sse(&url).await?;
+        }
     }
-    
-    info!("Connecting to MCP server: {} {:?}", server_command, server_args);
-    let mut command = tokio::process::Command::new(&server_command);
-    for arg in &server_args {
-        command.arg(arg);
-    }
-    client.connect_to_child_process(command).await?;
     
     // Create headless runner
     let mut runner = HeadlessRunner::new(client, server_command.clone());
