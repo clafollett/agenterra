@@ -102,26 +102,29 @@ The run command will:
 The client supports connecting to MCP servers via SSE transport for web-based servers:
 
 ```bash
-# Connect to an SSE server
+# Connect to an SSE server in interactive mode
 {{ cli_binary_name }} --transport sse --sse-url https://api.example.com/mcp
 
-# Use SSE transport with a saved profile
-{{ cli_binary_name }} config add web-server \
-  --command "https://api.example.com/mcp" \
-  --transport sse \
-  --description "Web-based MCP server"
-
-# Run commands against SSE server
+# Use SSE transport in headless mode
 {{ cli_binary_name }} run tool-name --args '{"param": "value"}' \
   --transport sse \
   --sse-url https://api.example.com/mcp
+
+# Configure SSE transport in server profiles
+{{ cli_binary_name }} config add web-server \
+  --command "https://api.example.com/mcp" \
+  --description "Web-based MCP server"
+# Note: Set transport to 'sse' in the database after adding
 ```
 
 The SSE transport automatically handles:
 - Connection to `/sse` endpoint for event stream
 - POST requests to `/message` endpoint for client messages
-- Automatic reconnection with 5-second retry interval
+- Automatic reconnection with exponential backoff
 - Full MCP protocol support over HTTP
+- Support for both interactive and headless modes
+
+When using SSE transport with profiles, ensure the command field contains the base URL (without `/sse` or `/message` suffixes), and the transport field in the database is set to 'sse'.
 
 ### REPL Commands
 

@@ -18,11 +18,14 @@ MCP (Model Context Protocol) server implementation using Rust and Axum.
 ### Basic Usage
 
 ```bash
-# Start the server
+# Start the server in STDIO mode (default)
 cargo run
 
-# Start with custom port
-cargo run -- --port 8080
+# Start the server in SSE mode with HTTP endpoints
+cargo run -- --transport sse --sse-addr 127.0.0.1:8080
+
+# Start with custom SSE keep-alive interval
+cargo run -- --transport sse --sse-addr 0.0.0.0:9000 --sse-keep-alive 60
 
 # Start with debug logging
 RUST_LOG=debug cargo run
@@ -32,8 +35,20 @@ RUST_LOG=debug cargo run
 
 The server supports the following command-line options:
 
-- `--port <PORT>` - Server port (default: 3000)
-- `--host <HOST>` - Server host (default: 127.0.0.1)
+- `--transport <MODE>` - Transport mode: stdio (default) or sse
+- `--sse-addr <ADDRESS>` - SSE server bind address (default: 127.0.0.1:3000)
+- `--sse-keep-alive <SECONDS>` - SSE keep-alive interval (default: 30)
+
+For STDIO mode (when used with --transport stdio or by default):
+- The server communicates via standard input/output
+- Suitable for direct process communication
+- Used by desktop MCP clients
+
+For SSE mode (when used with --transport sse):
+- The server exposes HTTP endpoints for SSE communication
+- `/sse` - Server-Sent Events endpoint for real-time messages
+- `/message` - POST endpoint for client messages
+- Suitable for web-based clients and remote connections
 
 ### Environment Variables
 
