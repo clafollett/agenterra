@@ -27,6 +27,13 @@ pub async fn handle_run_command(
         let profile = config_manager.get_server(profile_name).await?
             .ok_or_else(|| ClientError::ConfigError(format!("Profile '{}' not found", profile_name)))?;
         
+        // Check if server is disabled
+        if profile.disabled {
+            return Err(ClientError::ConfigError(
+                format!("Server profile '{}' is disabled", profile_name)
+            ));
+        }
+        
         // Use From trait to convert transport string
         let transport: TransportProtocol = profile.transport.into();
         
@@ -52,6 +59,13 @@ pub async fn handle_run_command(
         let config_manager = ConfigManager::new(db).await?;
         
         if let Some(profile) = config_manager.get_default_server().await? {
+            // Check if server is disabled
+            if profile.disabled {
+                return Err(ClientError::ConfigError(
+                    format!("Default server profile '{}' is disabled", profile.name)
+                ));
+            }
+            
             // Use From trait to convert transport string
             let transport: TransportProtocol = profile.transport.into();
             

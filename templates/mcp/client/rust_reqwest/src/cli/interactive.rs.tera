@@ -15,7 +15,7 @@ pub async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
     info!("Starting {{ project_name }} v{}", "{{ version }}");
     
     // Determine server to connect to
-    let (server_command, server_args, timeout) = if let Some(profile_name) = &cli.profile {
+    let (server_command, server_args, timeout, server_profile) = if let Some(profile_name) = &cli.profile {
         // Use saved profile
         let db = Arc::new(DatabaseManager::new().await?);
         let config_manager = ConfigManager::new(db).await?;
@@ -26,25 +26,41 @@ pub async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
                 ClientError::ConfigError(format!("Profile '{}' not found", profile_name))
             })?;
         
+        // Check if server is disabled
+        if profile.disabled {
+            return Err(ClientError::ConfigError(
+                format!("Server profile '{}' is disabled", profile_name)
+            ));
+        }
+        
         config_manager.update_server_last_used(profile_name).await?;
         info!("Using server profile: {}", profile_name);
+        let profile_clone = profile.clone();
         (
             profile.command,
             profile.args,
             profile.timeout.unwrap_or(cli.timeout),
+            Some(profile_clone),
         )
     } else if let Some(server) = &cli.server {
         // Use direct server path
         info!("Connecting to server: {}", server);
-        (server.clone(), cli.args.clone(), cli.timeout)
+        (server.clone(), cli.args.clone(), cli.timeout, None)
     } else {
         // Try default profile or prompt user
         let db = Arc::new(DatabaseManager::new().await?);
         let config_manager = ConfigManager::new(db).await?;
         if let Some(default) = config_manager.get_default_server().await? {
+            // Check if default server is disabled
+            if default.disabled {
+                return Err(ClientError::ConfigError(
+                    format!("Default server profile '{}' is disabled", default.name)
+                ));
+            }
             config_manager.update_server_last_used(&default.name).await?;
             info!("Using default server profile: {}", default.name);
-            (default.command, default.args, default.timeout.unwrap_or(cli.timeout))
+            let default_clone = default.clone();
+            (default.command, default.args, default.timeout.unwrap_or(cli.timeout), Some(default_clone))
         } else {
             // Prompt user to configure a server
             println!("No server specified and no default configured.");
@@ -60,6 +76,11 @@ pub async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
     
     // Create and connect MCP client
     let mut client = McpClient::new_with_timeout(timeout).await?;
+    
+    // Set server profile if available
+    if let Some(profile) = server_profile {
+        client.set_server_profile(profile);
+    }
     
     // Connect based on transport type
     match cli.transport {

@@ -191,7 +191,7 @@ mod tests {
         let cfg = Config {
             log_dir: PathBuf::from("logs"),
             api_url: "https://api.example.com".to_string(),
-            transport: "stdio".to_string(),
+            transport: Transport::Stdio,
             sse_addr: "1.2.3.4:8000".parse::<SocketAddr>().unwrap(),
             sse_keep_alive: Duration::from_secs(5),
         };
@@ -205,11 +205,11 @@ mod tests {
         let mut cfg = Config {
             log_dir: PathBuf::from("logs"),
             api_url: "https://api.example.com".to_string(),
-            transport: "stdio".to_string(),
+            transport: Transport::Stdio,
             sse_addr: "1.2.3.4:9000".parse::<SocketAddr>().unwrap(),
             sse_keep_alive: Duration::from_secs(10),
         };
-        cfg.transport = "sSe".to_string();
+        cfg.transport = Transport::Sse;
         let (mode, sse_b) = select_server_mode(&cfg);
         match mode {
             ServerMode::Sse(sse_cfg) => {

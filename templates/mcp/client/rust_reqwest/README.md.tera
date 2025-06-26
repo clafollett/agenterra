@@ -7,10 +7,10 @@
 - 🎯 **Interactive REPL** - Explore and test MCP servers interactively
 - 🤖 **Headless Mode** - Automate MCP operations for CI/CD and scripting
 - 💾 **Configuration Management** - SQLite-based server profiles and preferences
-- 🔐 **Authentication** - Secure credential storage (coming soon)
 - 📊 **Resource Caching** - SQLite-powered caching with analytics
 - 📈 **Session History** - Track tool usage and performance metrics
 - 🔄 **Multi-Server Support** - Save and switch between server profiles
+- 🚫 **Server Control** - Enable/disable servers and manage tool permissions
 - 🔒 **Enterprise Security** - Built-in protection against modern attacks
 
 ## Security Features
@@ -51,6 +51,11 @@ Use the default server:
 
 ### Server Management
 
+Server profiles support fine-grained control over MCP server behavior:
+- **disabled**: Prevents all connections to the server until re-enabled
+- **always_allowed**: Tools that bypass approval prompts for faster workflows
+- **disabled_tools**: Tools that are blocked from being called on this server
+
 Add a server profile:
 ```bash
 # Basic usage with positional arguments
@@ -68,6 +73,17 @@ Add a server profile:
   --env '{"API_KEY": "secret"}' \
   --disabled-tools "dangerous-tool,debug-tool" \
   --timeout 30
+
+# Add a disabled server (won't be used until re-enabled)
+{{ cli_binary_name }} server add backup-server /path/to/server \
+  --disabled \
+  --description "Backup server - currently disabled"
+
+# Add server with always-allowed tools (bypass approval prompts)
+{{ cli_binary_name }} server add github-server /path/to/server \
+  --always-allowed "list_issues,get_issue,list_pull_requests" \
+  --disabled-tools "merge_pull_request,delete_repository" \
+  --description "GitHub MCP server with restricted permissions"
 ```
 
 List server profiles:
@@ -96,7 +112,11 @@ Add server from JSON:
   "command": "/path/to/server",
   "args": ["arg1", "arg2"],
   "transport": "sse",
-  "timeout": 30
+  "timeout": 30,
+  "disabled": false,
+  "always_allowed": ["safe_tool_1", "safe_tool_2"],
+  "disabled_tools": ["dangerous_tool"],
+  "environment": {"API_KEY": "secret"}
 }'
 ```
 
@@ -182,8 +202,7 @@ Configuration is stored in SQLite databases:
 
 - **Config Database**: `~/.config/agenterra/{{ project_name }}_config.db`
   - Server profiles (with transport, environment, disabled tools)
-  - User preferences
-  - Authentication credentials (encrypted)
+  - User preferences  
   - Session history
 
 - **Cache Database**: `~/.cache/agenterra/{{ project_name }}_cache.db`

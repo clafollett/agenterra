@@ -120,6 +120,14 @@ pub enum ServerCommands {
         #[arg(long)]
         disabled_tools: Option<String>,
         
+        /// Always allowed tools (comma-separated)
+        #[arg(long)]
+        always_allowed: Option<String>,
+        
+        /// Whether the server is disabled
+        #[arg(long)]
+        disabled: bool,
+        
         /// Set as default server
         #[arg(long)]
         set_default: bool,

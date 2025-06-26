@@ -108,8 +108,10 @@ CREATE TABLE servers (
     environment TEXT, -- JSON object of environment variables
     timeout INTEGER, -- Connection timeout in seconds
     is_default INTEGER DEFAULT 0, -- SQLite doesn't have BOOLEAN, use 0/1
-    disabled_tools TEXT, -- JSON array of tool names to disable
     transport TEXT NOT NULL DEFAULT 'stdio' CHECK(transport IN ('stdio', 'sse', 'http')),
+    disabled INTEGER DEFAULT 0, -- Whether the server is disabled
+    always_allowed TEXT, -- JSON array of tools that bypass approval prompts
+    disabled_tools TEXT, -- JSON array of tool names to disable
     created_at INTEGER NOT NULL,
     last_used INTEGER
 );
@@ -117,6 +119,7 @@ CREATE TABLE servers (
 -- Indexes for server queries
 CREATE INDEX idx_servers_name ON servers(name);
 CREATE INDEX idx_servers_default ON servers(is_default) WHERE is_default = 1;
+CREATE INDEX idx_servers_disabled ON servers(disabled) WHERE disabled = 0;
 
 -- Server credentials
 CREATE TABLE credentials (
@@ -181,11 +184,6 @@ CREATE INDEX idx_retry_queue_next ON retry_queue(next_retry_at) WHERE status = '
 CREATE INDEX idx_retry_queue_status ON retry_queue(status, completed_at);
 "#;
 
-// Future migrations would go here
-// Example:
-// const MIGRATION_002_ADD_FEATURE: &str = r#"
-// -- Add new feature tables/columns
-// "#;
 
 // Example future migrations (commented out until needed):
 /*

@@ -27,6 +27,8 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
             transport,
             env,
             disabled_tools,
+            always_allowed,
+            disabled,
             set_default 
         } => {
             // Validate inputs
@@ -52,6 +54,13 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
                 None
             };
             
+            // Parse and validate always allowed tools if provided
+            let always_allowed_list = if let Some(tools_str) = always_allowed {
+                Some(InputValidator::validate_disabled_tools(tools_str)?)
+            } else {
+                None
+            };
+            
             let profile = ServerProfile {
                 id: Uuid::new_v4().to_string(),
                 name: name.clone(),
@@ -62,6 +71,8 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
                 timeout: *timeout,
                 is_default: *set_default,
                 transport: transport.map(|t| t.to_string()),
+                disabled: *disabled,
+                always_allowed: always_allowed_list,
                 disabled_tools: disabled_tools_list,
                 created_at: Utc::now(),
                 last_used: None,
@@ -84,12 +95,14 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
                 info!("Server profiles:");
                 for server in servers {
                     let default_marker = if server.is_default { " (default)" } else { "" };
+                    let disabled_marker = if server.disabled { " [DISABLED]" } else { "" };
                     let transport = server.transport.as_deref().unwrap_or("stdio");
-                    info!("  {} - {} [{}]{}",
+                    info!("  {} - {} [{}]{}{}",
                         server.name,
                         server.command,
                         transport,
-                        default_marker
+                        default_marker,
+                        disabled_marker
                     );
                     if let Some(desc) = &server.description {
                         info!("    {}", desc);
@@ -160,7 +173,11 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
             if let Some(tools) = &server.disabled_tools {
                 info!("Disabled tools: {}", tools.join(", "));
             }
+            if let Some(tools) = &server.always_allowed {
+                info!("Always allowed tools: {}", tools.join(", "));
+            }
             info!("Default: {}", if server.is_default { "Yes" } else { "No" });
+            info!("Disabled: {}", if server.disabled { "Yes" } else { "No" });
             info!("Created: {}", server.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
             if let Some(last_used) = server.last_used {
                 info!("Last used: {}", last_used.format("%Y-%m-%d %H:%M:%S UTC"));
@@ -195,6 +212,12 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
             }
             
             if let Some(tools) = &profile.disabled_tools {
+                for tool in tools {
+                    InputValidator::validate_identifier(tool, "Tool name", true)?;
+                }
+            }
+            
+            if let Some(tools) = &profile.always_allowed {
                 for tool in tools {
                     InputValidator::validate_identifier(tool, "Tool name", true)?;
                 }

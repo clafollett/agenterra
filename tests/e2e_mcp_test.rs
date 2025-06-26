@@ -218,6 +218,26 @@ async fn test_mcp_server_client_generation() -> Result<()> {
 
     info!("✅ Server builds successfully");
 
+    // Test 3.5: Run server tests
+    info!("=== Testing Generated Server ===");
+    
+    let server_test = Command::new("cargo")
+        .args([
+            "test",
+            "--manifest-path",
+            &server_output.join("Cargo.toml").to_string_lossy(),
+        ])
+        .output()?;
+
+    if !server_test.status.success() {
+        eprintln!("Server tests failed:");
+        eprintln!("stdout: {}", String::from_utf8_lossy(&server_test.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&server_test.stderr));
+        panic!("Server tests failed");
+    }
+
+    info!("✅ Server tests pass successfully");
+
     info!("=== Building Generated Client ===");
 
     let client_build = Command::new("cargo")
@@ -235,6 +255,26 @@ async fn test_mcp_server_client_generation() -> Result<()> {
     }
 
     info!("✅ Client builds successfully");
+
+    // Test 3.6: Run client tests
+    info!("=== Testing Generated Client ===");
+    
+    let client_test = Command::new("cargo")
+        .args([
+            "test",
+            "--manifest-path",
+            &client_output.join("Cargo.toml").to_string_lossy(),
+        ])
+        .output()?;
+
+    if !client_test.status.success() {
+        eprintln!("Client tests failed:");
+        eprintln!("stdout: {}", String::from_utf8_lossy(&client_test.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&client_test.stderr));
+        panic!("Client tests failed");
+    }
+
+    info!("✅ Client tests pass successfully");
     
     // The generated binary names match the project names
     let server_binary = server_output.join("target/debug/e2e_mcp_server");

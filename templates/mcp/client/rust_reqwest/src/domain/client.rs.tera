@@ -7,6 +7,7 @@
 use crate::DEFAULT_TIMEOUT_SECS;
 use crate::api::resource::{ResourceContent, ResourceInfo};
 use crate::application::auth::AuthConfig;
+use crate::application::config::ServerProfile;
 use crate::application::registry::ToolRegistry;
 use crate::domain::capabilities::DiscoveredCapabilities;
 use crate::domain::connection::{ConnectionConfig, ConnectionState};
@@ -59,6 +60,9 @@ pub struct McpClient {
     // Operation timeout configuration
     timeout: Duration,
     operation_timeouts: HashMap<String, Duration>,
+    
+    // Server profile for permission checking
+    server_profile: Option<ServerProfile>,
 }
 
 impl McpClient {
@@ -74,6 +78,7 @@ impl McpClient {
             discovered_capabilities: None,
             timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
             operation_timeouts: HashMap::new(),
+            server_profile: None,
         }
     }
 
@@ -442,6 +447,22 @@ impl McpClient {
     pub async fn call_tool(&mut self, tool_name: &str, arguments: serde_json::Value) -> Result<CallToolResult> {
         self.ensure_connected()?;
         
+        // Check server profile permissions
+        if let Some(profile) = &self.server_profile {
+            // Check if tool is disabled
+            if let Some(disabled_tools) = &profile.disabled_tools {
+                if disabled_tools.iter().any(|t| t == tool_name) {
+                    return Err(ClientError::ToolError(
+                        format!("Tool '{}' is disabled for this server", tool_name)
+                    ));
+                }
+            }
+            
+            // Note: The always_allowed check would typically be done at a higher level
+            // (e.g., in the UI) to skip approval prompts, but we don't block here
+            tracing::debug!("Tool '{}' permission check passed", tool_name);
+        }
+        
         // Validate parameters using the tool registry if the tool is registered
         if let Err(e) = self.tool_registry.validate_parameters(tool_name, &arguments) {
             // Only fail if we have a schema and it doesn't match
@@ -713,6 +734,26 @@ impl McpClient {
         self.service.as_ref().and_then(|s| {
             s.peer_info().map(|info| info.protocol_version.to_string())
         })
+    }
+
+    /// Set the server profile for permission checking
+    pub fn set_server_profile(&mut self, profile: ServerProfile) {
+        self.server_profile = Some(profile);
+    }
+
+    /// Get the current server profile
+    pub fn server_profile(&self) -> Option<&ServerProfile> {
+        self.server_profile.as_ref()
+    }
+
+    /// Check if a tool is always allowed (bypasses approval prompts)
+    pub fn is_tool_always_allowed(&self, tool_name: &str) -> bool {
+        if let Some(profile) = &self.server_profile {
+            if let Some(always_allowed) = &profile.always_allowed {
+                return always_allowed.iter().any(|t| t == tool_name);
+            }
+        }
+        false
     }
 
     /// Validate parameters for a tool call using the tool registry
