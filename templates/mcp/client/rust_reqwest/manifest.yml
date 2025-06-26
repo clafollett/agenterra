@@ -75,6 +75,9 @@ files:
   - source: "src/application/session_manager.rs.tera"
     destination: "src/application/session_manager.rs"
     
+  - source: "src/application/validation.rs.tera"
+    destination: "src/application/validation.rs"
+    
   # API layer - DTOs and external interfaces
   - source: "src/api/mod.rs.tera"
     destination: "src/api/mod.rs"
@@ -120,22 +123,17 @@ files:
     
   - source: "LICENSE"
     destination: "LICENSE"
-    
-  # Integration tests
-  - source: "tests/sse_integration_tests.rs.tera"
-    destination: "tests/sse_integration_tests.rs"
 
 required_directories:
   - "src"
+  - "src/api"
+  - "src/application"
+  - "src/cli"
   - "src/domain"
   - "src/infrastructure"
-  - "src/infrastructure/database"
   - "src/infrastructure/cache"
-  - "src/application"
-  - "src/api"
+  - "src/infrastructure/database"
   - "src/ui"
-  - "src/cli"
-  - "tests"
 
 hooks:
   post_generate:

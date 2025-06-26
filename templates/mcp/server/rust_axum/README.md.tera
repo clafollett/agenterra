@@ -12,6 +12,17 @@ MCP (Model Context Protocol) server implementation using Rust and Axum.
 - **Authentication**: OAuth2 authentication support via rmcp auth feature
 - **Real-time Communication**: SSE for real-time bidirectional communication
 - **Signal Handling**: Graceful shutdown with proper signal handling
+- **Enterprise Security**: Built-in security features for production deployments
+
+## Security Features
+
+This server includes enterprise-grade security features:
+
+- **Transport Security**: Secure SSE mode for web deployments with configurable bind address
+- **Input Sanitization**: All inputs are properly validated and sanitized
+- **Structured Logging**: JSON logging prevents log injection attacks  
+- **Graceful Shutdown**: Proper cleanup on termination signals
+- **Error Handling**: Secure error messages that don't leak implementation details
 
 ## Usage
 

@@ -11,6 +11,18 @@
 - 📊 **Resource Caching** - SQLite-powered caching with analytics
 - 📈 **Session History** - Track tool usage and performance metrics
 - 🔄 **Multi-Server Support** - Save and switch between server profiles
+- 🔒 **Enterprise Security** - Built-in protection against modern attacks
+
+## Security Features
+
+This client includes enterprise-grade security features:
+
+- **Input Validation**: All user inputs are validated against SQL injection, command injection, and path traversal
+- **Emoji Jailbreak Protection**: Detects and blocks emoji-based prompt injection attempts
+- **Unicode Security**: Prevents zero-width character attacks and homograph attacks
+- **JSON Validation**: Protects against JSON bombs with depth and size limits
+- **Secure Database**: All queries use parameterized statements
+- **URL Validation**: SSE URLs are validated to prevent dangerous schemes
 
 ## Installation
 

@@ -28,6 +28,18 @@
 - **💾 SQLite Resource Caching** - Built-in resource caching with connection pooling for MCP clients
 - **📦 Binary Distribution** - Easy installation and deployment
 
+## 🔒 Enterprise Security
+
+Agenterra generates code with enterprise-grade security features built-in. Every generated server and client includes comprehensive protection against modern attack vectors.
+
+**Key Security Features:**
+- **Input Validation**: Protection against SQL injection, command injection, and prompt injection
+- **Unicode Security**: Detection of zero-width characters and emoji-based attacks
+- **Transport Security**: Secure SSE mode with URL validation
+- **Resource Protection**: Size limits and rate limiting to prevent DoS
+
+See [Enterprise Security Features](docs/ENTERPRISE_SECURITY.md) for complete details.
+
 ## 🚀 Quick Start
 
 ### Prerequisites

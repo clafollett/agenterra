@@ -515,7 +515,9 @@ mod tests {
         assert!(InputValidator::check_json_structure(r#"{"key": "value"}"#).is_ok());
         
         // Deep nesting
+        {% raw %}
         let deep_json = (0..15).fold("1", |acc, _| format!(r#"{{"a": {}}}"#, acc));
+        {% endraw %}
         assert!(InputValidator::check_json_structure(&deep_json).is_err());
     }
 
