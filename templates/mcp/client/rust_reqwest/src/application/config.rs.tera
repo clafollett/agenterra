@@ -35,6 +35,10 @@ pub struct ServerProfile {
     pub description: Option<String>,
     /// Whether this is the default server
     pub is_default: bool,
+    /// Transport protocol (stdio, sse)
+    pub transport: Option<String>,
+    /// Tools to disable for this server (stored as JSON array)
+    pub disabled_tools: Option<Vec<String>>,
     /// When the profile was created
     pub created_at: DateTime<Utc>,
     /// When the profile was last used
@@ -119,13 +123,18 @@ impl ConfigManager {
             .transpose()
             .map_err(|e| ClientError::ConfigError(format!("Failed to serialize environment: {}", e)))?;
 
+        let disabled_tools_json = profile.disabled_tools.as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize disabled_tools: {}", e)))?;
+
         let is_default = profile.is_default;
         let name = profile.name.clone();
 
         self.db.with_connection(move |conn| {
             conn.execute(
-                "INSERT INTO servers (id, name, command, args, environment, timeout, description, is_default, created_at, last_used)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO servers (id, name, command, args, environment, timeout, description, is_default, transport, disabled_tools, created_at, last_used)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     profile.id,
                     profile.name,
@@ -135,6 +144,8 @@ impl ConfigManager {
                     profile.timeout,
                     profile.description,
                     profile.is_default as i32,
+                    profile.transport.as_deref().unwrap_or("stdio"),
+                    disabled_tools_json,
                     profile.created_at.timestamp(),
                     profile.last_used.map(|dt| dt.timestamp())
                 ]
@@ -159,7 +170,7 @@ impl ConfigManager {
 
         self.db.with_connection(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                "SELECT id, name, command, args, environment, timeout, description, is_default, transport, disabled_tools, created_at, last_used
                  FROM servers WHERE name = ?1"
             )?;
 
