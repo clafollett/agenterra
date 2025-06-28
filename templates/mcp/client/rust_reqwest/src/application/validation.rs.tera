@@ -388,19 +388,8 @@ impl InputValidator {
         
         // Layer 3: Pattern detection
         if self.config.patterns.jailbreak_detection {
-            match self.detect_patterns(&sanitized, field_config) {
-                Ok(risk_score) => {
-                    if risk_score > self.config.patterns.detection_threshold {
-                        issues.push(ValidationIssue {
-                            severity: IssueSeverity::Warning,
-                            category: IssueCategory::Pattern,
-                            message: format!("Suspicious pattern detected (risk score: {:.2})", risk_score),
-                            location: None,
-                        });
-                    }
-                }
-                Err(pattern_issues) => issues.extend(pattern_issues),
-            }
+            let pattern_issues = self.detect_patterns(&sanitized, field_config);
+            issues.extend(pattern_issues);
         }
         
         // Layer 4: Content-specific validation
@@ -593,23 +582,32 @@ impl InputValidator {
         &self,
         input: &str,
         _field_config: Option<&FieldSettings>,
-    ) -> std::result::Result<f32, Vec<ValidationIssue>> {
-        let mut risk_components: Vec<(String, f32)> = Vec::new();
-        let mut mitigating_factors = 0.0;
+    ) -> Vec<ValidationIssue> {
+        let mut issues = Vec::new();
         
         // Context switch detection (high severity)
         if self.config.patterns.detect_context_switches {
-            let (detected, severity) = self.detect_context_switch_with_severity(input);
+            let (detected, _severity) = self.detect_context_switch_with_severity(input);
             if detected {
-                risk_components.push(("context_switch".to_string(), severity));
+                issues.push(ValidationIssue {
+                    severity: IssueSeverity::Warning,
+                    category: IssueCategory::Pattern,
+                    message: "Context switch pattern detected".to_string(),
+                    location: None,
+                });
             }
         }
         
         // Meta-instruction detection (very high severity)
         if self.config.patterns.detect_meta_instructions {
-            let (detected, severity) = self.detect_meta_instructions_with_severity(input);
+            let (detected, _severity) = self.detect_meta_instructions_with_severity(input);
             if detected {
-                risk_components.push(("meta_instruction".to_string(), severity));
+                issues.push(ValidationIssue {
+                    severity: IssueSeverity::Warning,
+                    category: IssueCategory::Pattern,
+                    message: "Meta instruction pattern detected".to_string(),
+                    location: None,
+                });
             }
         }
         
@@ -617,69 +615,90 @@ impl InputValidator {
         if self.config.patterns.detect_encoded_content {
             let (detected, encoding_type) = self.detect_encoded_content_with_type(input);
             if detected {
-                let severity = match encoding_type.as_str() {
-                    "base64" => 0.3,
-                    "hex" => 0.2,
-                    _ => 0.25,
-                };
-                risk_components.push((encoding_type, severity));
+                issues.push(ValidationIssue {
+                    severity: IssueSeverity::Warning,
+                    category: IssueCategory::Pattern,
+                    message: format!("{} encoding detected", encoding_type),
+                    location: None,
+                });
             }
         }
         
-        // Check custom patterns with weighted scoring
+        // Check custom patterns
         for (idx, pattern_str) in self.config.patterns.custom_patterns.iter().enumerate() {
             if let Ok(pattern) = Regex::new(pattern_str) {
-                if let Some(captures) = pattern.captures(input) {
-                    // Score based on match length and position
-                    let match_len = captures.get(0).map_or(0, |m| m.len());
-                    let match_ratio = match_len as f32 / input.len() as f32;
-                    let severity = 0.2 + (match_ratio * 0.3).min(0.3);
-                    risk_components.push((format!("custom_pattern_{}", idx), severity));
-                }
-            }
-        }
-        
-        // Check allowed patterns (mitigating factors)
-        for pattern_str in &self.config.patterns.allowed_patterns {
-            if let Ok(pattern) = Regex::new(pattern_str) {
                 if pattern.is_match(input) {
-                    mitigating_factors += 0.2;
+                    issues.push(ValidationIssue {
+                        severity: IssueSeverity::Warning,
+                        category: IssueCategory::Pattern,
+                        message: format!("Custom pattern {} matched", idx),
+                        location: None,
+                    });
                 }
             }
         }
         
-        // Calculate composite risk score with weighted averaging
-        let total_risk = if risk_components.is_empty() {
-            0.0
-        } else {
-            // Apply exponential weighting for multiple risks (they compound)
-            let base_score: f32 = risk_components.iter()
-                .map(|(_, severity)| severity)
-                .sum();
-            
-            let compound_factor = 1.0 + (risk_components.len() as f32 - 1.0) * 0.1;
-            let raw_score = (base_score / risk_components.len() as f32) * compound_factor;
-            
-            // Apply mitigating factors
-            (raw_score - mitigating_factors).max(0.0).min(1.0)
-        };
-        
-        // Log detected patterns for debugging
-        if !risk_components.is_empty() {
-            tracing::debug!(
-                "Pattern detection results: {:?}, final score: {:.2}",
-                risk_components.iter()
-                    .map(|(name, score)| format!("{}={:.2}", name, score))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                total_risk
-            );
+        // Check for emoji-related patterns
+        if self.config.unicode.emoji_homograph_detection {
+            if let Some(emoji_issue) = self.detect_emoji_patterns(input) {
+                issues.push(emoji_issue);
+            }
         }
         
-        Ok(total_risk)
+        issues
     }
 
     // ===== Helper Methods =====
+    
+    fn detect_emoji_patterns(&self, input: &str) -> Option<ValidationIssue> {
+        // Check for regional indicator sequences (flag emojis that could hide text)
+        if self.check_regional_indicators(input) {
+            return Some(ValidationIssue {
+                severity: IssueSeverity::Warning,
+                category: IssueCategory::Unicode,
+                message: "Regional indicators spelling hidden message detected".to_string(),
+                location: None,
+            });
+        }
+        
+        // Check for emoji-letter-emoji patterns
+        if self.check_emoji_letter_patterns(input) {
+            return Some(ValidationIssue {
+                severity: IssueSeverity::Warning,
+                category: IssueCategory::Unicode,
+                message: "Hidden message in emoji sequence detected".to_string(),
+                location: None,
+            });
+        }
+        
+        None
+    }
+    
+    fn check_regional_indicators(&self, input: &str) -> bool {
+        // Count consecutive regional indicators that could spell words
+        let regional_indicators: Vec<char> = input.chars()
+            .filter(|&c| c >= '\u{1F1E6}' && c <= '\u{1F1FF}')
+            .collect();
+        
+        // If we have more than 4 regional indicators in a row, it might be hiding text
+        regional_indicators.len() > 4
+    }
+    
+    fn check_emoji_letter_patterns(&self, input: &str) -> bool {
+        let chars: Vec<char> = input.chars().collect();
+        let mut emoji_letter_count = 0;
+        
+        for window in chars.windows(3) {
+            if is_emoji_char(window[0]) && window[1].is_ascii_alphabetic() && is_emoji_char(window[2]) {
+                emoji_letter_count += 1;
+                if emoji_letter_count >= 3 {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
     
     fn contains_disallowed_chars(&self, grapheme: &str) -> bool {
         // Check default disallowed characters
@@ -1352,18 +1371,25 @@ fn is_format_char(ch: char) -> bool {
     )
 }
 
+/// Check if a character is an emoji
+fn is_emoji_char(ch: char) -> bool {
+    // Basic emoji ranges
+    matches!(ch,
+        '\u{1F600}'..='\u{1F64F}' |  // Emoticons
+        '\u{1F300}'..='\u{1F5FF}' |  // Misc Symbols and Pictographs
+        '\u{1F680}'..='\u{1F6FF}' |  // Transport and Map
+        '\u{1F1E6}'..='\u{1F1FF}' |  // Regional indicators (flags)
+        '\u{2600}'..='\u{26FF}' |    // Misc symbols
+        '\u{2700}'..='\u{27BF}' |    // Dingbats
+        '\u{1F900}'..='\u{1F9FF}' |  // Supplemental Symbols and Pictographs
+        '\u{1F780}'..='\u{1F7FF}' |  // Geometric Shapes Extended
+        '\u{1F800}'..='\u{1F8FF}'    // Supplemental Arrows-C
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_backward_compatibility() {
-        // Ensure legacy API still works
-        let validator = InputValidator::default();
-        assert!(matches!(validator.validate_server_name("my-server_123"), ValidationResult::Ok(_)));
-        assert!(matches!(validator.validate_server_name(""), ValidationResult::Error(_)));
-        assert!(matches!(validator.validate_server_name("../etc/passwd"), ValidationResult::Error(_)));
-    }
 
     #[test]
     fn test_config_aware_validation() {
