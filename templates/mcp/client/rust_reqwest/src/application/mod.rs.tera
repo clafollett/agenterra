@@ -8,6 +8,7 @@ pub mod config;
 pub mod registry;
 pub mod result;
 pub mod session_manager;
+pub mod validation_config;
 pub mod validation;
 
 // Re-export main types
@@ -17,3 +18,4 @@ pub use registry::{ToolInfo, ToolRegistry};
 pub use result::{ContentType, ToolResult};
 pub use session_manager::McpSessionManager;
 pub use validation::InputValidator;
+pub use validation_config::{ValidationConfig, ValidationAction, FieldSettings};

@@ -1,0 +1,31 @@
+//! Simple in-process mock MCP server for testing
+//!
+//! This provides a lightweight mock server that runs in the same process
+//! for easy testing without external dependencies.
+
+use crate::application::config::ServerProfile;
+
+/// Simple mock server that just provides a test server profile
+pub struct SimpleMockServer;
+
+impl SimpleMockServer {
+    /// Create a server profile that points to a simple echo command for testing
+    pub fn create_test_profile(name: &str) -> ServerProfile {
+        ServerProfile {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            description: Some("Mock server for testing".to_string()),
+            command: "echo".to_string(),
+            args: vec!["mock".to_string()],
+            environment: None,
+            timeout: Some(30),
+            is_default: false,
+            transport: Some("stdio".to_string()),
+            disabled: false,
+            always_allowed: Some(vec!["echo".to_string(), "test_allowed".to_string()]),
+            disabled_tools: Some(vec!["test_disabled".to_string()]),
+            created_at: chrono::Utc::now(),
+            last_used: None,
+        }
+    }
+}

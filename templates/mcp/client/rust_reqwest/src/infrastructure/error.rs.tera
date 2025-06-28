@@ -58,11 +58,23 @@ pub enum ClientError {
     /// Configuration-related errors
     #[error("Configuration error: {0}")]
     ConfigError(String),
+    
+    /// Tool-related errors (disabled tools, permission denied, etc.)
+    #[error("Tool error: {0}")]
+    ToolError(String),
+    
+    /// I/O errors (file operations, etc.)
+    #[error("I/O error: {0}")]
+    Io(String),
+    
+    /// Configuration parsing errors
+    #[error("Config error: {0}")]
+    Config(String),
 }
 
 impl From<serde_json::Error> for ClientError {
     fn from(err: serde_json::Error) -> Self {
-        ClientError::Protocol(format!("JSON serialization error: {}", err))
+        ClientError::Protocol(format!("JSON serialization error: {err}"))
     }
 }
 
@@ -74,7 +86,7 @@ impl From<agenterra_rmcp::service::ServiceError> for ClientError {
                 ClientError::Protocol(format!("MCP error {}: {}", mcp_err.code.0, mcp_err.message))
             }
             ServiceError::TransportSend(_) => {
-                ClientError::Transport(format!("Transport send error: {}", err))
+                ClientError::Transport(format!("Transport send error: {err}"))
             }
             ServiceError::TransportClosed => {
                 ClientError::Connection("Transport closed unexpectedly".to_string())
@@ -92,7 +104,7 @@ impl From<agenterra_rmcp::service::ServiceError> for ClientError {
                 }
             }
             // Handle any future variants
-            _ => ClientError::Protocol(format!("Service error: {}", err)),
+            _ => ClientError::Protocol(format!("Service error: {err}")),
         }
     }
 }

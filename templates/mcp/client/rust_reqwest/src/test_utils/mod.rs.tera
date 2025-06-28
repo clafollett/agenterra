@@ -1,0 +1,11 @@
+//! Test utilities for {{ project_name }}
+//!
+//! This module provides utilities for testing MCP client functionality.
+//!
+//! Available when the `test-utils` feature is enabled or during testing.
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod simple_mock;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use simple_mock::SimpleMockServer;

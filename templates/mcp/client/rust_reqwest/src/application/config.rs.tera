@@ -120,22 +120,22 @@ impl ConfigManager {
     /// existing default server.
     pub async fn add_server(&self, profile: ServerProfile) -> Result<()> {
         let args_json = serde_json::to_string(&profile.args)
-            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize args: {}", e)))?;
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize args: {e}")))?;
 
         let env_json = profile.environment.as_ref()
             .map(serde_json::to_string)
             .transpose()
-            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize environment: {}", e)))?;
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize environment: {e}")))?;
 
         let disabled_tools_json = profile.disabled_tools.as_ref()
             .map(serde_json::to_string)
             .transpose()
-            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize disabled_tools: {}", e)))?;
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize disabled_tools: {e}")))?;
 
         let always_allowed_json = profile.always_allowed.as_ref()
             .map(serde_json::to_string)
             .transpose()
-            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize always_allowed: {}", e)))?;
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize always_allowed: {e}")))?;
 
         let is_default = profile.is_default;
         let name = profile.name.clone();
@@ -349,7 +349,7 @@ impl ConfigManager {
             Ok(())
         }).await.map_err(|e| match e {
             ClientError::Client(msg) if msg.contains("QueryReturnedNoRows") => {
-                ClientError::ConfigError(format!("Server '{}' not found", name))
+                ClientError::ConfigError(format!("Server '{name}' not found"))
             }
             _ => e
         })

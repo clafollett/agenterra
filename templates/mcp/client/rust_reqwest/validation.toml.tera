@@ -1,0 +1,146 @@
+# {{ project_name }} Validation Configuration
+# 
+# This configuration controls how the {{ project_name }} client validates inputs
+# before sending them to MCP servers. By default, settings are balanced for 
+# general use while providing security against common attacks.
+
+[validation]
+# Security level preset: "permissive", "balanced", "strict", "custom"
+# - permissive: Minimal validation, suitable for trusted environments
+# - balanced: Default, good security without being overly restrictive
+# - strict: Maximum security, may block some legitimate content
+# - custom: Use the detailed settings below
+security_level = "balanced"
+
+# What to do when validation fails
+# - "reject": Block the request and return an error
+# - "sanitize": Clean the input and continue
+# - "warn": Log a warning but allow the request
+validation_action = "sanitize"
+
+# Whether to log validation events for audit trails
+audit_logging = false
+
+# Path to audit log file (if audit_logging is true)
+# Uses the same data directory as the {{ project_name }} database
+audit_log_path = "~/.{{ project_name }}/validation-audit.log"
+
+[unicode]
+# Allow emoji in inputs
+allow_emoji = true
+
+# Apply Unicode normalization (NFKC)
+normalize_unicode = true
+
+# Filter based on Unicode categories
+strict_category_filtering = false
+
+# Maximum tokens a single grapheme cluster can produce
+# (helps prevent token explosion attacks)
+max_tokens_per_cluster = 3
+
+# String to replace dangerous content with (when action = "sanitize")
+replacement_string = ""
+
+# Additional Unicode characters to block (hex codes)
+# Example: ["\u200B", "\u200C"] for zero-width spaces
+custom_blocked_chars = []
+
+# Additional dangerous Unicode categories to filter
+# Standard categories: Cc, Cf, Cs, Co, Cn
+# See: https://www.unicode.org/reports/tr44/#General_Category_Values
+custom_dangerous_categories = []
+
+[patterns]
+# Enable pattern-based jailbreak detection
+jailbreak_detection = true
+
+# Threshold for pattern detection (0.0 - 1.0)
+# Lower = more sensitive, Higher = less false positives
+detection_threshold = 0.7
+
+# Check for sudden context switches
+detect_context_switches = true
+
+# Check for meta-instructions (instructions about instructions)
+detect_meta_instructions = true
+
+# Check for encoded content (base64, hex, etc)
+detect_encoded_content = true
+
+# Additional patterns to check (regex)
+custom_patterns = []
+
+# Patterns to explicitly allow (regex)
+# Useful for reducing false positives in specific domains
+allowed_patterns = []
+
+[content]
+# Maximum input length (characters)
+max_input_length = 1048576  # 1MB
+
+# Maximum JSON nesting depth
+max_json_depth = 10
+
+# Maximum number of keys in JSON objects
+max_json_keys = 1000
+
+# Check for potential injection attacks
+check_sql_injection = true
+check_command_injection = true
+check_path_traversal = true
+
+[server_overrides]
+# Per-server validation overrides
+# Useful when different servers need different security levels
+
+# [server_overrides."trusted-internal-server"]
+# security_level = "permissive"
+# allow_emoji = true
+# jailbreak_detection = false
+
+# [server_overrides."public-api-server"]  
+# security_level = "strict"
+# allow_emoji = false
+# validation_action = "reject"
+
+[field_specific]
+# Field-specific validation rules
+# These override general settings for specific input types
+
+[field_specific.tool_arguments]
+# Validation for tool arguments (JSON)
+max_length = 65536
+allow_emoji = true
+strict_unicode_filtering = false
+
+[field_specific.server_names]
+# Validation for server names
+max_length = 255
+allow_emoji = false
+pattern = "^[a-zA-Z0-9_-]+$"
+
+[field_specific.file_paths]
+# Validation for file paths
+max_length = 4096
+check_path_traversal = true
+allowed_prefixes = ["./", "/home", "/Users", "C:\\Users"]
+blocked_prefixes = ["/etc", "/sys", "/proc", "C:\\Windows\\System32"]
+
+[performance]
+# Performance-related settings
+
+# Cache validation results for repeated inputs
+cache_validation_results = true
+
+# Cache size (number of entries)
+validation_cache_size = 1000
+
+# Cache TTL in seconds
+validation_cache_ttl = 300
+
+# Run validation in parallel for batch operations
+parallel_validation = true
+
+# Maximum concurrent validation operations
+max_concurrent_validations = 10

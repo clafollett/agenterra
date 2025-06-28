@@ -78,6 +78,9 @@ files:
   - source: "src/application/validation.rs.tera"
     destination: "src/application/validation.rs"
     
+  - source: "src/application/validation_config.rs.tera"
+    destination: "src/application/validation_config.rs"
+    
   # API layer - DTOs and external interfaces
   - source: "src/api/mod.rs.tera"
     destination: "src/api/mod.rs"
@@ -118,11 +121,31 @@ files:
   - source: "src/cli/runner.rs.tera"
     destination: "src/cli/runner.rs"
     
+  # Test utilities
+  - source: "src/test_utils/mod.rs.tera"
+    destination: "src/test_utils/mod.rs"
+    
+  - source: "src/test_utils/simple_mock.rs.tera"
+    destination: "src/test_utils/simple_mock.rs"
+    
+  # Tests
+  - source: "tests/test_with_mock_server.rs.tera"
+    destination: "tests/test_with_mock_server.rs"
+    
+  - source: "tests/sse_integration_tests.rs.tera"
+    destination: "tests/sse_integration_tests.rs"
+    
+  - source: "tests/README.md"
+    destination: "tests/README.md"
+    
   - source: "README.md.tera"
     destination: "README.md"
     
   - source: "LICENSE"
     destination: "LICENSE"
+    
+  - source: "validation.toml.tera"
+    destination: "validation.toml.example"
 
 required_directories:
   - "src"
@@ -133,7 +156,9 @@ required_directories:
   - "src/infrastructure"
   - "src/infrastructure/cache"
   - "src/infrastructure/database"
+  - "src/test_utils"
   - "src/ui"
+  - "tests"
 
 hooks:
   post_generate:

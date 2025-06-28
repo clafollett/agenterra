@@ -42,6 +42,10 @@ pub struct Cli {
     #[arg(long, default_value = "info")]
     pub log_level: String,
     
+    /// Enable unstable features (like auth commands)
+    #[arg(long, hide = true)]
+    pub unstable_auth: bool,
+    
     /// Command to execute
     #[command(subcommand)]
     pub command: Option<Commands>,

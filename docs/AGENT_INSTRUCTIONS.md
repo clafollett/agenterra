@@ -17,6 +17,10 @@ This file provides guidance to your LLM Agent when working with code in this rep
    - **MUST** Keep tests in the same module as the code under test
 3. **NO analysis paralysis** - Use tests to guide development, avoid overthinking
 
+## Template Validation Requirements
+
+**MANDATORY**: When modifying templates, follow the [Template Validation Process](./TEMPLATE_VALIDATION.md) before committing.
+
 ## CI/CD Workflow (HIGH PRIORITY)
 
 ### Conventional Commits

@@ -257,8 +257,8 @@ impl ResourceCache {
     ///
     /// # Example
     /// ```rust,no_run
-    /// # use {{ crate_name }}::cache::{ResourceCache, CacheConfig};
-    /// # use {{ crate_name }}::database::DatabaseManager;
+    /// # use {{ crate_name }}::infrastructure::cache::resource_cache::{ResourceCache, CacheConfig};
+    /// # use {{ crate_name }}::infrastructure::database::manager::DatabaseManager;
     /// # use std::sync::Arc;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let db = Arc::new(DatabaseManager::new().await?);

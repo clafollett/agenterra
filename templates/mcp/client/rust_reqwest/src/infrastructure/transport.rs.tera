@@ -95,10 +95,11 @@ impl MockTransport {
 
     /// Create mock transport with configurable limit
     pub fn with_limit(responses: Vec<serde_json::Value>, limit: usize) -> Self {
+        let max_responses = limit.min(responses.len()).min(1000);
         Self {
             responses,
             call_count: 0,
-            max_responses: limit.min(1000),
+            max_responses,
         }
     }
 }

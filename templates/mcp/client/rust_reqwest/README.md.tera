@@ -215,6 +215,7 @@ Configuration is stored in SQLite databases:
 - `AGENTERRA_OUTPUT_DIR` - Override default output directory
 - `AGENTERRA_TEMPLATE_DIR` - Override template directory
 - `RUST_LOG` - Set logging level (e.g., `debug`, `info`, `warn`)
+- `MOCK_SERVER_PATH` - Path to mock MCP server for testing
 
 ## Exit Codes
 
@@ -280,10 +281,55 @@ All client sessions are tracked in the configuration database:
 
 ## Development
 
+### Testing
+
 Run tests:
 ```bash
 cargo test
 ```
+
+#### Testing
+
+This client includes comprehensive tests that can run without external dependencies.
+
+**Unit Tests**
+
+Run the core functionality tests:
+
+```bash
+cargo test --lib
+```
+
+**Integration Tests**
+
+The integration tests verify client behavior with mock configurations:
+
+```bash
+cargo test test_client_with_mock_server --features test-utils -- --nocapture
+```
+
+**Custom Mock Server**
+
+You can point to your own MCP server for testing:
+
+```bash
+MOCK_SERVER_PATH=/path/to/your/mcp/server cargo test test_client_with_mock_server --features test-utils -- --nocapture
+```
+
+**Test Coverage**
+
+The tests verify:
+- Connection management and configuration
+- Tool permission handling (disabled/allowed tools)  
+- Configuration validation
+- Error handling scenarios
+- Database operations
+
+**Zero External Dependencies**
+
+All tests use mock configurations and don't require external servers or Python.
+
+### Building
 
 Build with all features:
 ```bash

@@ -33,7 +33,7 @@ pub async fn execute() -> Result<()> {
     // Validate SSE URL if SSE transport is selected
     if matches!(cli.transport, TransportProtocol::Sse) && cli.sse_url.is_none() && cli.command.is_none() {
         return Err(ClientError::ConfigError(
-            "SSE transport requires --sse-url to be specified".to_string()
+            "SSE transport requires --sse-url parameter. Example: --transport sse --sse-url http://localhost:8080".to_string()
         ));
     }
     
@@ -43,6 +43,11 @@ pub async fn execute() -> Result<()> {
             handle_server_command(action).await
         }
         Some(Commands::Auth { action }) => {
+            if !cli.unstable_auth {
+                return Err(ClientError::ConfigError(
+                    "Auth commands are currently unstable. Use --unstable-auth flag to enable them.".to_string()
+                ));
+            }
             handle_auth_command(action).await
         }
         Some(Commands::Run { call, args, server, profile, timeout }) => {

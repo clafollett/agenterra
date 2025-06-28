@@ -37,6 +37,8 @@ pub mod application {
     pub mod registry;
     pub mod result;
     pub mod session_manager;
+    pub mod validation_config;
+    pub mod validation;
 }
 
 // API layer - DTOs and external interfaces
@@ -53,6 +55,10 @@ pub mod ui {
 // CLI integration
 pub mod cli;
 
+// Test utilities (available during testing and in dev-dependencies)
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 // Re-export main types for convenient access
 pub use application::auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
 pub use infrastructure::cache::resource_cache::{CacheAnalytics, CacheConfig, CachedResource, ResourceCache};
@@ -68,6 +74,7 @@ pub use application::registry::{ToolInfo, ToolRegistry};
 pub use api::resource::{ResourceContent, ResourceInfo};
 pub use application::result::{ContentType, ToolResult};
 pub use application::session_manager::McpSessionManager;
+pub use application::validation::InputValidator;
 pub use infrastructure::transport::{Transport, TransportProtocol};
 
 /// Current version of the {{ project_name }}

@@ -1,13 +1,13 @@
 //! Configuration command handlers for {{ project_name }}
 
 use crate::application::config::{ConfigManager, ServerProfile};
-use crate::application::validation::InputValidator;
+use crate::application::validation::{InputValidator, ValidationResult};
 use crate::infrastructure::database::manager::DatabaseManager;
 use crate::infrastructure::error::{ClientError, Result};
 use crate::cli::args::ServerCommands;
 use std::sync::Arc;
 use chrono::Utc;
-use tracing::{info, warn};
+use tracing::info;
 use uuid::Uuid;
 use serde_json;
 
@@ -31,32 +31,75 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
             disabled,
             set_default 
         } => {
+            // Create validator instance
+            let validator = InputValidator::default();
+            
             // Validate inputs
-            InputValidator::validate_server_name(name)?;
-            InputValidator::validate_command(command)?;
-            InputValidator::validate_args(args)?;
+            match validator.validate_server_name(name) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid server name: {}", issues[0].message)));
+                }
+            }
+            
+            match validator.validate_command(command) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid command: {}", issues[0].message)));
+                }
+            }
+            
+            match validator.validate_args(args) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid args: {}", issues[0].message)));
+                }
+            }
             
             if let Some(desc) = description {
-                InputValidator::validate_description(desc)?;
+                match validator.validate_description(desc) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid description: {}", issues[0].message)));
+                    }
+                }
             }
             
             // Parse and validate environment variables if provided
             let environment = if let Some(env_str) = env {
-                Some(InputValidator::validate_environment(env_str)?)
+                // validate_environment returns Result<HashMap<String, String>>
+                match validator.validate_environment(env_str) {
+                    Ok(env_map) => Some(env_map),
+                    Err(e) => return Err(e),
+                }
             } else {
                 None
             };
             
             // Parse and validate disabled tools if provided
             let disabled_tools_list = if let Some(tools_str) = disabled_tools {
-                Some(InputValidator::validate_disabled_tools(tools_str)?)
+                match validator.validate_disabled_tools(tools_str) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {
+                        Some(tools_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                    },
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid disabled tools: {}", issues[0].message)));
+                    }
+                }
             } else {
                 None
             };
             
             // Parse and validate always allowed tools if provided
             let always_allowed_list = if let Some(tools_str) = always_allowed {
-                Some(InputValidator::validate_disabled_tools(tools_str)?)
+                match validator.validate_disabled_tools(tools_str) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {
+                        Some(tools_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                    },
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid always allowed tools: {}", issues[0].message)));
+                    }
+                }
             } else {
                 None
             };
@@ -185,41 +228,89 @@ pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
         }
         
         ServerCommands::AddJson { name, json } => {
+            // Create validator instance
+            let validator = InputValidator::default();
+            
             // Validate name
-            InputValidator::validate_server_name(name)?;
+            match validator.validate_server_name(name) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid server name: {}", issues[0].message)));
+                }
+            }
             
             // Validate JSON structure before parsing
-            InputValidator::validate_json_input(json)?;
+            match validator.validate_json_input(json) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid JSON: {}", issues[0].message)));
+                }
+            }
             
             let mut profile: ServerProfile = serde_json::from_str(json)
                 .map_err(|e| ClientError::ConfigError(format!("Invalid JSON: {}", e)))?;
             
             // Validate the parsed profile data
-            InputValidator::validate_command(&profile.command)?;
-            InputValidator::validate_args(&profile.args)?;
+            match validator.validate_command(&profile.command) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid command: {}", issues[0].message)));
+                }
+            }
+            
+            match validator.validate_args(&profile.args) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid args: {}", issues[0].message)));
+                }
+            }
             
             if let Some(desc) = &profile.description {
-                InputValidator::validate_description(desc)?;
+                match validator.validate_description(desc) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid description: {}", issues[0].message)));
+                    }
+                }
             }
             
             if let Some(env) = &profile.environment {
                 // Validate each environment variable
                 for (key, value) in env {
-                    InputValidator::validate_identifier(key, "Environment variable name", false)?;
-                    InputValidator::check_dangerous_patterns(value)?;
-                    InputValidator::check_unicode_attacks(value)?;
+                    match validator.validate_identifier(key, "Environment variable name", false) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid environment variable name '{}': {}", key, issues[0].message)));
+                        }
+                    }
+                    match validator.validate_general_input(value) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid environment value: {}", issues[0].message)));
+                        }
+                    }
                 }
             }
             
             if let Some(tools) = &profile.disabled_tools {
                 for tool in tools {
-                    InputValidator::validate_identifier(tool, "Tool name", true)?;
+                    match validator.validate_identifier(tool, "Tool name", true) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid disabled tool name '{}': {}", tool, issues[0].message)));
+                        }
+                    }
                 }
             }
             
             if let Some(tools) = &profile.always_allowed {
                 for tool in tools {
-                    InputValidator::validate_identifier(tool, "Tool name", true)?;
+                    match validator.validate_identifier(tool, "Tool name", true) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid allowed tool name '{}': {}", tool, issues[0].message)));
+                        }
+                    }
                 }
             }
             

@@ -1,6 +1,6 @@
 //! Interactive REPL interface for MCP client
 
-use anyhow::Result;
+use crate::infrastructure::error::Result;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use serde_json::{json, Value};

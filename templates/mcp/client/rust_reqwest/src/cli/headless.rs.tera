@@ -94,7 +94,7 @@ pub async fn handle_run_command(
             for arg in &server_args {
                 command.arg(arg);
             }
-            client.connect_to_child_process(command).await?;
+            client.connect_stdio(command).await?;
         }
         TransportProtocol::Sse => {
             // For SSE, the server_command should be the URL, or we use the sse_url parameter

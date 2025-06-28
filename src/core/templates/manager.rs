@@ -432,7 +432,8 @@ impl TemplateManager {
                 .await?;
         }
 
-        // TODO: Run post-generate hooks if needed
+        // Execute post-generation hooks from manifest
+        self.execute_post_generation_hooks(output_dir).await?;
 
         Ok(())
     }
@@ -748,8 +749,8 @@ impl TemplateManager {
 
                 // Add operation metadata
                 context.insert("operation_id", &operation.id);
-                context.insert("method", &"get"); // TODO: Get actual method
-                context.insert("path", &format!("/{}", &operation.id)); // TODO: Get actual path
+                context.insert("method", &operation.method);
+                context.insert("path", &operation.path);
 
                 // Insert OpenAPI-native fields
                 context.insert("operation_id", &operation.id);

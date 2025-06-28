@@ -146,8 +146,7 @@ impl ToolRegistry {
                     if let Some(field_name) = required_field.as_str() {
                         if !params_obj.contains_key(field_name) {
                             return Err(ClientError::Validation(format!(
-                                "required parameter '{}' is missing",
-                                field_name
+                                "required parameter '{field_name}' is missing"
                             )));
                         }
                     }
@@ -169,8 +168,7 @@ impl ToolRegistry {
                     // Get parameter schema
                     let param_schema = properties_obj.get(param_name)
                         .ok_or_else(|| ClientError::Validation(format!(
-                            "unknown parameter '{}'",
-                            param_name
+                            "unknown parameter '{param_name}'"
                         )))?;
 
                     // Validate parameter type

@@ -33,7 +33,74 @@ use crate::core::Error;
 // External imports (alphabetized)
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
+use std::fmt;
+use std::str::FromStr;
 use tokio::fs;
+
+/// HTTP methods supported by OpenAPI
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HttpMethod {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+    Options,
+}
+
+impl HttpMethod {
+    /// Get all HTTP methods as an array
+    pub fn all() -> &'static [HttpMethod] {
+        &[
+            HttpMethod::Get,
+            HttpMethod::Post,
+            HttpMethod::Put,
+            HttpMethod::Delete,
+            HttpMethod::Patch,
+            HttpMethod::Head,
+            HttpMethod::Options,
+        ]
+    }
+
+
+    /// Get the lowercase string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HttpMethod::Get => "get",
+            HttpMethod::Post => "post",
+            HttpMethod::Put => "put",
+            HttpMethod::Delete => "delete",
+            HttpMethod::Patch => "patch",
+            HttpMethod::Head => "head",
+            HttpMethod::Options => "options",
+        }
+    }
+}
+
+impl fmt::Display for HttpMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for HttpMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "get" => Ok(HttpMethod::Get),
+            "post" => Ok(HttpMethod::Post),
+            "put" => Ok(HttpMethod::Put),
+            "delete" => Ok(HttpMethod::Delete),
+            "patch" => Ok(HttpMethod::Patch),
+            "head" => Ok(HttpMethod::Head),
+            "options" => Ok(HttpMethod::Options),
+            _ => Err(format!("Invalid HTTP method: {}", s)),
+        }
+    }
+}
 
 /// Represents an OpenAPI specification
 #[derive(Debug, serde::Serialize)]
@@ -158,82 +225,105 @@ impl OpenApiContext {
 
     /// Parse all endpoints into structured contexts for template rendering
     pub async fn parse_operations(&self) -> crate::core::error::Result<Vec<OpenApiOperation>> {
-        let mut operations = Vec::new();
-        // Expect 'paths' object
+        // Get paths object
         let paths = self
             .json
             .get("paths")
             .and_then(JsonValue::as_object)
             .ok_or_else(|| Error::openapi("Missing 'paths' object"))?;
-        for (path, item) in paths {
-            // Handle both GET and POST operations
-            for method in ["get", "post"] {
-                if let Some(method_item) = item.get(method).and_then(JsonValue::as_object) {
-                    let operation_id = method_item
-                        .get("operationId")
-                        .and_then(JsonValue::as_str)
-                        .map(String::from)
-                        .unwrap_or_else(|| {
-                            format!(
-                                "{}_{}",
-                                method,
-                                path.trim_start_matches('/').replace('/', "_")
-                            )
-                        });
 
-                    let summary = method_item
-                        .get("summary")
-                        .and_then(JsonValue::as_str)
-                        .map(String::from);
-                    let description = method_item
-                        .get("description")
-                        .and_then(JsonValue::as_str)
-                        .map(String::from);
-                    let external_docs = method_item.get("externalDocs").cloned();
-                    let parameters = self.extract_parameters(item);
-                    let request_body = method_item.get("requestBody").cloned();
-                    let responses = self.extract_responses(method_item);
-                    let callbacks = method_item.get("callbacks").cloned();
-                    let deprecated = method_item.get("deprecated").and_then(JsonValue::as_bool);
-                    let security = method_item
-                        .get("security")
-                        .and_then(JsonValue::as_array)
-                        .cloned();
-                    let servers = method_item
-                        .get("servers")
-                        .and_then(JsonValue::as_array)
-                        .cloned();
-                    let tags = method_item
-                        .get("tags")
-                        .and_then(JsonValue::as_array)
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(JsonValue::as_str)
-                                .map(String::from)
-                                .collect()
-                        });
-                    let vendor_extensions = self.extract_vendor_extensions(method_item);
+        // Use iterator combinators to flatten and map operations
+        let operations = paths
+            .iter()
+            .flat_map(|(path, path_item)| {
+                HttpMethod::all()
+                    .iter()
+                    .filter_map(|method| {
+                        path_item
+                            .get(method.as_str())
+                            .and_then(JsonValue::as_object)
+                            .map(|method_item| (path, method, path_item, method_item))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .map(|(path, method, path_item, method_item)| {
+                self.build_operation(path, method, path_item, method_item)
+            })
+            .collect();
 
-                    operations.push(OpenApiOperation {
-                        id: operation_id,
-                        path: path.clone(),
-                        summary,
-                        description,
-                        external_docs,
-                        parameters,
-                        request_body,
-                        responses,
-                        callbacks,
-                        deprecated,
-                        security,
-                        servers,
-                        tags,
-                        vendor_extensions,
-                    });
-                }
-            }
-        }
         Ok(operations)
+    }
+
+    /// Build an OpenApiOperation from path, method, and method item
+    fn build_operation(
+        &self,
+        path: &str,
+        method: &HttpMethod,
+        path_item: &JsonValue,
+        method_item: &serde_json::Map<String, JsonValue>,
+    ) -> OpenApiOperation {
+        let operation_id = method_item
+            .get("operationId")
+            .and_then(JsonValue::as_str)
+            .map(String::from)
+            .unwrap_or_else(|| {
+                format!(
+                    "{}_{}",
+                    method,
+                    path.trim_start_matches('/').replace('/', "_")
+                )
+            });
+
+        let summary = method_item
+            .get("summary")
+            .and_then(JsonValue::as_str)
+            .map(String::from);
+        let description = method_item
+            .get("description")
+            .and_then(JsonValue::as_str)
+            .map(String::from);
+        let external_docs = method_item.get("externalDocs").cloned();
+        let parameters = self.extract_parameters(path_item);
+        let request_body = method_item.get("requestBody").cloned();
+        let responses = self.extract_responses(method_item);
+        let callbacks = method_item.get("callbacks").cloned();
+        let deprecated = method_item.get("deprecated").and_then(JsonValue::as_bool);
+        let security = method_item
+            .get("security")
+            .and_then(JsonValue::as_array)
+            .cloned();
+        let servers = method_item
+            .get("servers")
+            .and_then(JsonValue::as_array)
+            .cloned();
+        let tags = method_item
+            .get("tags")
+            .and_then(JsonValue::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(JsonValue::as_str)
+                    .map(String::from)
+                    .collect()
+            });
+        let vendor_extensions = self.extract_vendor_extensions(method_item);
+
+        OpenApiOperation {
+            id: operation_id,
+            path: path.to_string(),
+            method: method.clone(),
+            summary,
+            description,
+            external_docs,
+            parameters,
+            request_body,
+            responses,
+            callbacks,
+            deprecated,
+            security,
+            servers,
+            tags,
+            vendor_extensions,
+        }
     }
 
     /// Extracts parameters from an OpenAPI path item, resolving any $ref references
@@ -545,6 +635,8 @@ pub struct OpenApiOperation {
     pub id: String,
     /// The path where this operation is defined (e.g., "/pet/findByStatus")
     pub path: String,
+    /// The HTTP method for this operation
+    pub method: HttpMethod,
     /// A list of tags for API documentation control. Tags can be used for logical grouping of operations.
     #[serde(rename = "tags")]
     pub tags: Option<Vec<String>>,
@@ -786,6 +878,18 @@ mod tests {
             .filter_map(|r| r.get("name").and_then(JsonValue::as_str))
             .collect();
         assert_eq!(names, vec!["k", "m"]);
+    }
+
+    #[test]
+    fn test_http_method_from_str() {
+        // Test case-insensitive parsing
+        assert_eq!(HttpMethod::from_str("GET").unwrap(), HttpMethod::Get);
+        assert_eq!(HttpMethod::from_str("get").unwrap(), HttpMethod::Get);
+        assert_eq!(HttpMethod::from_str("Post").unwrap(), HttpMethod::Post);
+        assert_eq!(HttpMethod::from_str("DELETE").unwrap(), HttpMethod::Delete);
+        
+        // Test invalid method
+        assert!(HttpMethod::from_str("INVALID").is_err());
     }
 
     #[test]
