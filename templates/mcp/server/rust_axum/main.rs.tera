@@ -16,7 +16,6 @@ use tokio::sync::Mutex;
 
 // External imports (alphabetized)
 use clap::Parser;
-use dotenvy::dotenv;
 use log::debug;
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -41,33 +40,41 @@ struct Args {
     sse_keep_alive: u64,
 
     /// Log directory path
-    #[arg(long)]
-    log_dir: Option<String>,
+    #[arg(long, default_value = "logs")]
+    log_dir: String,
 
     /// API URL for backend services
     #[arg(long, default_value = "{{ base_api_url }}")]
     api_url: String,
+    
+    /// Optional configuration file path (TOML format)
+    #[arg(long, short = 'c')]
+    config_file: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize environment variables from .env file if present
     debug!("[{{ project_name }} MCP] main() reached ===");
-    dotenv().ok();
 
     // Parse command line arguments
     let args = Args::parse();
 
-    // Load application config from environment
-    let mut config = Config::load();
+    // Build configuration from command-line arguments
+    let mut config = if let Some(config_path) = &args.config_file {
+        // Load from config file if specified
+        let contents = std::fs::read_to_string(config_path)
+            .map_err(|e| format!("Failed to read config file '{}': {}", config_path, e))?;
+        toml::from_str::<Config>(&contents)
+            .map_err(|e| format!("Failed to parse config file '{}': {}", config_path, e))?
+    } else {
+        // Use defaults
+        Config::default()
+    };
     
-    // Apply CLI overrides (CLI args take precedence over env vars)
+    // Command-line arguments always override config file settings
     config.transport = args.transport;
     config.api_url = args.api_url;
-    
-    if let Some(log_dir) = args.log_dir {
-        config.log_dir = std::path::PathBuf::from(log_dir);
-    }
+    config.log_dir = std::path::PathBuf::from(args.log_dir);
     
     // Parse and apply SSE address
     config.sse_addr = args.sse_addr.parse()

@@ -127,7 +127,7 @@ impl McpClient {
         }
         
         // Try to load validation config from file
-        client.load_validation_config().await;
+        let _ = client.load_validation_config().await;
         
         Ok(client)
     }
@@ -816,6 +816,33 @@ impl McpClient {
             }
         }
         false
+    }
+    
+    /// Add a tool to the always_allowed list and persist to database
+    pub async fn add_tool_to_always_allowed(&mut self, tool_name: &str) -> Result<()> {
+        // Check if we have a server profile and database
+        let profile = self.server_profile.as_ref()
+            .ok_or_else(|| ClientError::Client("No server profile set".to_string()))?;
+        
+        let db = self.database.as_ref()
+            .ok_or_else(|| ClientError::Client("No database connection available".to_string()))?;
+        
+        // Create config manager to update the database
+        let config_manager = crate::application::config::ConfigManager::new(db.clone()).await?;
+        
+        // Add tool to database
+        config_manager.add_tool_to_always_allowed(&profile.id, tool_name).await?;
+        
+        // Update the in-memory profile
+        if let Some(ref mut profile) = self.server_profile {
+            let mut always_allowed = profile.always_allowed.clone().unwrap_or_default();
+            if !always_allowed.contains(&tool_name.to_string()) {
+                always_allowed.push(tool_name.to_string());
+                profile.always_allowed = Some(always_allowed);
+            }
+        }
+        
+        Ok(())
     }
 
     /// Validate parameters for a tool call using the tool registry

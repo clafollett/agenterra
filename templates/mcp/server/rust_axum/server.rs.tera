@@ -16,7 +16,6 @@ use crate::signal::{SignalEvent, spawn_signal_listener};
 use crate::transport::Transport;
 
 // External imports (alphabetized)
-use dotenvy::dotenv;
 use log::debug;
 use agenterra_rmcp::{
     transport::{
@@ -101,7 +100,8 @@ async fn run_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
     debug!("[{{ project_name }} MCP] run_stdio_server start");
 
     // Use an explicitly non-buffered stdio transport
-    let service = McpServer::new().serve(stdio()).await?;
+    let config = Config::default();
+    let service = McpServer::with_config(config).serve(stdio()).await?;
 
     debug!("[{{ project_name }} MCP] run_stdio_server acquired service, about to wait");
 
@@ -122,7 +122,8 @@ async fn run_sse_server(cfg: SseConfig) -> Result<(), Box<dyn std::error::Error>
         sse_keep_alive: cfg.keep_alive,
     };
     let (sse_server, router) = SseServer::new(sse_config);
-    let _ct = sse_server.with_service(McpServer::new);
+    let config = Config::default();
+    let _ct = sse_server.with_service(move || McpServer::with_config(config.clone()));
     debug!("[{{ project_name }} MCP] Starting SSE/Axum server on {}...", cfg.addr);
     let listener = tokio::net::TcpListener::bind(cfg.addr).await?;
     axum::serve(listener, router).await?;
@@ -160,8 +161,8 @@ async fn signal_loop(notify: Arc<Notify>, event: Arc<Mutex<Option<SignalEvent>>>
         match *ev {
             Some(SignalEvent::Reload) => {
                 info!(target = "signal", "Hot reload triggered – reloading config");
-                dotenv().ok();
-                let new_cfg = Config::load();
+                // Hot reload not currently supported with command-line only config
+                let new_cfg = Config::default();
                 {
                     let mut cfg_guard = cfg.lock().await;
                     *cfg_guard = new_cfg.clone();

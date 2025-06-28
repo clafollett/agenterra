@@ -26,7 +26,7 @@
 - **🚀 Production Ready** - Includes logging, error handling, and configuration out of the box
 - **🔌 MCP Protocol Support** - Full compatibility with Model Context Protocol
 - **💾 SQLite Resource Caching** - Built-in resource caching with connection pooling for MCP clients
-- **🚫 Server Control** - Enable/disable servers and manage tool permissions
+- **🛡️ Client Permission Management** - Interactive tool permission prompting with persistent preferences
 - **📦 Binary Distribution** - Easy installation and deployment
 
 ## 🔒 Enterprise Security
@@ -259,8 +259,8 @@ Generated servers and clients support multiple transport modes:
 # With custom keep-alive interval
 ./my-server --transport sse --sse-addr 0.0.0.0:9000 --sse-keep-alive 60
 
-# Environment variables also supported
-TRANSPORT=sse SSE_ADDR=127.0.0.1:8080 ./my-server
+# Configuration via command-line arguments only
+./my-server --transport sse --sse-addr 127.0.0.1:8080
 ```
 
 #### Client Transport Options

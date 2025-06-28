@@ -77,13 +77,13 @@ impl TemplateManager {
                 .map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Failed to read template manifest: {}", e),
+                        format!("Failed to read template manifest: {e}"),
                     )
                 })?;
             serde_yaml::from_str(&manifest_content).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Failed to parse template manifest: {}", e),
+                    format!("Failed to parse template manifest: {e}"),
                 )
             })?
         } else if toml_manifest_path.exists() {
@@ -92,13 +92,13 @@ impl TemplateManager {
                 .map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Failed to read template manifest: {}", e),
+                        format!("Failed to read template manifest: {e}"),
                     )
                 })?;
             toml::from_str(&manifest_content).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Failed to parse template manifest: {}", e),
+                    format!("Failed to parse template manifest: {e}"),
                 )
             })?
         } else {
@@ -107,7 +107,7 @@ impl TemplateManager {
         };
 
         // Create Tera instance with the template directory
-        let tera_pattern = format!("{}/**/*", template_dir_str);
+        let tera_pattern = format!("{template_dir_str}/**/*");
         debug!(
             "TemplateManager - Creating Tera with pattern: {}",
             tera_pattern
@@ -116,7 +116,7 @@ impl TemplateManager {
             error!("Failed to create Tera instance: {}", e);
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Failed to parse templates: {}", e),
+                format!("Failed to parse templates: {e}"),
             )
         })?;
 
@@ -165,10 +165,10 @@ impl TemplateManager {
         let manifest = TemplateManifest::load_from_dir(template_path).await?;
 
         // Create Tera instance with template files matching glob patterns
-        let tera = Tera::new(&format!("{}/**/*", template_dir_str)).map_err(|e| {
+        let tera = Tera::new(&format!("{template_dir_str}/**/*")).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Failed to parse client templates: {}", e),
+                format!("Failed to parse client templates: {e}"),
             )
         })?;
 
@@ -217,7 +217,7 @@ impl TemplateManager {
 
         // First validate required context variables
         let context_value = serde_json::to_value(context).map_err(|e| {
-            crate::core::Error::Template(format!("Failed to serialize context: {}", e))
+            crate::core::Error::Template(format!("Failed to serialize context: {e}"))
         })?;
 
         let context_map = context_value.as_object().ok_or_else(|| {
@@ -239,7 +239,7 @@ impl TemplateManager {
         tokio::fs::create_dir_all(parent).await?;
 
         // Log the template being rendered
-        log::debug!("Rendering template: {}", template_name);
+        log::debug!("Rendering template: {template_name}");
         log::debug!("Output path: {}", output_path.display());
         log::debug!("Parent directory: {}", parent.display());
 
@@ -250,12 +250,12 @@ impl TemplateManager {
         }
 
         // Verify template exists
-        log::debug!("Checking if template exists: {}", template_name);
+        log::debug!("Checking if template exists: {template_name}");
         self.tera.get_template(template_name).map_err(|e| {
-            crate::core::Error::Template(format!("Template not found: {} - {}", template_name, e))
+            crate::core::Error::Template(format!("Template not found: {template_name} - {e}"))
         })?;
 
-        log::debug!("Found template: {}", template_name);
+        log::debug!("Found template: {template_name}");
         log::debug!(
             "Available templates: {:?}",
             self.tera.get_template_names().collect::<Vec<_>>()
@@ -273,15 +273,14 @@ impl TemplateManager {
                     Err(_) => "<unable to read template file>".to_string(),
                 };
 
-                log::error!("Template rendering failed for '{}': {}", template_name, e);
-                log::error!("Tera error details: {:?}", e);
+                log::error!("Template rendering failed for '{template_name}': {e}");
+                log::error!("Tera error details: {e:?}");
                 log::error!(
                     "Available context keys: {:?}",
                     context_map.keys().collect::<Vec<_>>()
                 );
                 return Err(crate::core::Error::Template(format!(
-                    "Failed to render template '{}': {}\nTemplate source:\n{}",
-                    template_name, e, template_source
+                    "Failed to render template '{template_name}': {e}\nTemplate source:\n{template_source}"
                 )));
             }
         };
@@ -300,7 +299,7 @@ impl TemplateManager {
         // Ensure the parent directory exists
         log::debug!("Ensuring parent directory exists: {}", parent.display());
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            log::error!("Failed to create directory: {}", e);
+            log::error!("Failed to create directory: {e}");
             return Err(crate::core::Error::Io(e));
         }
 
@@ -342,7 +341,7 @@ impl TemplateManager {
         for file in &self.manifest.files {
             log::debug!("Processing file: {} -> {}", file.source, file.destination);
             if let Some(for_each) = &file.for_each {
-                log::debug!("File has for_each: {}", for_each);
+                log::debug!("File has for_each: {for_each}");
                 match for_each.as_str() {
                     "endpoint" | "operation" => {
                         // Convert base_context to Tera Context for operation processing
@@ -365,8 +364,7 @@ impl TemplateManager {
                     }
                     _ => {
                         return Err(crate::core::Error::Template(format!(
-                            "Unknown for_each directive: {}",
-                            for_each
+                            "Unknown for_each directive: {for_each}"
                         )));
                     }
                 }
@@ -562,17 +560,15 @@ impl TemplateManager {
                 if let Some(base_url) = &config.base_url {
                     let base_str = base_url.to_string();
                     let trimmed = base_str.trim_end_matches('/');
-                    format!("{}{}", trimmed, spec_url)
+                    format!("{trimmed}{spec_url}")
                 } else {
                     return Err(crate::core::Error::Template(format!(
-                        "OpenAPI spec contains a relative server URL '{}', but no --base-url was provided. Please provide a base URL (e.g., --base-url https://api.example.com)",
-                        spec_url
+                        "OpenAPI spec contains a relative server URL '{spec_url}', but no --base-url was provided. Please provide a base URL (e.g., --base-url https://api.example.com)"
                     )));
                 }
             } else {
                 return Err(crate::core::Error::Template(format!(
-                    "Invalid server URL format in OpenAPI spec: '{}'. URL must be either a fully qualified URL (https://api.example.com/v1) or a relative path (/api/v1)",
-                    spec_url
+                    "Invalid server URL format in OpenAPI spec: '{spec_url}'. URL must be either a fully qualified URL (https://api.example.com/v1) or a relative path (/api/v1)"
                 )));
             };
             base_map.insert("base_api_url".to_string(), json!(final_url));
@@ -607,7 +603,7 @@ impl TemplateManager {
             if !parent.exists() {
                 log::debug!("Creating parent directory: {}", parent.display());
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                    io::Error::other(format!("Failed to create output directory: {}", e))
+                    io::Error::other(format!("Failed to create output directory: {e}"))
                 })?;
             }
         }
@@ -653,7 +649,7 @@ impl TemplateManager {
                 );
             }
             if let Some(base_api_url) = context_json.get("base_api_url") {
-                log::debug!("base_api_url value: {:?}", base_api_url);
+                log::debug!("base_api_url value: {base_api_url:?}");
             }
         }
 
@@ -678,12 +674,12 @@ impl TemplateManager {
 
                 // Check if template exists
                 if let Err(template_err) = self.tera.get_template(&file.source) {
-                    log::error!("Template not found: {}", template_err);
+                    log::error!("Template not found: {template_err}");
                 }
 
                 // Get more specific error information
                 log::error!("Tera error kind: {:?}", e.kind);
-                log::error!("Full error chain: {:#}", e);
+                log::error!("Full error chain: {e:#}");
 
                 return Err(crate::core::Error::Template(format!(
                     "Failed to render template '{}': {}",
@@ -717,7 +713,7 @@ impl TemplateManager {
         let schemas_dir = output_path.join("schemas");
         tokio::fs::create_dir_all(&schemas_dir)
             .await
-            .map_err(|e| io::Error::other(format!("Failed to create schemas directory: {}", e)))?;
+            .map_err(|e| io::Error::other(format!("Failed to create schemas directory: {e}")))?;
 
         for operation in operations {
             // Language-specific fields like fn_name must be injected by a builder; OpenApiOperation is language-agnostic.
@@ -943,7 +939,7 @@ impl TemplateManager {
                 // Generate schema file with proper schema extraction
                 // Use snake_case for the filename to match MCP conventions
                 let schema_filename = to_snake_case(&operation.id);
-                let schema_path = schemas_dir.join(format!("{}.json", schema_filename));
+                let schema_path = schemas_dir.join(format!("{schema_filename}.json"));
                 let mut schema_value = serde_json::to_value(operation)?;
 
                 // Dereference all $ref in the schema
@@ -1033,7 +1029,7 @@ impl TemplateManager {
 
         if !self.manifest.hooks.post_generate.is_empty() {
             for command in &self.manifest.hooks.post_generate {
-                log::info!("Running post-generation hook: {}", command);
+                log::info!("Running post-generation hook: {command}");
                 let output = AsyncCommand::new("sh")
                     .arg("-c")
                     .arg(command)
@@ -1042,8 +1038,7 @@ impl TemplateManager {
                     .await
                     .map_err(|e| {
                         io::Error::other(format!(
-                            "Failed to execute post-generation hook '{}': {}",
-                            command, e
+                            "Failed to execute post-generation hook '{command}': {e}"
                         ))
                     })?;
 

@@ -5,13 +5,14 @@ use crate::cli::args::AuthCommands;
 
 /// Handle authentication commands
 pub async fn handle_auth_command(_action: &AuthCommands) -> Result<()> {
-    // TODO: AuthManager is not yet implemented
-    // For now, return an error indicating this feature is not available
+    // TODO: AuthManager is not yet implemented - see GitHub issue #100
+    // https://github.com/clafollett/agenterra/issues/100
+    // This will implement OAuth 2.1 support per MCP specification
     Err(ClientError::ConfigError(
-        "Authentication management is not yet implemented. This feature will be available in a future release.".to_string()
+        "Authentication management is not yet implemented. This feature will be available in a future release. See issue #100 for details.".to_string()
     ))
     
-    /* TODO: Implement when AuthManager is available
+    /* TODO: Implement when AuthManager is available (see issue #100)
     match action {
         AuthCommands::Add { 
             server, 

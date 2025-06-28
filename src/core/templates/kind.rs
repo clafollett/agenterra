@@ -101,7 +101,7 @@ impl FromStr for ServerTemplateKind {
             "python_fastapi" => Ok(ServerTemplateKind::PythonFastAPI),
             "typescript_express" => Ok(ServerTemplateKind::TypeScriptExpress),
             "custom" => Ok(ServerTemplateKind::Custom),
-            _ => Err(format!("Unknown server template kind: {}", s)),
+            _ => Err(format!("Unknown server template kind: {s}")),
         }
     }
 }
@@ -115,7 +115,7 @@ impl FromStr for ClientTemplateKind {
             "python_requests" => Ok(ClientTemplateKind::PythonRequests),
             "typescript_axios" => Ok(ClientTemplateKind::TypeScriptAxios),
             "custom" => Ok(ClientTemplateKind::Custom),
-            _ => Err(format!("Unknown client template kind: {}", s)),
+            _ => Err(format!("Unknown client template kind: {s}")),
         }
     }
 }

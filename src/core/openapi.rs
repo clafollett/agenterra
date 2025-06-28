@@ -64,7 +64,6 @@ impl HttpMethod {
         ]
     }
 
-
     /// Get the lowercase string representation
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -97,7 +96,7 @@ impl FromStr for HttpMethod {
             "patch" => Ok(HttpMethod::Patch),
             "head" => Ok(HttpMethod::Head),
             "options" => Ok(HttpMethod::Options),
-            _ => Err(format!("Invalid HTTP method: {}", s)),
+            _ => Err(format!("Invalid HTTP method: {s}")),
         }
     }
 }
@@ -140,7 +139,7 @@ impl OpenApiContext {
     /// Create a new OpenAPISpec from a URL (supports both YAML and JSON)
     async fn from_url(url: &str) -> crate::core::error::Result<Self> {
         let response = reqwest::get(url).await.map_err(|e| {
-            crate::core::Error::openapi(format!("Failed to fetch OpenAPI spec from {}: {}", url, e))
+            crate::core::Error::openapi(format!("Failed to fetch OpenAPI spec from {url}: {e}"))
         })?;
 
         if !response.status().is_success() {
@@ -152,11 +151,11 @@ impl OpenApiContext {
         }
 
         let content = response.text().await.map_err(|e| {
-            crate::core::Error::openapi(format!("Failed to read response from {}: {}", url, e))
+            crate::core::Error::openapi(format!("Failed to read response from {url}: {e}"))
         })?;
 
         Self::parse_content(&content).map_err(|e| {
-            crate::core::Error::openapi(format!("Failed to parse OpenAPI spec from {}: {}", url, e))
+            crate::core::Error::openapi(format!("Failed to parse OpenAPI spec from {url}: {e}"))
         })
     }
 
@@ -217,7 +216,7 @@ impl OpenApiContext {
                 "https" // Default to https if no schemes specified
             };
 
-            return Some(format!("{}://{}{}", scheme, host, base_path));
+            return Some(format!("{scheme}://{host}{base_path}"));
         }
 
         None
@@ -465,7 +464,7 @@ impl OpenApiContext {
             && !result.chars().next().unwrap().is_alphabetic()
             && !result.starts_with('_')
         {
-            result = format!("m_{}", result);
+            result = format!("m_{result}");
         }
 
         // Handle empty string case
@@ -569,8 +568,7 @@ impl OpenApiContext {
         let key = "#/components/schemas/";
         if !ref_str.starts_with(key) {
             return Err(Error::openapi(format!(
-                "Unexpected schema ref '{}'",
-                ref_str
+                "Unexpected schema ref '{ref_str}'"
             )));
         }
 
@@ -585,7 +583,7 @@ impl OpenApiContext {
 
         let def = schemas
             .get(schema_name)
-            .ok_or_else(|| Error::openapi(format!("Schema '{}' not found", schema_name)))?;
+            .ok_or_else(|| Error::openapi(format!("Schema '{schema_name}' not found")))?;
 
         let props = def.get("properties").cloned().unwrap_or(JsonValue::Null);
         Ok((props, Some(schema_name.to_string())))
@@ -887,7 +885,7 @@ mod tests {
         assert_eq!(HttpMethod::from_str("get").unwrap(), HttpMethod::Get);
         assert_eq!(HttpMethod::from_str("Post").unwrap(), HttpMethod::Post);
         assert_eq!(HttpMethod::from_str("DELETE").unwrap(), HttpMethod::Delete);
-        
+
         // Test invalid method
         assert!(HttpMethod::from_str("INVALID").is_err());
     }

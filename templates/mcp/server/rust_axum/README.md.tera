@@ -34,37 +34,60 @@ cargo run
 # Start the server in SSE mode with HTTP endpoints
 cargo run -- --transport sse --sse-addr 127.0.0.1:8080
 
-# Start with custom SSE keep-alive interval
-cargo run -- --transport sse --sse-addr 0.0.0.0:9000 --sse-keep-alive 60
+# Start with custom configuration
+cargo run -- --log-dir /var/log/mcp --api-url https://api.example.com
 
-# Start with debug logging
+# Use a configuration file
+cargo run -- --config-file server.toml
+
+# Start with debug logging (standard Rust logging)
 RUST_LOG=debug cargo run
 ```
 
 ### Configuration
 
-The server supports the following command-line options:
+All server configuration is done through command-line arguments:
 
-- `--transport <MODE>` - Transport mode: stdio (default) or sse
-- `--sse-addr <ADDRESS>` - SSE server bind address (default: 127.0.0.1:3000)
-- `--sse-keep-alive <SECONDS>` - SSE keep-alive interval (default: 30)
+```
+{{ project_name }} [OPTIONS]
 
-For STDIO mode (when used with --transport stdio or by default):
+Options:
+  -t, --transport <TRANSPORT>              Transport type to use [default: stdio] [possible values: stdio, sse]
+      --sse-addr <SSE_ADDR>                SSE server bind address [default: 127.0.0.1:{{ server_port | default(value=8080) }}]
+      --sse-keep-alive <SSE_KEEP_ALIVE>    SSE keep-alive interval in seconds [default: 30]
+      --log-dir <LOG_DIR>                  Log directory path [default: logs]
+      --api-url <API_URL>                  API URL for backend services [default: {{ base_api_url }}]
+  -c, --config-file <CONFIG_FILE>          Optional configuration file path (TOML format)
+  -h, --help                               Print help
+  -V, --version                            Print version
+```
+
+### Transport Modes
+
+**STDIO mode** (default):
 - The server communicates via standard input/output
 - Suitable for direct process communication
-- Used by desktop MCP clients
+- Used by desktop MCP clients like Cursor/VS Code
 
-For SSE mode (when used with --transport sse):
+**SSE mode**:
 - The server exposes HTTP endpoints for SSE communication
 - `/sse` - Server-Sent Events endpoint for real-time messages
 - `/message` - POST endpoint for client messages
 - Suitable for web-based clients and remote connections
 
-### Environment Variables
+### Configuration File
 
-- `RUST_LOG` - Log level (debug, info, warn, error)
-- `MCP_SERVER_PORT` - Override server port
-- `MCP_SERVER_HOST` - Override server host
+If you prefer to use a configuration file (specified with `--config-file`), create a TOML file:
+
+```toml
+log_dir = "logs"
+api_url = "{{ base_api_url }}"
+transport = "stdio"
+sse_addr = "127.0.0.1:{{ server_port | default(value=8080) }}"
+sse_keep_alive = 30
+```
+
+Note: Command-line arguments always override configuration file settings.
 
 ## API Endpoints
 

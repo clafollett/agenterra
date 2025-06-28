@@ -382,10 +382,9 @@ impl InputValidator {
             sanitized = sanitized.nfc().collect();
         }
         
-        match self.validate_unicode_layer(&sanitized, field_config) {
-            Ok(clean) => sanitized = clean,
-            Err(unicode_issues) => issues.extend(unicode_issues),
-        }
+        let (clean, unicode_issues) = self.validate_unicode_layer(&sanitized, field_config);
+        sanitized = clean;
+        issues.extend(unicode_issues);
         
         // Layer 3: Pattern detection
         if self.config.patterns.jailbreak_detection {
@@ -510,7 +509,7 @@ impl InputValidator {
         &self,
         input: &str,
         field_config: Option<&FieldSettings>,
-    ) -> std::result::Result<String, Vec<ValidationIssue>> {
+    ) -> (String, Vec<ValidationIssue>) {
         let mut issues = Vec::new();
         let mut sanitized = String::new();
         
@@ -585,11 +584,7 @@ impl InputValidator {
             }
         }
         
-        if issues.is_empty() {
-            Ok(sanitized)
-        } else {
-            Err(issues)
-        }
+        (sanitized, issues)
     }
 
     // ===== Pattern Detection Layer =====
@@ -1298,6 +1293,7 @@ mod unicode_categories {
     use std::char;
     
     #[derive(Debug)]
+    #[allow(dead_code)]
     pub enum GeneralCategory {
         Other,
         Letter,

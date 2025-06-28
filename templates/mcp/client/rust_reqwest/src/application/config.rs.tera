@@ -755,5 +755,119 @@ impl ConfigManager {
             Ok(())
         }).await
     }
+    
+    /// Update the always_allowed list for a server profile
+    ///
+    /// Adds a tool to the always_allowed list for the specified server profile
+    /// and persists the change to the database.
+    pub async fn add_tool_to_always_allowed(&self, server_id: &str, tool_name: &str) -> Result<()> {
+        let server_id_clone = server_id.to_string();
+        let tool_name_clone = tool_name.to_string();
+
+        self.db.with_connection(move |conn| {
+            // Get current always_allowed list
+            let always_allowed_json: Option<String> = conn.query_row(
+                "SELECT always_allowed FROM servers WHERE id = ?1",
+                params![server_id_clone],
+                |row| row.get(0)
+            ).optional()?
+            .flatten();
+
+            // Parse current list or create empty one
+            let mut always_allowed: Vec<String> = always_allowed_json
+                .as_ref()
+                .map(|json| serde_json::from_str(json))
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to parse always_allowed JSON: {}", e))
+                ))?
+                .unwrap_or_default();
+
+            // Add tool if not already present
+            if !always_allowed.contains(&tool_name_clone) {
+                always_allowed.push(tool_name_clone);
+                
+                // Serialize back to JSON
+                let updated_json = serde_json::to_string(&always_allowed)
+                    .map_err(|e| rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                        Some(format!("Failed to serialize always_allowed: {}", e))
+                    ))?;
+
+                // Update the database
+                conn.execute(
+                    "UPDATE servers SET always_allowed = ?1 WHERE id = ?2",
+                    params![updated_json, server_id_clone]
+                )?;
+            }
+
+            Ok(())
+        }).await
+    }
+    
+    /// Update an entire server profile
+    ///
+    /// Updates all fields of a server profile in the database.
+    /// This is a more general update method for full profile modifications.
+    pub async fn update_server_profile(&self, profile: &ServerProfile) -> Result<()> {
+        let profile_clone = profile.clone();
+
+        self.db.with_connection(move |conn| {
+            let args_json = serde_json::to_string(&profile_clone.args)
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize args: {}", e))
+                ))?;
+
+            let env_json = profile_clone.environment.as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize environment: {}", e))
+                ))?;
+
+            let always_allowed_json = profile_clone.always_allowed.as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize always_allowed: {}", e))
+                ))?;
+
+            let disabled_tools_json = profile_clone.disabled_tools.as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize disabled_tools: {}", e))
+                ))?;
+
+            conn.execute(
+                "UPDATE servers SET name = ?2, command = ?3, args = ?4, environment = ?5, 
+                 timeout = ?6, description = ?7, is_default = ?8, transport = ?9, 
+                 disabled = ?10, always_allowed = ?11, disabled_tools = ?12, last_used = ?13 
+                 WHERE id = ?1",
+                params![
+                    profile_clone.id,
+                    profile_clone.name,
+                    profile_clone.command,
+                    args_json,
+                    env_json,
+                    profile_clone.timeout,
+                    profile_clone.description,
+                    profile_clone.is_default as i32,
+                    profile_clone.transport.as_deref().unwrap_or("stdio"),
+                    profile_clone.disabled as i32,
+                    always_allowed_json,
+                    disabled_tools_json,
+                    profile_clone.last_used.map(|dt| dt.timestamp())
+                ]
+            )?;
+
+            Ok(())
+        }).await
+    }
 }
 

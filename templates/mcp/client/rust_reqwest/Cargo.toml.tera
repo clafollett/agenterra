@@ -20,6 +20,10 @@ stdio = []
 sse = []
 test-utils = []
 
+[dev-dependencies]
+# Enable test-utils feature for tests
+{{ project_name }} = { path = ".", features = ["test-utils"] }
+
 [dependencies]
 # MCP Protocol SDK (official)
 agenterra-rmcp = { version = "0.1.5", features = [
@@ -86,8 +90,6 @@ unicode_categories = "0.1"
 toml = "0.8"
 # Regular expressions for pattern matching
 regex = "1.10"
-
-[dev-dependencies]
 
 # Prevent cargo from thinking this is part of a parent workspace
 [workspace]

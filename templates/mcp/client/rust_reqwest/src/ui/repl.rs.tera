@@ -5,8 +5,37 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use serde_json::{json, Value};
 use tracing::{error, info, debug};
+use async_trait::async_trait;
 
 use crate::domain::client::McpClient;
+
+/// Permission response from user input
+#[derive(Debug, Clone, PartialEq)]
+pub enum PermissionResponse {
+    Execute,    // 'y' - execute once
+    Always,     // 'always'/'a' - add to always_allowed and execute
+    Deny,       // 'n' - skip execution
+}
+
+impl PermissionResponse {
+    /// Parse user input into a PermissionResponse
+    pub fn parse_user_input(input: &str) -> Result<Self> {
+        match input.to_lowercase().trim() {
+            "y" | "yes" => Ok(PermissionResponse::Execute),
+            "n" | "no" => Ok(PermissionResponse::Deny),
+            "a" | "always" => Ok(PermissionResponse::Always),
+            _ => Err(crate::infrastructure::error::ClientError::Client(
+                format!("Invalid response '{}'. Please enter y/yes, n/no, or a/always", input)
+            ).into()),
+        }
+    }
+}
+
+/// Trait for prompting user permission (allows mocking in tests)
+#[async_trait]
+pub trait PermissionPrompter {
+    async fn prompt_user_permission(&mut self, tool_name: &str, args: &Value) -> Result<PermissionResponse>;
+}
 
 /// REPL interface for MCP client
 pub struct McpRepl {
@@ -211,6 +240,14 @@ impl McpRepl {
         println!("  clear            - Clear screen");
         println!("  quit, exit, q    - Exit the REPL");
         println!();
+        println!("Tool Permission System:");
+        println!("  When calling tools, you may be prompted for permission:");
+        println!("  • (y)es    - Execute the tool once");
+        println!("  • (n)o     - Cancel the tool execution");
+        println!("  • (a)lways - Execute and add to always-allowed list");
+        println!("  Tools in 'always_allowed' execute without prompting.");
+        println!("  Tools in 'disabled_tools' are blocked completely.");
+        println!();
     }
 
     /// Show available tools
@@ -279,8 +316,35 @@ impl McpRepl {
         println!();
     }
 
-    /// Call a tool
+    /// Call a tool with permission checking
     async fn call_tool(&mut self, tool_name: &str, args: Value) -> Result<()> {
+        self.call_tool_with_permissions(tool_name, args).await
+    }
+    
+    /// Call a tool with permission checking workflow
+    async fn call_tool_with_permissions(&mut self, tool_name: &str, args: Value) -> Result<()> {
+        // Check if tool is in always_allowed - execute immediately
+        if self.client.is_tool_always_allowed(tool_name) {
+            return self.execute_tool(tool_name, args).await;
+        }
+        
+        // Prompt user for permission
+        match self.prompt_user_permission(tool_name, &args).await? {
+            PermissionResponse::Execute => self.execute_tool(tool_name, args).await,
+            PermissionResponse::Always => {
+                // Add to always_allowed and execute
+                self.add_to_always_allowed(tool_name).await?;
+                self.execute_tool(tool_name, args).await
+            },
+            PermissionResponse::Deny => {
+                println!("Tool execution cancelled by user.");
+                Ok(())
+            }
+        }
+    }
+    
+    /// Execute a tool (actual tool calling logic extracted from original call_tool)
+    async fn execute_tool(&mut self, tool_name: &str, args: Value) -> Result<()> {
         match self.client.call_tool(tool_name, args).await {
             Ok(result) => {
                 println!("Tool result:");
@@ -292,6 +356,17 @@ impl McpRepl {
             }
         }
         Ok(())
+    }
+    
+    /// Check if we should prompt for permission for this tool
+    async fn should_prompt_for_permission(&self, tool_name: &str) -> Result<bool> {
+        // Don't prompt if tool is in always_allowed
+        Ok(!self.client.is_tool_always_allowed(tool_name))
+    }
+    
+    /// Add a tool to the always_allowed list and persist to database
+    async fn add_to_always_allowed(&mut self, tool_name: &str) -> Result<()> {
+        self.client.add_tool_to_always_allowed(tool_name).await
     }
 
     /// Get a resource
@@ -354,5 +429,314 @@ impl McpRepl {
         println!("  Resources: {}", resources_count);
         println!("  Prompts: {}", prompts_count);
         println!();
+    }
+}
+
+#[async_trait]
+impl PermissionPrompter for McpRepl {
+    async fn prompt_user_permission(&mut self, tool_name: &str, args: &Value) -> Result<PermissionResponse> {
+        self.prompt_user_permission_impl(tool_name, args).await
+    }
+}
+
+impl McpRepl {
+    /// Implementation of user permission prompting
+    async fn prompt_user_permission_impl(&mut self, tool_name: &str, args: &Value) -> Result<PermissionResponse> {
+        // Display the tool call information
+        println!();
+        println!("🔒 Permission Required");
+        println!("Tool: {}", tool_name);
+        if !args.is_null() && args != &json!({}) {
+            println!("Arguments:");
+            println!("{}", serde_json::to_string_pretty(args)?);
+        }
+        println!();
+        
+        loop {
+            let prompt = format!("Execute '{}' tool? (y)es, (n)o, (a)lways: ", tool_name);
+            match self.editor.readline(&prompt) {
+                Ok(input) => {
+                    match PermissionResponse::parse_user_input(&input) {
+                        Ok(response) => return Ok(response),
+                        Err(e) => {
+                            println!("Invalid input: {}", e);
+                            continue;
+                        }
+                    }
+                }
+                Err(ReadlineError::Interrupted) => {
+                    println!("Operation cancelled");
+                    return Ok(PermissionResponse::Deny);
+                }
+                Err(ReadlineError::Eof) => {
+                    println!("EOF received, cancelling operation");
+                    return Ok(PermissionResponse::Deny);
+                }
+                Err(err) => {
+                    error!("Readline error: {:?}", err);
+                    return Err(crate::infrastructure::error::ClientError::Client(
+                        format!("Failed to read user input: {}", err)
+                    ).into());
+                }
+            }
+        }
+    }
+    
+    /// Prompt with timeout (for testing)
+    async fn prompt_user_permission_with_timeout(
+        &mut self, 
+        tool_name: &str, 
+        args: &Value, 
+        timeout: std::time::Duration
+    ) -> Result<PermissionResponse> {
+        // TODO: Implement timeout handling for prompts
+        // For now, just call the regular prompt
+        self.prompt_user_permission_impl(tool_name, args).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::config::ServerProfile;
+    use crate::test_utils::simple_mock::SimpleMockServer;
+    use chrono::Utc;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+    
+    /// Mock prompter for testing that returns predefined responses
+    pub struct MockPrompter {
+        responses: Arc<Mutex<Vec<PermissionResponse>>>,
+    }
+    
+    impl MockPrompter {
+        pub fn new(responses: Vec<PermissionResponse>) -> Self {
+            Self {
+                responses: Arc::new(Mutex::new(responses)),
+            }
+        }
+    }
+    
+    #[async_trait]
+    impl PermissionPrompter for MockPrompter {
+        async fn prompt_user_permission(&mut self, _tool_name: &str, _args: &Value) -> Result<PermissionResponse> {
+            let mut responses = self.responses.lock().await;
+            if let Some(response) = responses.pop() {
+                Ok(response)
+            } else {
+                Ok(PermissionResponse::Deny) // Default to deny if no more responses
+            }
+        }
+    }
+    
+    /// Create a test client with a server profile
+    async fn create_test_client_with_profile(always_allowed: Vec<String>, disabled_tools: Vec<String>) -> McpClient {
+        let profile = ServerProfile {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "test-server".to_string(),
+            description: Some("Test server for permission testing".to_string()),
+            command: "echo".to_string(),
+            args: vec!["test".to_string()],
+            environment: None,
+            timeout: Some(30),
+            is_default: false,
+            transport: Some("stdio".to_string()),
+            disabled: false,
+            always_allowed: Some(always_allowed),
+            disabled_tools: Some(disabled_tools),
+            created_at: Utc::now(),
+            last_used: None,
+        };
+        
+        let mut client = McpClient::new_with_timeout(30).await.unwrap();
+        client.set_server_profile(profile);
+        client
+    }
+    
+    #[tokio::test]
+    async fn test_should_prompt_for_non_always_allowed_tool() {
+        // RED: This test should fail because permission checking is not implemented yet
+        let client = create_test_client_with_profile(
+            vec!["safe_tool".to_string()], // always_allowed
+            vec![], // disabled_tools
+        ).await;
+        
+        let mut repl = McpRepl::new(client, "test-server".to_string());
+        
+        // This tool is NOT in always_allowed, so it should prompt
+        let tool_name = "risky_tool";
+        let args = json!({"param": "value"});
+        
+        // TODO: This will fail until we implement should_prompt_for_permission
+        let should_prompt = repl.should_prompt_for_permission(tool_name).await.unwrap();
+        assert!(should_prompt, "Should prompt for non-always-allowed tool");
+    }
+    
+    #[tokio::test]
+    async fn test_should_not_prompt_for_always_allowed_tool() {
+        // RED: This test should fail because permission checking is not implemented yet
+        let client = create_test_client_with_profile(
+            vec!["safe_tool".to_string()], // always_allowed
+            vec![], // disabled_tools
+        ).await;
+        
+        let mut repl = McpRepl::new(client, "test-server".to_string());
+        
+        // This tool IS in always_allowed, so it should NOT prompt
+        let tool_name = "safe_tool";
+        
+        // TODO: This will fail until we implement should_prompt_for_permission
+        let should_prompt = repl.should_prompt_for_permission(tool_name).await.unwrap();
+        assert!(!should_prompt, "Should not prompt for always-allowed tool");
+    }
+    
+    #[tokio::test]
+    async fn test_should_block_disabled_tools() {
+        // RED: This test should fail because permission checking is not implemented yet
+        let client = create_test_client_with_profile(
+            vec![], // always_allowed
+            vec!["blocked_tool".to_string()], // disabled_tools
+        ).await;
+        
+        let mut repl = McpRepl::new(client, "test-server".to_string());
+        
+        // This tool is disabled, so calling it should return an error
+        let tool_name = "blocked_tool";
+        let args = json!({"param": "value"});
+        
+        // TODO: This will fail until we implement permission checking in call_tool_with_permissions
+        let result = repl.call_tool_with_permissions(tool_name, args).await;
+        assert!(result.is_err(), "Should return error for disabled tool");
+        
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("disabled"), "Error should mention tool is disabled");
+    }
+    
+    #[tokio::test]
+    async fn test_user_response_parsing() {
+        // RED: This test should fail because response parsing is not implemented yet
+        
+        // Test 'y' response
+        let response = PermissionResponse::parse_user_input("y").unwrap();
+        assert_eq!(response, PermissionResponse::Execute);
+        
+        // Test 'yes' response
+        let response = PermissionResponse::parse_user_input("yes").unwrap();
+        assert_eq!(response, PermissionResponse::Execute);
+        
+        // Test 'n' response
+        let response = PermissionResponse::parse_user_input("n").unwrap();
+        assert_eq!(response, PermissionResponse::Deny);
+        
+        // Test 'no' response
+        let response = PermissionResponse::parse_user_input("no").unwrap();
+        assert_eq!(response, PermissionResponse::Deny);
+        
+        // Test 'always' response
+        let response = PermissionResponse::parse_user_input("always").unwrap();
+        assert_eq!(response, PermissionResponse::Always);
+        
+        // Test 'a' response
+        let response = PermissionResponse::parse_user_input("a").unwrap();
+        assert_eq!(response, PermissionResponse::Always);
+        
+        // Test invalid response
+        let result = PermissionResponse::parse_user_input("invalid");
+        assert!(result.is_err(), "Should return error for invalid input");
+    }
+    
+    #[tokio::test]
+    async fn test_add_to_always_allowed_persists() {
+        // RED: This test should fail because always_allowed management is not implemented yet
+        let client = create_test_client_with_profile(
+            vec!["existing_tool".to_string()], // always_allowed
+            vec![], // disabled_tools
+        ).await;
+        
+        let mut repl = McpRepl::new(client, "test-server".to_string());
+        
+        // Add a new tool to always_allowed
+        let tool_name = "new_safe_tool";
+        let result = repl.add_to_always_allowed(tool_name).await;
+        assert!(result.is_ok(), "Should successfully add tool to always_allowed");
+        
+        // Verify it's now in always_allowed (should not prompt)
+        let should_prompt = repl.should_prompt_for_permission(tool_name).await.unwrap();
+        assert!(!should_prompt, "Tool should now be in always_allowed");
+    }
+    
+    #[tokio::test]
+    async fn test_permission_workflow_with_mock_prompter() {
+        // RED: This test should fail because permission workflow is not implemented yet
+        let client = create_test_client_with_profile(
+            vec![], // always_allowed (empty)
+            vec![], // disabled_tools (empty)
+        ).await;
+        
+        let mut repl = McpRepl::new(client, "test-server".to_string());
+        
+        // Test user accepts execution
+        let mut mock_prompter = MockPrompter::new(vec![PermissionResponse::Execute]);
+        let tool_name = "test_tool";
+        let args = json!({"param": "value"});
+        
+        // TODO: This will fail until we implement call_tool_with_permissions
+        let result = repl.call_tool_with_permissions_and_prompter(tool_name, args.clone(), &mut mock_prompter).await;
+        assert!(result.is_ok(), "Should succeed when user accepts");
+        
+        // Test user denies execution
+        let mut mock_prompter = MockPrompter::new(vec![PermissionResponse::Deny]);
+        let result = repl.call_tool_with_permissions_and_prompter(tool_name, args.clone(), &mut mock_prompter).await;
+        assert!(result.is_ok(), "Should succeed (but skip execution) when user denies");
+        
+        // Test user chooses always
+        let mut mock_prompter = MockPrompter::new(vec![PermissionResponse::Always]);
+        let result = repl.call_tool_with_permissions_and_prompter(tool_name, args, &mut mock_prompter).await;
+        assert!(result.is_ok(), "Should succeed when user chooses always");
+        
+        // Verify tool is now in always_allowed (should not prompt next time)
+        let should_prompt = repl.should_prompt_for_permission(tool_name).await.unwrap();
+        assert!(!should_prompt, "Tool should now be in always_allowed after user chose 'always'");
+    }
+    
+    impl McpRepl {
+        /// Test helper method to call tool with mock prompter
+        pub async fn call_tool_with_permissions_and_prompter(
+            &mut self, 
+            tool_name: &str, 
+            args: Value, 
+            prompter: &mut dyn PermissionPrompter
+        ) -> Result<()> {
+            // Check if tool is in always_allowed - execute immediately
+            if self.client.is_tool_always_allowed(tool_name) {
+                return self.execute_tool(tool_name, args).await;
+            }
+            
+            // Use provided prompter instead of built-in prompt
+            match prompter.prompt_user_permission(tool_name, &args).await? {
+                PermissionResponse::Execute => self.execute_tool(tool_name, args).await,
+                PermissionResponse::Always => {
+                    // Add to always_allowed and execute
+                    self.add_to_always_allowed(tool_name).await?;
+                    self.execute_tool(tool_name, args).await
+                },
+                PermissionResponse::Deny => {
+                    println!("Tool execution cancelled by user.");
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_permission_prompt_timeout() {
+        // RED: This test should fail because timeout handling is not implemented yet
+        let client = create_test_client_with_profile(vec![], vec![]).await;
+        let mut repl = McpRepl::new(client, "test-server".to_string());
+        
+        // TODO: This will fail until we implement timeout handling
+        let result = repl.prompt_user_permission_with_timeout("test_tool", &json!({}), std::time::Duration::from_millis(1)).await;
+        assert!(result.is_err(), "Should timeout and return error");
     }
 }

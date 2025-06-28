@@ -275,7 +275,7 @@ impl TemplateDir {
             error!("Failed to canonicalize template path: {}", e);
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Invalid template path: {}", e),
+                format!("Invalid template path: {e}"),
             )
         })?;
 
@@ -414,7 +414,7 @@ impl TemplateDir {
                     error!("Potentially unsafe template path rejected: {}", path_str);
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        format!("Template path not allowed: {}", path_str),
+                        format!("Template path not allowed: {path_str}"),
                     ));
                 }
             }
@@ -539,7 +539,7 @@ pub fn resolve_output_dir(
     } else {
         // Default behavior: current_directory/project_name (like cargo new)
         let current_dir = std::env::current_dir()
-            .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?;
+            .map_err(|e| io::Error::other(format!("Failed to get current directory: {e}")))?;
 
         let output_dir = current_dir.join(project_name);
 
@@ -552,7 +552,7 @@ pub fn resolve_output_dir(
         output_path
     } else {
         std::env::current_dir()
-            .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?
+            .map_err(|e| io::Error::other(format!("Failed to get current directory: {e}")))?
             .join(output_path)
     };
 

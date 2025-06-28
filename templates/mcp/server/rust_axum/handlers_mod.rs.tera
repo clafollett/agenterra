@@ -18,13 +18,20 @@ use agenterra_rmcp::{
 #[derive(Clone)]
 pub struct McpServer {
     tool_router: agenterra_rmcp::handler::server::router::tool::ToolRouter<McpServer>,
+    config: Config,
 }
 
 impl McpServer {
     /// Create a new MCP server instance
     pub fn new() -> Self {
+        Self::with_config(Config::default())
+    }
+    
+    /// Create a new MCP server instance with custom configuration
+    pub fn with_config(config: Config) -> Self {
         Self {
             tool_router: Self::tool_router(),
+            config,
         }
     }
 }
@@ -46,7 +53,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<{{ ep.endpoint }}::{{ ep.parameters_type }}>,
     ) -> Result<CallToolResult, McpError> {
-        {{ ep.endpoint }}::{{ ep.fn_name }}_handler(&Config::default(), &params).await
+        {{ ep.endpoint }}::{{ ep.fn_name }}_handler(&self.config, &params).await
     }
     {%- endfor %}
 }

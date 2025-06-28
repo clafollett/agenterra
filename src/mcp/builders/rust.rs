@@ -391,7 +391,7 @@ impl LanguageContextBuilder for RustMcpClientContextBuilder {
 
         // Ensure it starts with letter/underscore (Rust requirement)
         let project_name = if project_name.chars().next().is_some_and(char::is_numeric) {
-            format!("mcp_{}", project_name)
+            format!("mcp_{project_name}")
         } else {
             project_name
         };

@@ -4,15 +4,17 @@
 //! for easy testing without external dependencies.
 
 use crate::application::config::ServerProfile;
+use chrono::Utc;
+use uuid::Uuid;
 
-/// Simple mock server that just provides a test server profile
+/// Simple mock server that provides test server profiles for various permission scenarios
 pub struct SimpleMockServer;
 
 impl SimpleMockServer {
-    /// Create a server profile that points to a simple echo command for testing
+    /// Create a basic server profile for testing
     pub fn create_test_profile(name: &str) -> ServerProfile {
         ServerProfile {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: Uuid::new_v4().to_string(),
             name: name.to_string(),
             description: Some("Mock server for testing".to_string()),
             command: "echo".to_string(),
@@ -24,8 +26,172 @@ impl SimpleMockServer {
             disabled: false,
             always_allowed: Some(vec!["echo".to_string(), "test_allowed".to_string()]),
             disabled_tools: Some(vec!["test_disabled".to_string()]),
-            created_at: chrono::Utc::now(),
+            created_at: Utc::now(),
             last_used: None,
         }
+    }
+    
+    /// Create a server profile with comprehensive permission testing setup
+    pub fn create_permission_test_profile(name: &str) -> ServerProfile {
+        ServerProfile {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            description: Some("Permission testing mock server".to_string()),
+            command: "echo".to_string(),
+            args: vec!["permission_test".to_string()],
+            environment: None,
+            timeout: Some(30),
+            is_default: false,
+            transport: Some("stdio".to_string()),
+            disabled: false,
+            always_allowed: Some(vec![
+                "safe_tool".to_string(),
+                "read_only_tool".to_string(),
+                "status_check".to_string(),
+            ]),
+            disabled_tools: Some(vec![
+                "dangerous_tool".to_string(),
+                "delete_everything".to_string(),
+                "admin_tool".to_string(),
+            ]),
+            created_at: Utc::now(),
+            last_used: None,
+        }
+    }
+    
+    /// Create a server profile with no permissions (everything requires prompting)
+    pub fn create_no_permissions_profile(name: &str) -> ServerProfile {
+        ServerProfile {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            description: Some("No permissions mock server".to_string()),
+            command: "echo".to_string(),
+            args: vec!["no_permissions".to_string()],
+            environment: None,
+            timeout: Some(30),
+            is_default: false,
+            transport: Some("stdio".to_string()),
+            disabled: false,
+            always_allowed: Some(vec![]), // Empty - no tools auto-allowed
+            disabled_tools: Some(vec![]), // Empty - no tools disabled
+            created_at: Utc::now(),
+            last_used: None,
+        }
+    }
+    
+    /// Create a server profile with only disabled tools (testing blocking)
+    pub fn create_disabled_only_profile(name: &str) -> ServerProfile {
+        ServerProfile {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            description: Some("Disabled tools only mock server".to_string()),
+            command: "echo".to_string(),
+            args: vec!["disabled_only".to_string()],
+            environment: None,
+            timeout: Some(30),
+            is_default: false,
+            transport: Some("stdio".to_string()),
+            disabled: false,
+            always_allowed: Some(vec![]), // Empty
+            disabled_tools: Some(vec![
+                "blocked_tool_1".to_string(),
+                "blocked_tool_2".to_string(),
+                "restricted_access".to_string(),
+            ]),
+            created_at: Utc::now(),
+            last_used: None,
+        }
+    }
+    
+    /// Create a server profile with comprehensive tool categorization
+    pub fn create_comprehensive_test_profile(name: &str) -> ServerProfile {
+        ServerProfile {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            description: Some("Comprehensive permission testing".to_string()),
+            command: "echo".to_string(),
+            args: vec!["comprehensive".to_string()],
+            environment: None,
+            timeout: Some(30),
+            is_default: false,
+            transport: Some("stdio".to_string()),
+            disabled: false,
+            always_allowed: Some(vec![
+                // Safe, read-only tools
+                "ping".to_string(),
+                "status".to_string(),
+                "help".to_string(),
+                "version".to_string(),
+                "list_files".to_string(),
+                "read_config".to_string(),
+            ]),
+            disabled_tools: Some(vec![
+                // Dangerous, destructive tools
+                "format_disk".to_string(),
+                "delete_all".to_string(),
+                "shutdown".to_string(),
+                "modify_system".to_string(),
+                "execute_arbitrary_code".to_string(),
+            ]),
+            created_at: Utc::now(),
+            last_used: None,
+        }
+    }
+    
+    /// Get a list of test tool names for permission testing
+    pub fn get_test_tools() -> Vec<&'static str> {
+        vec![
+            // Always allowed tools
+            "ping",
+            "status", 
+            "help",
+            "version",
+            "list_files",
+            "read_config",
+            "safe_tool",
+            "read_only_tool",
+            "status_check",
+            
+            // Disabled tools
+            "format_disk",
+            "delete_all", 
+            "shutdown",
+            "modify_system",
+            "execute_arbitrary_code",
+            "dangerous_tool",
+            "delete_everything",
+            "admin_tool",
+            "blocked_tool_1",
+            "blocked_tool_2",
+            "restricted_access",
+            
+            // Prompt-required tools
+            "create_file",
+            "modify_file",
+            "send_email",
+            "make_request",
+            "update_database",
+            "generate_report",
+            "process_data",
+        ]
+    }
+    
+    /// Check if a tool should be always allowed for the comprehensive test profile
+    pub fn is_always_allowed(tool_name: &str) -> bool {
+        let always_allowed = vec![
+            "ping", "status", "help", "version", "list_files", "read_config",
+            "safe_tool", "read_only_tool", "status_check"
+        ];
+        always_allowed.contains(&tool_name)
+    }
+    
+    /// Check if a tool should be disabled for the comprehensive test profile  
+    pub fn is_disabled(tool_name: &str) -> bool {
+        let disabled = vec![
+            "format_disk", "delete_all", "shutdown", "modify_system", 
+            "execute_arbitrary_code", "dangerous_tool", "delete_everything",
+            "admin_tool", "blocked_tool_1", "blocked_tool_2", "restricted_access"
+        ];
+        disabled.contains(&tool_name)
     }
 }
