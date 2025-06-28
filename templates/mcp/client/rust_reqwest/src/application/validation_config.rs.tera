@@ -217,7 +217,7 @@ fn default_audit_log_path() -> String {
 }
 fn default_true() -> bool { true }
 fn default_max_tokens() -> u32 { 3 }
-fn default_detection_threshold() -> f32 { 0.7 }
+fn default_detection_threshold() -> f32 { 0.3 }
 fn default_max_input_length() -> usize { 1_048_576 } // 1MB
 fn default_max_json_depth() -> usize { 10 }
 fn default_max_json_keys() -> usize { 1000 }
@@ -465,7 +465,7 @@ mod tests {
         assert_eq!(config.validation.security_level, "balanced");
         assert_eq!(config.validation.validation_action, ValidationAction::Sanitize);
         assert!(config.unicode.allow_emoji);
-        assert_eq!(config.patterns.detection_threshold, 0.7);
+        assert_eq!(config.patterns.detection_threshold, 0.3);
     }
     
     #[test]

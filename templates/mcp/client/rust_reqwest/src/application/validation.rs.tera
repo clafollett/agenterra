@@ -24,21 +24,12 @@
 use crate::application::validation_config::{ValidationConfig, ValidationAction, FieldSettings};
 use crate::infrastructure::error::{ClientError, Result};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 use regex::Regex;
-use once_cell::sync::Lazy;
 use tracing::{debug, warn, info};
 
-/// Maximum allowed size for any input string (1MB) - can be overridden by config
-const DEFAULT_MAX_INPUT_SIZE: usize = 1_048_576;
-
-/// Maximum allowed depth for nested JSON structures - can be overridden by config
-const DEFAULT_MAX_JSON_DEPTH: usize = 10;
-
-/// Maximum allowed number of keys in JSON objects - can be overridden by config
-const DEFAULT_MAX_JSON_KEYS: usize = 1000;
 
 /// Validation result that can include sanitized content
 #[derive(Debug)]
@@ -76,9 +67,6 @@ pub enum IssueCategory {
     Content,
 }
 
-/// Cache for validation results (thread-safe)
-static VALIDATION_CACHE: Lazy<Arc<RwLock<HashMap<u64, ValidationResult>>>> = 
-    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 /// Validates all types of user input with enterprise-grade security checks
 pub struct InputValidator {
@@ -108,6 +96,16 @@ impl InputValidator {
 
     /// Validate a server name
     pub fn validate_server_name(&self, name: &str) -> ValidationResult {
+        // Check minimum length first
+        if name.is_empty() {
+            return ValidationResult::Error(vec![ValidationIssue {
+                severity: IssueSeverity::Error,
+                category: IssueCategory::Content,
+                message: "Server name cannot be empty".to_string(),
+                location: None,
+            }]);
+        }
+        
         match self.validate_with_config(name, "server_name", None) {
             Ok(result) => result,
             Err(_) => ValidationResult::Error(vec![ValidationIssue {
@@ -368,13 +366,13 @@ impl InputValidator {
         // Layer 1: Size validation
         let max_length = field_config
             .and_then(|f| f.max_length)
-            .unwrap_or(self.config.content.max_input_length);
+            .unwrap_or(self.config.content.max_input_size.min(self.config.content.max_input_length));
         
         if input.len() > max_length {
             issues.push(ValidationIssue {
                 severity: IssueSeverity::Error,
                 category: IssueCategory::Content,
-                message: format!("Input too long (max {} characters)", max_length),
+                message: format!("Input exceeds maximum length (max {} characters)", max_length),
                 location: None,
             });
         }
@@ -408,7 +406,7 @@ impl InputValidator {
         
         // Layer 4: Content-specific validation
         match field_type {
-            "command" | "file_path" => {
+            "file_path" => {
                 if self.config.content.check_path_traversal || 
                    field_config.and_then(|f| f.check_path_traversal).unwrap_or(false) {
                     if let Err(path_issues) = self.check_path_traversal(&sanitized, field_config) {
@@ -423,7 +421,21 @@ impl InputValidator {
                     }
                 }
             }
-            "json_input" | "environment_json" => {
+            "command" => {
+                // Commands need both path traversal and command injection checks
+                if self.config.content.check_path_traversal || 
+                   field_config.and_then(|f| f.check_path_traversal).unwrap_or(false) {
+                    if let Err(path_issues) = self.check_path_traversal(&sanitized, field_config) {
+                        issues.extend(path_issues);
+                    }
+                }
+                if self.config.content.check_command_injection {
+                    if let Err(cmd_issues) = self.check_command_injection(&sanitized) {
+                        issues.extend(cmd_issues);
+                    }
+                }
+            }
+            "json_input" | "environment_json" | "json" => {
                 if let Err(json_issues) = self.check_json_structure(&sanitized) {
                     issues.extend(json_issues);
                 }
@@ -550,6 +562,12 @@ impl InputValidator {
                     should_replace = true;
                     issue_message = Some(hidden_msg);
                 }
+            }
+            
+            // General grapheme cluster security analysis
+            if let Some(security_msg) = self.analyze_grapheme_cluster_security(grapheme) {
+                should_replace = true;
+                issue_message = Some(security_msg);
             }
             
             if should_replace {
@@ -987,33 +1005,6 @@ impl InputValidator {
         }
     }
     
-    fn detect_encoded_content(&self, input: &str) -> bool {
-        // Base64 detection
-        if input.len() > 20 {
-            let base64_chars = input.chars()
-                .filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '=')
-                .count();
-            let base64_ratio = base64_chars as f32 / input.len() as f32;
-            
-            if base64_ratio > 0.9 && input.contains('=') {
-                return true;
-            }
-        }
-        
-        // Hex encoding detection
-        if input.len() > 10 && input.len() % 2 == 0 {
-            let hex_chars = input.chars()
-                .filter(|c| c.is_ascii_hexdigit())
-                .count();
-            let hex_ratio = hex_chars as f32 / input.len() as f32;
-            
-            if hex_ratio > 0.95 {
-                return true;
-            }
-        }
-        
-        false
-    }
     
     fn detect_encoded_content_with_type(&self, input: &str) -> (bool, String) {
         // Base64 detection
