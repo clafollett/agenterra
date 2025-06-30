@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 use toml;
+use tracing::{debug, info, warn};
 
 // Import rmcp types for real MCP protocol integration
 use agenterra_rmcp::{
@@ -817,31 +818,58 @@ impl McpClient {
         }
         false
     }
+
+    /// Check if a tool is disabled (completely blocked)
+    pub fn is_tool_disabled(&self, tool_name: &str) -> bool {
+        if let Some(profile) = &self.server_profile {
+            if let Some(disabled_tools) = &profile.disabled_tools {
+                return disabled_tools.iter().any(|t| t == tool_name);
+            }
+        }
+        false
+    }
     
     /// Add a tool to the always_allowed list and persist to database
     pub async fn add_tool_to_always_allowed(&mut self, tool_name: &str) -> Result<()> {
-        // Check if we have a server profile and database
-        let profile = self.server_profile.as_ref()
+        // Check if we have a server profile
+        let profile = self
+            .server_profile
+            .as_ref()
             .ok_or_else(|| ClientError::Client("No server profile set".to_string()))?;
-        
-        let db = self.database.as_ref()
-            .ok_or_else(|| ClientError::Client("No database connection available".to_string()))?;
-        
-        // Create config manager to update the database
-        let config_manager = crate::application::config::ConfigManager::new(db.clone()).await?;
-        
-        // Add tool to database
-        config_manager.add_tool_to_always_allowed(&profile.id, tool_name).await?;
-        
-        // Update the in-memory profile
+
+        // Try to persist to database if available
+        if let Some(db) = &self.database {
+            match crate::application::config::ConfigManager::new(db.clone()).await {
+                Ok(config_manager) => {
+                    if let Err(e) = config_manager
+                        .add_tool_to_always_allowed(&profile.id, tool_name)
+                        .await
+                    {
+                        warn!("Failed to persist tool '{}' to database: {}", tool_name, e);
+                    } else {
+                        debug!("Successfully persisted tool '{}' to database", tool_name);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to create config manager for persistence: {}", e);
+                }
+            }
+        } else {
+            debug!("No database available - updating in-memory profile only");
+        }
+
+        // Always update the in-memory profile for immediate effect
         if let Some(ref mut profile) = self.server_profile {
             let mut always_allowed = profile.always_allowed.clone().unwrap_or_default();
             if !always_allowed.contains(&tool_name.to_string()) {
                 always_allowed.push(tool_name.to_string());
                 profile.always_allowed = Some(always_allowed);
+                info!("Added tool '{}' to always_allowed list", tool_name);
+            } else {
+                debug!("Tool '{}' already in always_allowed list", tool_name);
             }
         }
-        
+
         Ok(())
     }
 
