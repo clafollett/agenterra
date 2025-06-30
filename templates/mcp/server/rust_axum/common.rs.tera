@@ -76,7 +76,7 @@ where
                 let title = val.get("title").and_then(|v| v.as_str());
                 let detail = val.get("detail").and_then(|v| v.as_str());
                 let message = match (title, detail) {
-                    (Some(t), Some(d)) => format!("{}: {}", t, d),
+                    (Some(t), Some(d)) => format!("{t}: {d}"),
                     (Some(t), None) => t.to_string(),
                     (None, Some(d)) => d.to_string(),
                     _ => val
@@ -85,7 +85,7 @@ where
                         .unwrap_or("Unknown API error")
                         .to_string(),
                 };
-                log::warn!("API returned error status {}: {}", status, message);
+                log::warn!("API returned error status {status}: {message}");
                 let custom_code = format!("API_ERROR_{}", status.as_u16());
                 let error_data = ErrorData::new(
                     ErrorCode::INTERNAL_ERROR,

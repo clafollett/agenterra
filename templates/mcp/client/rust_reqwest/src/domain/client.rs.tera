@@ -275,7 +275,7 @@ impl McpClient {
             })?;
 
         let service = ().serve(transport).await
-            .map_err(|e| ClientError::Connection(format!("Failed to connect to MCP server: {e}")))?;;
+            .map_err(|e| ClientError::Connection(format!("Failed to connect to MCP server: {e}")))?;
 
         self.service = Some(service);
         
@@ -308,10 +308,11 @@ impl McpClient {
         
         // Parse the URL to ensure it's valid
         let parsed_url = url::Url::parse(url)
-            .map_err(|e| ClientError::Connection(format!("Invalid URL: {e}")))?;;
+            .map_err(|e| ClientError::Connection(format!("Invalid URL: {e}")))?;
         
         // Build proper endpoint URLs
-        let base_url = format!("{}://{}{}",
+        let base_url = format!(
+            "{}://{}{}",
             parsed_url.scheme(),
             parsed_url.host_str().ok_or_else(|| ClientError::Connection("Invalid URL: missing host".to_string()))?,
             parsed_url.port().map(|p| format!(":{p}")).unwrap_or_default()
@@ -481,13 +482,14 @@ impl McpClient {
         
         // Validate tool arguments against security policies
         let args_json = serde_json::to_string(&arguments)
-            .map_err(|e| ClientError::Validation(format!("Invalid arguments: {}", e)))?;
+            .map_err(|e| ClientError::Validation(format!("Invalid arguments: {e}")))?;
         
         match self.validate_input(&args_json, Some("tool_arguments")).await? {
             ValidationResult::Ok(sanitized) => {
                 // Re-parse sanitized arguments
                 arguments = serde_json::from_str(&sanitized)
-                    .map_err(|e| ClientError::Validation(format!("Failed to parse sanitized arguments: {}", e)))?;
+                    ClientError::Validation(format!("Failed to parse sanitized arguments: {e}"))
+                })?;
             }
             ValidationResult::Warning(sanitized, issues) => {
                 // Log warnings but proceed
@@ -495,7 +497,8 @@ impl McpClient {
                     tracing::warn!("Validation warning for tool '{}': {}", tool_name, issue.message);
                 }
                 arguments = serde_json::from_str(&sanitized)
-                    .map_err(|e| ClientError::Validation(format!("Failed to parse sanitized arguments: {}", e)))?;
+                    ClientError::Validation(format!("Failed to parse sanitized arguments: {e}"))
+                })?;
             }
             ValidationResult::Error(issues) => {
                 // Combine all error messages

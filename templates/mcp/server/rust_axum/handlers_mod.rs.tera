@@ -141,13 +141,13 @@ impl ServerHandler for McpServer {
                 ))),
             };
             let resource =
-                ResourceContents::text(schema_json, format!("/schema/{}", ep_lower));
+                ResourceContents::text(schema_json, format!("/schema/{ep_lower}"));
             Ok(ReadResourceResult {
                 contents: vec![resource],
             })
         } else {
             Err(McpError::resource_not_found(
-                format!("Unknown resource URI: {}", uri),
+                format!("Unknown resource URI: {uri}"),
                 None,
             ))
         };

@@ -24,9 +24,9 @@ impl PermissionResponse {
             "y" | "yes" => Ok(PermissionResponse::Execute),
             "n" | "no" => Ok(PermissionResponse::Deny),
             "a" | "always" => Ok(PermissionResponse::Always),
-            _ => Err(crate::infrastructure::error::ClientError::Client(
-                format!("Invalid response '{}'. Please enter y/yes, n/no, or a/always", input)
-            ).into()),
+            _ => Err(crate::infrastructure::error::ClientError::Client(format!(
+                "Invalid response '{input}'. Please enter y/yes, n/no, or a/always"
+            ))),
         }
     }
 }
@@ -469,7 +469,7 @@ impl McpRepl {
         println!();
         
         loop {
-            let prompt = format!("Execute '{}' tool? (y)es, (n)o, (a)lways: ", tool_name);
+            let prompt = format!("Execute '{tool_name}' tool? (y)es, (n)o, (a)lways: ");
             match self.editor.readline(&prompt) {
                 Ok(input) => {
                     match PermissionResponse::parse_user_input(&input) {
@@ -490,9 +490,9 @@ impl McpRepl {
                 }
                 Err(err) => {
                     error!("Readline error: {:?}", err);
-                    return Err(crate::infrastructure::error::ClientError::Client(
-                        format!("Failed to read user input: {}", err)
-                    ).into());
+                    return Err(crate::infrastructure::error::ClientError::Client(format!(
+                        "Failed to read user input: {err}"
+                    )));
                 }
             }
         }
