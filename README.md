@@ -278,7 +278,7 @@ Generated MCP clients include a sophisticated SQLite-powered resource caching sy
 
 **Features:**
 - **Connection Pooling** - r2d2 connection pool for concurrent access
-- **Character Encoding** - Automatic charset detection from HTTP headers
+- **Character Encoding** - Configurable charset support for resource content
 - **TTL Support** - Configurable time-to-live for cache entries
 - **Analytics** - Built-in cache hit/miss tracking and performance metrics
 - **ACID Transactions** - Database integrity with rollback support
@@ -286,14 +286,19 @@ Generated MCP clients include a sophisticated SQLite-powered resource caching sy
 
 **Configuration Options:**
 ```rust
-let config = CacheConfig {
-    database_path: "cache.db".to_string(),
+// Resource cache configuration
+let cache_config = CacheConfig {
     default_ttl: Duration::from_secs(3600),
     max_size_mb: 100,
-    pool_max_connections: Some(10),
-    pool_max_lifetime: Some(Duration::from_secs(300)),
     auto_cleanup: true,
-    ..Default::default()
+};
+
+// Database connection configuration (separate from cache config)
+let db_config = DatabaseConfig {
+    database_path: PathBuf::from("cache.db"),
+    pool_max_connections: 10,
+    pool_connection_timeout: Some(Duration::from_secs(5)),
+    pool_max_lifetime: Some(Duration::from_secs(300)),
 };
 ```
 
@@ -349,28 +354,6 @@ Here’s how to work productively with Agenterra as a contributor or advanced us
 
 ---
 
-## 🏗️ Generated Project Structure
-
-```
-petstore-server/
-├── Cargo.toml          # Rust project manifest
-├── src/
-│   ├── mcp/            # MCP protocol implementation
-│   │   ├── mod.rs       # MCP server implementation
-│   │   └── handlers/    # MCP request handlers
-│   ├── api/             # Generated API code
-│   │   ├── mod.rs       # API module exports
-│   │   ├── models/      # Generated data models
-│   │   └── operations/  # API operation handlers
-│   ├── config.rs        # Server configuration
-│   ├── error.rs         # Error handling
-│   └── main.rs          # MCP server entry point
-├── .env                # Environment variables
-└── README.md           # Project documentation
-```
-
----
-
 ## 📚 Examples & Configuration
 
 ### Basic Example: Petstore API
@@ -422,6 +405,9 @@ Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation.
 **Custom Templates:**
 - Create templates under `templates/mcp/server/` or `templates/mcp/client/`
 - **Details**: See [`docs/TEMPLATES.md`](docs/TEMPLATES.md)
+
+**Project Structure:**
+Each generated project includes a detailed README.md with template-specific project structure documentation, usage examples, and configuration options.
 
 ## 📄 License
 

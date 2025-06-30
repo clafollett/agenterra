@@ -212,6 +212,37 @@ cargo install cargo-watch
 cargo watch -x run
 ```
 
+## Project Structure
+
+```
+{{ project_name }}/
+├── Cargo.toml          # Rust project manifest
+├── src/
+│   ├── handlers/        # MCP request handlers
+│   │   ├── mod.rs       # Handler module exports
+│   │   └── {endpoint}.rs # Individual endpoint handlers
+│   ├── schemas/         # JSON schema files (created during generation)
+│   ├── common.rs        # Common utilities and error handling
+│   ├── config.rs        # Server configuration
+│   ├── server.rs        # MCP server implementation
+│   ├── signal.rs        # Signal handling for graceful shutdown
+│   ├── transport.rs     # Transport layer (STDIO/SSE)
+│   └── main.rs          # Server entry point
+├── .env                # Environment variables
+└── README.md           # Project documentation
+```
+
+The structure is organized as follows:
+
+- **`handlers/`** - Contains all MCP tool implementations, one file per endpoint
+- **`schemas/`** - JSON schema files for tool parameters (auto-generated)
+- **`common.rs`** - Shared utilities for API communication and error handling
+- **`config.rs`** - Configuration management and command-line parsing
+- **`server.rs`** - Core MCP server implementation with protocol handling
+- **`signal.rs`** - Signal handling for graceful shutdown (SIGTERM, SIGINT)
+- **`transport.rs`** - Transport layer supporting both STDIO and SSE modes
+- **`main.rs`** - Application entry point and server initialization
+
 ## Production Deployment
 
 ### Building Release Binary

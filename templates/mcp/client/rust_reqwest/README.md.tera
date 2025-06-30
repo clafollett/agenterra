@@ -351,6 +351,61 @@ Lint code:
 cargo clippy
 ```
 
+## Project Structure
+
+```
+{{ project_name }}/
+├── Cargo.toml              # Rust project manifest
+├── src/
+│   ├── api/                 # MCP protocol API types
+│   │   ├── mod.rs           # API module exports
+│   │   └── resource.rs      # Resource content types
+│   ├── application/         # Application logic layer
+│   │   ├── auth.rs          # Authentication configuration
+│   │   ├── config.rs        # Configuration management
+│   │   ├── registry.rs      # Tool registry for tracking
+│   │   ├── session_manager.rs # Session management
+│   │   ├── validation.rs    # Enterprise-grade input validation
+│   │   └── validation_config.rs # Validation configuration
+│   ├── cli/                 # Command-line interface
+│   │   ├── args.rs          # CLI argument parsing
+│   │   ├── config.rs        # CLI configuration
+│   │   ├── headless.rs      # Non-interactive mode
+│   │   ├── interactive.rs   # Interactive mode
+│   │   └── runner.rs        # CLI execution logic
+│   ├── domain/              # Domain models and business logic
+│   │   ├── capabilities.rs  # MCP capability discovery
+│   │   ├── client.rs        # Core MCP client implementation
+│   │   ├── connection.rs    # Connection management
+│   │   └── operations.rs    # MCP operations
+│   ├── infrastructure/      # Infrastructure layer
+│   │   ├── cache/           # Resource caching system
+│   │   │   └── resource_cache.rs # SQLite-powered caching
+│   │   ├── database/        # Database infrastructure
+│   │   │   ├── manager.rs   # Database connection management
+│   │   │   └── migrations.rs # Database schema migrations
+│   │   ├── error.rs         # Error handling and types
+│   │   └── transport.rs     # Transport layer (STDIO/SSE)
+│   ├── ui/                  # User interface components
+│   │   ├── headless.rs      # Headless/automation interface
+│   │   └── repl.rs          # Interactive REPL interface
+│   ├── lib.rs               # Library entry point
+│   └── main.rs              # Application entry point
+├── validation.toml.example  # Example validation configuration
+└── README.md                # Project documentation
+```
+
+The structure follows clean architecture principles:
+
+- **`api/`** - MCP protocol types and resource handling
+- **`application/`** - Business logic including security validation and configuration
+- **`cli/`** - Command-line interface with interactive and headless modes
+- **`domain/`** - Core business entities and MCP client logic
+- **`infrastructure/`** - External concerns like database, caching, and transport
+- **`ui/`** - User interface implementations (REPL and headless)
+
+Key features include enterprise-grade security validation, SQLite-powered resource caching with analytics, and comprehensive configuration management.
+
 ## Dependencies
 
 ### Core Dependencies
