@@ -107,8 +107,8 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 1. **Rust Style**
    - Follow Rust style guidelines
-   - Use `rustfmt`
-   - Run `clippy`
+   - Use `cargo fmt`
+   - Run `cargo clippy --all-targets --all-features -- -D warnings`
 
 2. **Testing**
    - Write unit tests

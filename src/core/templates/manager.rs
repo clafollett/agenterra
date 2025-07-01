@@ -1188,7 +1188,7 @@ mod tests {
         let manifest_yaml = serde_yaml::to_string(&manifest).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Failed to serialize manifest: {}", e),
+                format!("Failed to serialize manifest: {e}"),
             )
         })?;
         tokio::fs::write(&manifest_path, manifest_yaml).await?;
@@ -1223,7 +1223,7 @@ mod tests {
         let output = manager.tera.render("test.tera", &context).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Failed to render template: {}", e),
+                format!("Failed to render template: {e}"),
             )
         })?;
 
@@ -1264,7 +1264,7 @@ mod tests {
         let manifest_yaml = serde_yaml::to_string(&manifest).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Failed to serialize manifest: {}", e),
+                format!("Failed to serialize manifest: {e}"),
             )
         })?;
         tokio::fs::write(&manifest_path, manifest_yaml).await?;
@@ -1315,7 +1315,7 @@ mod tests {
         let manifest_yaml = serde_yaml::to_string(&manifest).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Failed to serialize manifest: {}", e),
+                format!("Failed to serialize manifest: {e}"),
             )
         })?;
         tokio::fs::write(&manifest_path, manifest_yaml).await?;

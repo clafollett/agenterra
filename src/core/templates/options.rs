@@ -131,7 +131,7 @@ mod tests {
             ..Default::default()
         };
 
-        let debug_str = format!("{:?}", options);
+        let debug_str = format!("{options:?}");
         assert!(debug_str.contains("all_operations: true"));
         assert!(debug_str.contains("server_port: Some(8080)"));
     }

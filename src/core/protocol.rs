@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn test_protocol_parse_error_display() {
         let error = ProtocolParseError::Unknown("test".to_string());
-        let message = format!("{}", error);
+        let message = format!("{error}");
         assert!(message.contains("Unknown protocol: 'test'"));
         assert!(message.contains("Available protocols: mcp"));
     }

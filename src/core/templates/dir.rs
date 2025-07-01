@@ -723,8 +723,7 @@ mod tests {
             // The path should be rejected for security reasons
             assert!(
                 result.is_none(),
-                "Malicious path should be rejected: {}",
-                path
+                "Malicious path should be rejected: {path}"
             );
         }
     }
@@ -820,7 +819,7 @@ mod tests {
                 let result = TemplateDir::find_template_base_dir_with_config(&mock_config);
 
                 // Should succeed without panics or race conditions
-                assert!(result.is_some(), "Thread {} failed to discover template", i);
+                assert!(result.is_some(), "Thread {i} failed to discover template");
 
                 let base_dir = result.unwrap();
                 assert!(base_dir.exists());
@@ -883,18 +882,15 @@ mod tests {
         let path_str = template_dir.template_path().to_string_lossy();
         assert!(
             path_str.contains("mcp"),
-            "Path should contain protocol segment: {}",
-            path_str
+            "Path should contain protocol segment: {path_str}"
         );
         assert!(
             path_str.contains("server"),
-            "Path should contain role: {}",
-            path_str
+            "Path should contain role: {path_str}"
         );
         assert!(
             path_str.contains("rust_axum"),
-            "Path should contain template kind: {}",
-            path_str
+            "Path should contain template kind: {path_str}"
         );
     }
 

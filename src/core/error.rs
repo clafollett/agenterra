@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn test_error_debug_display() {
         let error = Error::config("Debug test");
-        let debug_str = format!("{:?}", error);
+        let debug_str = format!("{error:?}");
         assert!(debug_str.contains("Config"));
         assert!(debug_str.contains("Debug test"));
     }

@@ -22,16 +22,16 @@ fn cleanup_project_databases(project_name: &str) -> Result<()> {
     // Database locations based on the template's get_database_path() function
     let db_paths = vec![
         // macOS location
-        dirs::data_dir().map(|d| d.join(project_name).join(format!("{}.db", project_name))),
+        dirs::data_dir().map(|d| d.join(project_name).join(format!("{project_name}.db"))),
         // Linux location
         dirs::data_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
-            .map(|d| d.join(project_name).join(format!("{}.db", project_name))),
+            .map(|d| d.join(project_name).join(format!("{project_name}.db"))),
         // Windows location
         dirs::data_local_dir().map(|d| {
             d.join(project_name)
                 .join("data")
-                .join(format!("{}.db", project_name))
+                .join(format!("{project_name}.db"))
         }),
     ];
 
@@ -277,7 +277,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
         } else {
             eprintln!("Client tests failed:");
             eprintln!("stdout: {}", String::from_utf8_lossy(&client_test.stdout));
-            eprintln!("stderr: {}", stderr);
+            eprintln!("stderr: {stderr}");
             panic!("Client tests failed");
         }
     }
@@ -334,7 +334,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
 
     // Test server with SSE mode (should start but we'll kill it quickly)
     let mut sse_server = Command::new(&server_binary)
-        .args(&["--transport", "sse", "--sse-addr", "127.0.0.1:9999"])
+        .args(["--transport", "sse", "--sse-addr", "127.0.0.1:9999"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -371,7 +371,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
             info!("✅ MCP communication test successful");
         }
         Ok(Err(e)) => {
-            panic!("MCP communication test failed: {}", e);
+            panic!("MCP communication test failed: {e}");
         }
         Err(_) => {
             panic!("MCP communication test timed out");
@@ -469,7 +469,7 @@ async fn test_mcp_with_interactive_client(
                         debug!("Raw line bytes: {:?}", line.as_bytes());
                     }
                     // Strip ANSI escape codes before processing
-                    let clean_line = strip_ansi_codes(&line);
+                    let clean_line = strip_ansi_codes(line);
                     let trimmed = clean_line.trim().to_string();
                     if !trimmed.is_empty() {
                         output.push(trimmed);
@@ -540,9 +540,7 @@ async fn test_mcp_with_interactive_client(
     // Get each resource to populate the cache
     for uri in &resource_uris {
         debug!("Getting resource: {}", uri);
-        writer
-            .write_all(format!("get {}\n", uri).as_bytes())
-            .await?;
+        writer.write_all(format!("get {uri}\n").as_bytes()).await?;
         writer.flush().await?;
 
         let resource_output = read_until_prompt(&mut reader, &mut line).await;
@@ -587,7 +585,7 @@ async fn test_mcp_with_interactive_client(
         let first_uri = &resource_uris[0];
         info!("Testing cache retrieval with: {}", first_uri);
         writer
-            .write_all(format!("get {}\n", first_uri).as_bytes())
+            .write_all(format!("get {first_uri}\n").as_bytes())
             .await?;
         writer.flush().await?;
 
@@ -646,7 +644,7 @@ async fn test_mcp_with_interactive_client(
     let decoded_string = String::from_utf8_lossy(&bytes);
 
     info!("=== DECODED STRING ===");
-    println!("\n{}\n", decoded_string);
+    println!("\n{decoded_string}\n");
     info!("=== END DECODED STRING ===");
 
     // Now parse the tools from the decoded output
@@ -681,11 +679,13 @@ async fn test_mcp_with_interactive_client(
         // Try to find tool names in the decoded output
         for line in decoded_string.lines() {
             let line = line.trim();
-            if !line.is_empty() && !line.contains("Available tools") && !line.contains("mcp>") {
-                if line.len() < 50 {
-                    // Reasonable length for a tool name
-                    tool_names.push(line.to_string());
-                }
+            if !line.is_empty()
+                && !line.contains("Available tools")
+                && !line.contains("mcp>")
+                && line.len() < 50
+            {
+                // Reasonable length for a tool name
+                tool_names.push(line.to_string());
             }
         }
     }
@@ -757,7 +757,7 @@ async fn test_mcp_with_interactive_client(
     for prompt in &prompt_names {
         debug!("Getting prompt: {}", prompt);
         writer
-            .write_all(format!("prompt {}\n", prompt).as_bytes())
+            .write_all(format!("prompt {prompt}\n").as_bytes())
             .await?;
         writer.flush().await?;
 
@@ -789,7 +789,7 @@ async fn test_mcp_with_interactive_client(
 
     // Clean up client process
     if let Err(e) = client_process.kill().await {
-        eprintln!("Warning: Failed to kill client process: {}", e);
+        eprintln!("Warning: Failed to kill client process: {e}");
     }
 
     info!("✅ Comprehensive MCP test completed successfully");
@@ -906,8 +906,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     assert!(
         stderr.contains("the following required arguments were not provided")
             && stderr.contains("--schema-path <SCHEMA_PATH>"),
-        "Should show missing --schema-path error, but got: {}",
-        stderr
+        "Should show missing --schema-path error, but got: {stderr}"
     );
 
     // Test 2: Client command should succeed with default project-name
@@ -965,8 +964,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     assert!(
         stderr.contains("unexpected argument '--schema-path' found")
             || stderr.contains("unrecognized argument '--schema-path'"),
-        "Should show error about unsupported --schema-path flag, but got: {}",
-        stderr
+        "Should show error about unsupported --schema-path flag, but got: {stderr}"
     );
 
     // Test 4: Valid server command combination
@@ -1000,8 +998,7 @@ fn test_cli_flag_combinations() -> Result<()> {
         stderr.contains("No such file or directory")
             || stderr.contains("not found")
             || stderr.contains("failed to read file"),
-        "Should show file not found error, but got: {}",
-        stderr
+        "Should show file not found error, but got: {stderr}"
     );
 
     // Verify it's not an argument parsing error
@@ -1009,8 +1006,7 @@ fn test_cli_flag_combinations() -> Result<()> {
         !stderr.contains("unrecognized")
             && !stderr.contains("unexpected")
             && !stderr.contains("required"),
-        "Should not be an argument parsing error, but got: {}",
-        stderr
+        "Should not be an argument parsing error, but got: {stderr}"
     );
 
     // Test 5: Valid client command combination
@@ -1041,8 +1037,7 @@ fn test_cli_flag_combinations() -> Result<()> {
             stdout.contains("Successfully")
                 || stdout.contains("generated")
                 || stdout.contains("Creating"),
-            "Should show success message for valid client command, but got: {}",
-            stdout
+            "Should show success message for valid client command, but got: {stdout}"
         );
     } else {
         let stderr = String::from_utf8_lossy(&result.stderr);
@@ -1051,8 +1046,7 @@ fn test_cli_flag_combinations() -> Result<()> {
             !stderr.contains("unrecognized")
                 && !stderr.contains("unexpected")
                 && !stderr.contains("required"),
-            "Should not be an argument parsing error, but got: {}",
-            stderr
+            "Should not be an argument parsing error, but got: {stderr}"
         );
 
         // Should be a template-related error, not argument parsing
@@ -1061,8 +1055,7 @@ fn test_cli_flag_combinations() -> Result<()> {
                 || stderr.contains("template")
                 || stderr.contains("not found")
                 || stderr.contains("failed"),
-            "Unexpected error for valid client command: {}",
-            stderr
+            "Unexpected error for valid client command: {stderr}"
         );
     }
 
