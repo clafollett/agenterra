@@ -567,9 +567,7 @@ impl OpenApiContext {
         // Resolve the reference
         let key = "#/components/schemas/";
         if !ref_str.starts_with(key) {
-            return Err(Error::openapi(format!(
-                "Unexpected schema ref '{ref_str}'"
-            )));
+            return Err(Error::openapi(format!("Unexpected schema ref '{ref_str}'")));
         }
 
         let schema_name = &ref_str[key.len()..];
