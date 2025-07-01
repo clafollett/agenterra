@@ -197,7 +197,7 @@ Postman now offers robust support for the Model Context Protocol (MCP), includin
 - Visual agent-building and cloud collaboration
 
 **When should you use Agenterra?**
-- **Offline, air-gapped, or regulated environments** where cloud-based tools aren’t an option
+- **Offline, air-gapped, or regulated environments** where cloud-based tools aren't an option
 - **Rust-first, codegen-centric workflows:** Generate type-safe, production-grade Rust MCP servers from OpenAPI specs, ready for CI/CD and self-hosting
 - **Full template control:** Tweak every line of generated code, use custom templates, and integrate with your own infra
 - **CLI-first automation:** Perfect for embedding in build scripts and automated workflows
@@ -215,7 +215,7 @@ Postman now offers robust support for the Model Context Protocol (MCP), includin
 
 ## 🏛️ Architecture
 
-Agenterra is built for extensibility, automation, and code quality. Here’s how the core pieces fit together:
+Agenterra is built for extensibility, automation, and code quality. Here's how the core pieces fit together:
 
 **Core Modules:**
 - `openapi`: Loads and validates OpenAPI specs (YAML/JSON, local or URL)
@@ -278,7 +278,6 @@ Generated MCP clients include a sophisticated SQLite-powered resource caching sy
 
 **Features:**
 - **Connection Pooling** - r2d2 connection pool for concurrent access
-- **Character Encoding** - Configurable charset support for resource content
 - **TTL Support** - Configurable time-to-live for cache entries
 - **Analytics** - Built-in cache hit/miss tracking and performance metrics
 - **ACID Transactions** - Database integrity with rollback support
@@ -330,7 +329,7 @@ For more details, see [CONTRIBUTING.md](CONTRIBUTING.md) if available.
 
 ## 🛠️ Developer Workflow
 
-Here’s how to work productively with Agenterra as a contributor or advanced user:
+Here's how to work productively with Agenterra as a contributor or advanced user:
 
 ### 🧪 Running Tests
 - **Unit & Integration Tests:**
