@@ -19,7 +19,7 @@ const CLI_FLAG_TESTS_SANDBOX_DIR: &str = "target/tmp/cli_flag_tests";
 
 lazy_static! {
     /// Compiled regex for stripping ANSI escape codes
-    static ref ANSI_ESCAPE_REGEX: Regex = 
+    static ref ANSI_ESCAPE_REGEX: Regex =
         Regex::new(r"\x1b\[[0-9;]*[mGKHF]|\x1b\]0;[^\x07]*\x07").unwrap();
 }
 
