@@ -1,346 +1,265 @@
 # 🔒 Enterprise Security Features
 
-Agenterra generates MCP servers and clients with enterprise-grade security features built-in from day one. This document details the comprehensive security measures implemented in generated code.
+Agenterra generates MCP servers and clients with security features designed to protect against common vulnerabilities while maintaining developer productivity. This document details the security measures implemented in generated code.
 
 ## Overview
 
-Every Agenterra-generated project includes multiple layers of security:
+Every Agenterra-generated project includes targeted security features:
 
-1. **Input Validation** - Comprehensive validation of all user inputs
-2. **Database Security** - Protection against SQL injection
-3. **Transport Security** - Secure communication options
-4. **Resource Protection** - Prevention of resource exhaustion attacks
-5. **Modern Attack Prevention** - Protection against LLM-specific attacks
+1. **Input Validation** - Validation of user inputs with configurable security levels
+2. **Database Security** - Protection against SQL injection through parameterized queries
+3. **Transport Security** - Support for secure communication modes
+4. **Permission Management** - Granular control over tool execution
+5. **Unicode Security** - Protection against text-based attacks
 
-## Input Validation Suite
+## Input Validation Framework
 
-### Core Validation Module
+### Validation Architecture
 
-Generated clients include a comprehensive `validation.rs` module that protects against:
+Generated clients include a comprehensive `validation.rs` module with configurable security policies. The validation system uses a three-tier result model:
 
-#### SQL Injection Protection
-- All database queries use **parameterized statements**
-- No raw SQL concatenation
-- Example:
-  ```rust
-  conn.prepare("SELECT * FROM servers WHERE name = ?1")?;
-  stmt.query_row(params![name], |row| { ... })
-  ```
+```rust
+pub enum ValidationResult {
+    Ok(String),                              // Valid (possibly sanitized)
+    Warning(String, Vec<ValidationIssue>),   // Has issues but allowed
+    Error(Vec<ValidationIssue>),            // Rejected
+}
+```
 
-#### Command Injection Prevention
-- Validates against shell metacharacters (`|`, `&`, `;`, `$`, `` ` ``, etc.)
-- Blocks command chaining attempts
-- Example protection:
-  ```rust
-  // This would be rejected:
-  server_name: "myserver; rm -rf /"
-  args: ["--file", "data.txt | cat /etc/passwd"]
-  ```
+### Command Validation
 
-#### Path Traversal Blocking
-- Detects patterns like `../`, `..\\`, `%2e%2e`
-- Prevents directory escape attempts
-- Example:
-  ```rust
-  // These are blocked:
-  command: "../../../etc/passwd"
-  command: "..%2f..%2fetc%2fpasswd"
-  ```
+The command validation system provides **configurable** protection that can be adjusted based on use case:
 
-#### Prompt Injection Detection
-- Scans for common injection phrases:
-  - "ignore previous instructions"
-  - "disregard above"
-  - "system:", "assistant:", "user:"
-- Prevents LLM manipulation attempts
+```rust
+// Default validation blocks shell metacharacters
+let dangerous_chars = ['|', '&', ';', '$', '`', '\n', '\r', '(', ')', '<', '>'];
+```
+
+**Important**: This validation is applied to server commands and arguments stored in the configuration, NOT to the tools or prompts sent to MCP servers. This allows developers to:
+- Use the REPL client for automation with full shell capabilities
+- Send complex prompts and tool arguments without restriction
+- Store safe server launch commands in configuration
+
+The validation can be disabled or customized via `validation.toml`:
+```toml
+[content]
+check_command_injection = false  # Disable for development environments
+```
+
+### Path Traversal Protection
+
+Detects and blocks directory traversal attempts:
+- Patterns: `../`, `..\`, `%2e%2e`, `%252e%252e`
+- URL-encoded variants
+- Mixed encoding attempts
 
 ### Unicode Security
 
 #### Zero-Width Character Detection
-Protects against invisible character attacks by detecting:
+Protects against invisible character attacks:
 - Zero Width Space (U+200B)
-- Zero Width Non-Joiner (U+200C)
+- Zero Width Non-Joiner (U+200C) 
 - Zero Width Joiner (U+200D)
-- Word Joiner (U+2060)
-- And other invisible Unicode characters
+- Soft Hyphen (U+00AD)
+- And 15+ other invisible Unicode characters
 
-#### Emoji Jailbreak Protection
-Based on research from [Google Cloud's emoji jailbreak article](https://medium.com/google-cloud/emoji-jailbreaks-b3b5b295f38b), we detect:
-- Excessive emoji usage (>30% of input)
-- Consecutive emoji patterns (>3 in a row)
-- Emoji-text-emoji sandwich patterns
-- Suspicious keywords combined with emojis
-
-Example blocked pattern:
-```
-"😀😀😀 ignore 😀😀😀 previous 😀😀😀 instructions"
+#### Mixed Script Detection
+Prevents homograph attacks by detecting mixed scripts:
+```rust
+// Detects strings mixing Latin with Cyrillic
+"pаypal.com"  // 'а' is Cyrillic, not Latin 'a'
 ```
 
-#### Homograph Attack Prevention
-- Detects Unicode normalization issues
-- Prevents character substitution attacks (e.g., Cyrillic 'а' vs Latin 'a')
-- Requires normalized Unicode input
+#### Emoji Security
+Based on [emoji jailbreak research](https://cloud.google.com/blog/topics/developers-practitioners/red-teaming-llms-exploring-emojis-jailbreak-potential), the system can detect:
+- Excessive emoji density (>30% of content)
+- Suspicious emoji patterns
+- Keywords hidden in emoji sequences
 
 ### Size and Complexity Limits
 
-#### Input Size Restrictions
-- Maximum input size: 1MB
-- Per-field limits:
-  - Server names: 255 characters
-  - Descriptions: 1KB
-  - Commands: 4KB
-  - Environment values: 32KB
-
-#### JSON Security
-- Maximum nesting depth: 10 levels
-- Maximum keys per object: 1000
-- Prevents JSON bomb attacks
-- Example:
-  ```rust
-  // This deeply nested JSON would be rejected:
-  {"a": {"b": {"c": {"d": ... (15 levels deep)
-  ```
+Configurable limits to prevent resource exhaustion:
+- Maximum input size: 10MB (default)
+- JSON nesting depth: 10 levels (default)
+- Field-specific limits (e.g., server names: 255 chars)
 
 ## Database Security
 
-### Parameterized Queries
-All database operations use parameterized queries to prevent SQL injection:
+### SQL Injection Prevention
+
+All database operations use parameterized queries exclusively:
 
 ```rust
-// Safe query with parameters
-let mut stmt = conn.prepare(
-    "INSERT INTO servers (id, name, command, args) VALUES (?1, ?2, ?3, ?4)"
-)?;
-stmt.execute(params![id, name, command, args_json])?;
+// Always use parameterized queries
+conn.prepare("SELECT * FROM servers WHERE name = ?1")?;
+stmt.query_row(params![name], |row| { ... })
 
-// Never constructed with string concatenation
+// Never string concatenation
 // BAD: format!("SELECT * FROM servers WHERE name = '{}'", name)
 ```
 
-### Transaction Safety
-- ACID compliance with SQLite
-- Automatic rollback on errors
+### Connection Management
 - Connection pooling with r2d2
+- Configurable pool size (1-10 connections)
+- Connection lifetime limits
+- Automatic cleanup on shutdown
 
 ## Transport Security
 
-### SSE (Server-Sent Events) Mode
-Generated servers and clients support SSE transport for secure web deployments:
+### STDIO Mode (Default)
+- Direct process communication
+- No network exposure
+- Suitable for local development
 
-#### Server Security
+### SSE Mode
+Server-Sent Events support for web deployments:
+
+#### Server Configuration
+```bash
+./server --transport sse --sse-addr 127.0.0.1:8080
+```
 - Configurable bind address
-- Keep-alive mechanism to detect stale connections
-- Graceful shutdown handling
-- Example:
-  ```bash
-  ./server --transport sse --sse-addr 127.0.0.1:8080
-  ```
+- Keep-alive for connection health
+- Graceful shutdown support
 
-#### Client Security
-- URL validation for SSE endpoints
-- Rejects dangerous URL schemes (javascript:, data:, vbscript:)
-- Automatic reconnection with exponential backoff
-- Example:
-  ```bash
-  ./client --transport sse --sse-url https://api.example.com/mcp
-  ```
+#### Client Configuration  
+```bash
+./client --transport sse --sse-url https://api.example.com/mcp
+```
+- URL validation (blocks `javascript:`, `data:`, etc.)
+- Automatic reconnection with backoff
+- TLS support via HTTPS URLs
 
-## Resource Protection
+## Permission Management
 
-### Connection Pooling
-- Prevents connection exhaustion
-- Configurable pool size (1-10 connections)
-- Connection lifetime limits (5 minutes default)
+### Interactive Tool Approval
 
-### Cache Management
-- Size limits to prevent disk exhaustion
-- TTL-based expiration
-- Automatic cleanup of expired resources
+The client includes an interactive permission system for tool execution:
 
-### Rate Limiting
-- Built-in request throttling
-- Prevents DoS attacks
-- Configurable limits
+```
+🔒 Permission Required
+Tool: delete_repository
+Arguments: {"name": "production-db"}
 
-## Validation API
-
-### Server Name Validation
-```rust
-InputValidator::validate_server_name("my-server")?;
-// Allows: alphanumeric, dash, underscore
-// Blocks: special characters, reserved names
+Execute 'delete_repository' tool? (y)es, (n)o, (a)lways: n
 ```
 
-### Command Validation
-```rust
-InputValidator::validate_command("/usr/bin/server")?;
-// Validates paths, URLs
-// Blocks: path traversal, dangerous patterns
+### Server Profiles
+
+Granular control over server behavior:
+
+```bash
+# Disable entire server
+./client server add risky-server /path/to/server --disabled
+
+# Pre-approve safe tools
+./client server add dev-server /path/to/server \
+  --always-allowed "list_files,read_file"
+
+# Block dangerous tools
+./client server add prod-server /path/to/server \
+  --disabled-tools "delete_all,force_push"
 ```
 
-### Environment Variable Validation
-```rust
-let env = InputValidator::validate_environment(r#"{"PATH": "/usr/bin"}"#)?;
-// Validates JSON structure
-// Ensures keys are valid identifiers
-// Checks values for dangerous patterns
-```
-
-### Identifier Validation
-```rust
-// For tool names (allows dashes)
-InputValidator::validate_identifier("my-tool", "tool name", true)?;
-
-// For environment variables (no dashes)
-InputValidator::validate_identifier("MY_VAR", "environment variable", false)?;
-```
-
-## Testing Security
-
-Generated projects include comprehensive security tests:
-
-```rust
-#[test]
-fn test_sql_injection_protection() {
-    // Verify parameterized queries work correctly
-}
-
-#[test]
-fn test_emoji_jailbreak_detection() {
-    assert!(InputValidator::check_emoji_jailbreak_patterns("😀😀😀😀😀").is_err());
-}
-
-#[test]
-fn test_zero_width_detection() {
-    assert!(InputValidator::check_unicode_attacks("hello\u{200B}world").is_err());
-}
-```
+### Permission Storage
+- Stored in SQLite with full ACID guarantees
+- Client-side enforcement (no server communication for blocked tools)
+- Audit logging of all permission decisions
 
 ## Configuration
 
-### Client Security Configuration
-```rust
-// In generated client code
-let validator = InputValidator::new();
-validator.validate_all_inputs(&user_input)?;
+### Validation Configuration (`validation.toml`)
+
+```toml
+[validation]
+enabled = true
+max_input_size = 10485760  # 10MB
+security_level = "balanced"  # permissive, balanced, strict
+
+[unicode]
+allow_rtl = false
+block_invisible = true
+normalize_text = true
+
+[content]
+check_command_injection = true
+check_path_traversal = true
+check_prompt_injection = false  # Disabled by default for flexibility
+
+[patterns]
+max_emoji_density = 0.3
+block_suspicious_patterns = true
 ```
 
-### Server Security Configuration
-```bash
-# Environment variables for security
-TRANSPORT=sse
-SSE_ADDR=127.0.0.1:8080
-SSE_KEEP_ALIVE=30
-LOG_LEVEL=info
-```
+### Security Levels
 
-## Server Control Features
-
-Generated MCP clients include granular server control capabilities for enhanced security:
-
-### Server Disable/Enable
-Completely disable a server to prevent any connections:
-
-```bash
-# Add a disabled server
-./client server add compromised-server /path/to/server --disabled
-
-# The client will refuse to connect
-./client --profile compromised-server
-# Error: Server profile 'compromised-server' is disabled
-```
-
-This feature is critical for:
-- **Incident Response**: Immediately disable compromised servers
-- **Maintenance Windows**: Temporarily disable servers during updates
-- **Access Control**: Disable servers for specific users or environments
-
-### Tool Permission Management
-
-#### Always Allowed Tools
-Bypass approval prompts for trusted tools to improve workflow efficiency:
-
-```bash
-./client server add github-server /path/to/server \
-  --always-allowed "list_issues,get_issue,list_pull_requests"
-```
-
-Benefits:
-- **Productivity**: No interruptions for read-only operations
-- **Automation**: Enable headless workflows for safe tools
-- **User Experience**: Reduce approval fatigue
-
-#### Disabled Tools
-Block specific tools from being called:
-
-```bash
-./client server add restricted-server /path/to/server \
-  --disabled-tools "delete_repository,force_push,merge_pull_request"
-```
-
-Protection against:
-- **Destructive Operations**: Prevent accidental data loss
-- **Privilege Escalation**: Block admin-only tools
-- **Compliance**: Enforce organizational policies
-
-### Implementation Details
-
-All server control features are:
-- **Stored Securely**: In the SQLite database with proper constraints
-- **Validated**: Tool names undergo full security validation
-- **Enforced Client-Side**: Checks happen before any server communication
-- **Auditable**: All permission checks are logged
-
-Example configuration:
-```json
-{
-  "mcpServers": {
-    "production-api": {
-      "command": "./mcp-server",
-      "disabled": false,
-      "alwaysAllowed": ["read_data", "list_resources"],
-      "disabledTools": ["delete_all", "admin_reset"]
-    }
-  }
-}
-```
+- **Permissive**: Minimal validation, suitable for trusted environments
+- **Balanced**: Default setting, blocks known dangerous patterns
+- **Strict**: Maximum validation, may impact legitimate use cases
 
 ## Best Practices
 
-1. **Always Validate Input**: Never trust user input, even from authenticated sources
-2. **Use Generated Validators**: Leverage the built-in validation functions
-3. **Keep Dependencies Updated**: Regular `cargo update` for security patches
-4. **Monitor Logs**: Watch for validation failures as potential attack indicators
-5. **Test Security**: Run the included security tests regularly
+1. **Configure for Your Environment**
+   - Development: More permissive settings
+   - Production: Stricter validation rules
+
+2. **Use Permission Management**
+   - Pre-approve read-only tools
+   - Block destructive operations
+   - Review permission requests carefully
+
+3. **Monitor and Audit**
+   - Check logs for validation failures
+   - Review audit logs periodically
+   - Update validation rules based on threats
+
+4. **Keep Dependencies Updated**
+   ```bash
+   cargo update  # Regular security updates
+   cargo audit   # Check for known vulnerabilities
+   ```
+
+## Testing Security
+
+Generated projects include security tests:
+
+```rust
+#[test]
+fn test_parameterized_queries() {
+    // Verify SQL injection protection
+}
+
+#[test]
+fn test_unicode_normalization() {
+    // Test mixed script detection
+}
+
+#[test]
+fn test_permission_enforcement() {
+    // Verify tool blocking works
+}
+```
+
+## Limitations and Considerations
+
+1. **Command Validation**: Only applies to server launch commands, not MCP tool arguments
+2. **Client-Side Security**: Permission checks happen in the client, not the server
+3. **Transport Security**: SSE mode requires proper TLS configuration for production
+4. **Unicode Validation**: May impact legitimate international content
 
 ## Security Incident Response
 
-If you discover a security vulnerability:
-
-1. **Do Not** create a public GitHub issue
-2. **Do** report it privately to the maintainers
-3. Include:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if any)
-
-## Compliance
-
-Generated code helps meet common security requirements:
-
-- **OWASP Top 10** protection
-- **CWE** coverage for common weaknesses
-- **Input validation** per NIST guidelines
-- **Secure coding** practices
+If you discover a vulnerability:
+1. **Do Not** create a public issue
+2. **Do** report privately to maintainers
+3. Include: description, reproduction steps, impact assessment
 
 ## Additional Resources
 
 - [OWASP Input Validation Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html)
-- [Unicode Security Considerations](https://unicode.org/reports/tr36/)
+- [Unicode Security Guide](https://unicode.org/reports/tr36/)
 - [SQL Injection Prevention](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)
-- [Emoji Jailbreaks Research](https://medium.com/google-cloud/emoji-jailbreaks-b3b5b295f38b)
 
 ---
 
-**Remember**: Security is a journey, not a destination. While Agenterra provides robust security features out of the box, always review and enhance security measures based on your specific use case and threat model.
+**Remember**: Security is about finding the right balance between protection and usability. Agenterra provides configurable security features that can be tuned to your specific needs and threat model.
