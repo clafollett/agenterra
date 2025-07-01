@@ -6,6 +6,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use lazy_static::lazy_static;
 use regex::Regex;
 use rusqlite::{Connection, params};
 use std::thread;
@@ -15,6 +16,12 @@ use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
 const CLI_FLAG_TESTS_SANDBOX_DIR: &str = "target/tmp/cli_flag_tests";
+
+lazy_static! {
+    /// Compiled regex for stripping ANSI escape codes
+    static ref ANSI_ESCAPE_REGEX: Regex = 
+        Regex::new(r"\x1b\[[0-9;]*[mGKHF]|\x1b\]0;[^\x07]*\x07").unwrap();
+}
 
 /// Clean up any SQLite database files for a given project name
 /// This ensures each test run starts with a fresh database state
@@ -341,7 +348,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
         .context("Failed to start server in SSE mode")?;
 
     // Give it a moment to start
-    thread::sleep(Duration::from_millis(500));
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Kill the server
     sse_server.kill().ok();
@@ -446,9 +453,8 @@ async fn test_mcp_with_interactive_client(
 
     // Helper function to strip ANSI escape codes
     fn strip_ansi_codes(s: &str) -> String {
-        // Remove various ANSI escape sequences
-        let re = Regex::new(r"\x1b\[[0-9;]*[mGKHF]|\x1b\]0;[^\x07]*\x07").unwrap();
-        re.replace_all(s, "").to_string()
+        // Remove various ANSI escape sequences using pre-compiled regex
+        ANSI_ESCAPE_REGEX.replace_all(s, "").to_string()
     }
 
     // Helper function to read until prompt
