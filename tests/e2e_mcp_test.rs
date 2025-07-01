@@ -85,7 +85,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
     // Clean any previous run directories to avoid conflicts
     for sub in ["e2e_mcp_server", "e2e_mcp_client"] {
         let dir = scaffold_path.join(sub);
-        let _ = fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
     }
     std::fs::create_dir_all(&scaffold_path)?;
 
@@ -1280,7 +1280,7 @@ async fn test_mcp_sse_transport() -> Result<()> {
     let scaffold_path = project_dir.join("target/tmp/e2e-sse-tests");
 
     // Clean previous runs
-    let _ = fs::remove_dir_all(&scaffold_path);
+    let _ = std::fs::remove_dir_all(&scaffold_path);
     std::fs::create_dir_all(&scaffold_path)?;
 
     // Generate SSE-enabled client
