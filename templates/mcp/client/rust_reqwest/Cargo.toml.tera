@@ -91,5 +91,8 @@ toml = "0.8"
 # Regular expressions for pattern matching
 regex = "1.10"
 
+[lints.clippy]
+uninlined_format_args = "allow"
+
 # Prevent cargo from thinking this is part of a parent workspace
 [workspace]

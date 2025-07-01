@@ -57,9 +57,11 @@ pub struct SseConfig {
 pub async fn start(
     cfg: Arc<Mutex<Config>>, file_guard: impl Send + Sync + 'static, stderr_guard: impl Send + Sync + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (mode, _sse_mode) = {
+    let (mode, _sse_mode, config) = {
         let cfg_guard = cfg.lock().await;
-        select_server_mode(&cfg_guard)
+        let config_clone = cfg_guard.clone();
+        let (mode, sse_mode) = select_server_mode(&cfg_guard);
+        (mode, sse_mode, config_clone)
     };
     let notify = Arc::new(Notify::new());
     let event = Arc::new(Mutex::new(None));
@@ -69,8 +71,8 @@ pub async fn start(
     // Launch the appropriate server as a task
     let server_task = tokio::spawn(async move {
         let res = match mode {
-            ServerMode::Stdio => run_stdio_server().await,
-            ServerMode::Sse(cfg) => run_sse_server(cfg).await,
+            ServerMode::Stdio => run_stdio_server(config.clone()).await,
+            ServerMode::Sse(cfg) => run_sse_server(cfg, config).await,
         };
         if let Err(e) = res {
             info!(target = "server", "Server exited with error: {:?}", e);
@@ -96,12 +98,11 @@ pub async fn start(
 // === Private Helpers ===
 
 /// Runs the stdio (CLI/Inspector) server loop.
-async fn run_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
+async fn run_stdio_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     debug!("[{{ project_name }} MCP] run_stdio_server start");
 
     // Use an explicitly non-buffered stdio transport
-    let config = Config::default();
-    let service = McpServer::with_config(config).serve(stdio()).await?;
+    let service = McpServer::new(config).serve(stdio()).await?;
 
     debug!("[{{ project_name }} MCP] run_stdio_server acquired service, about to wait");
 
@@ -113,7 +114,7 @@ async fn run_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Runs the SSE/Axum (web) server loop.
-async fn run_sse_server(cfg: SseConfig) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_sse_server(cfg: SseConfig, config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let sse_config = SseServerConfig {
         bind: cfg.addr,
         sse_path: cfg.sse_path,
@@ -122,8 +123,7 @@ async fn run_sse_server(cfg: SseConfig) -> Result<(), Box<dyn std::error::Error>
         sse_keep_alive: cfg.keep_alive,
     };
     let (sse_server, router) = SseServer::new(sse_config);
-    let config = Config::default();
-    let _ct = sse_server.with_service(move || McpServer::with_config(config.clone()));
+    let _ct = sse_server.with_service(move || McpServer::new(config.clone()));
     debug!("[{{ project_name }} MCP] Starting SSE/Axum server on {}...", cfg.addr);
     let listener = tokio::net::TcpListener::bind(cfg.addr).await?;
     axum::serve(listener, router).await?;

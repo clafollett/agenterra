@@ -22,13 +22,8 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// Create a new MCP server instance
-    pub fn new() -> Self {
-        Self::with_config(Config::default())
-    }
-    
-    /// Create a new MCP server instance with custom configuration
-    pub fn with_config(config: Config) -> Self {
+    /// Create a new MCP server instance with default configuration
+    pub fn new(config: Config) -> Self {
         Self {
             tool_router: Self::tool_router(),
             config,

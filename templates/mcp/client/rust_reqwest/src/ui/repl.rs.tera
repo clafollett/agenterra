@@ -4,7 +4,7 @@ use crate::infrastructure::error::Result;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use serde_json::{json, Value};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use async_trait::async_trait;
 
 use crate::domain::client::McpClient;
@@ -318,16 +318,11 @@ impl McpRepl {
 
     /// Call a tool with permission checking
     async fn call_tool(&mut self, tool_name: &str, args: Value) -> Result<()> {
-        self.call_tool_with_permissions(tool_name, args).await
-    }
-    
-    /// Call a tool with permission checking workflow
-    async fn call_tool_with_permissions(&mut self, tool_name: &str, args: Value) -> Result<()> {
         // Check if tool is disabled first - completely block execution
         if self.client.is_tool_disabled(tool_name) {
             let error_msg = format!("Tool '{tool_name}' is disabled for this server");
             error!("Attempted to call disabled tool: {tool_name}");
-            return Err(crate::infrastructure::error::ClientError::ToolError(error_msg).into());
+            return Err(crate::infrastructure::error::ClientError::ToolError(error_msg));
         }
 
         // Check if tool is in always_allowed - execute immediately
@@ -368,7 +363,7 @@ impl McpRepl {
             }
             Err(e) => {
                 error!("Failed to call tool '{}': {}", tool_name, e);
-                Err(e.into())
+                Err(e)
             }
         }
     }
@@ -451,13 +446,6 @@ impl McpRepl {
 #[async_trait]
 impl PermissionPrompter for McpRepl {
     async fn prompt_user_permission(&mut self, tool_name: &str, args: &Value) -> Result<PermissionResponse> {
-        self.prompt_user_permission_impl(tool_name, args).await
-    }
-}
-
-impl McpRepl {
-    /// Implementation of user permission prompting
-    async fn prompt_user_permission_impl(&mut self, tool_name: &str, args: &Value) -> Result<PermissionResponse> {
         // Display the tool call information
         println!();
         println!("🔒 Permission Required");
@@ -494,111 +482,6 @@ impl McpRepl {
                         "Failed to read user input: {err}"
                     )));
                 }
-            }
-        }
-    }
-    
-    /// Prompt user for permission with a timeout
-    /// 
-    /// Enterprise-grade implementation that properly handles timeouts using async channels
-    /// and background tasks. The prompt will be automatically cancelled if the timeout is reached.
-    async fn prompt_user_permission_with_timeout(
-        &mut self,
-        tool_name: &str,
-        args: &Value,
-        timeout: std::time::Duration,
-    ) -> Result<PermissionResponse> {
-        use tokio::sync::oneshot;
-        use tokio::time;
-        
-        // Display the tool call information to user
-        println!();
-        println!("🔒 Permission Required ({}s timeout)", timeout.as_secs());
-        println!("Tool: {tool_name}");
-        if !args.is_null() && args != &json!({}) {
-            println!("Arguments:");
-            println!("{}", serde_json::to_string_pretty(args)?);
-        }
-        println!();
-        
-        debug!("Starting permission prompt with timeout: {}s for tool: {tool_name}", timeout.as_secs());
-        
-        // Create a channel for communicating the result
-        let (tx, rx) = oneshot::channel();
-        
-        // Clone necessary data for the background task
-        let prompt_msg = format!("Execute '{tool_name}' tool? (y)es, (n)o, (a)lways: ");
-        
-        // Spawn a background task to handle the blocking readline
-        let handle = tokio::task::spawn_blocking(move || {
-            use rustyline::DefaultEditor;
-            
-            let mut editor = DefaultEditor::new().map_err(|e| {
-                crate::infrastructure::error::ClientError::Client(format!("Failed to create editor: {e}"))
-            })?;
-            
-            loop {
-                match editor.readline(&prompt_msg) {
-                    Ok(input) => {
-                        match PermissionResponse::parse_user_input(&input) {
-                            Ok(response) => {
-                                let _ = tx.send(Ok(response));
-                                break;
-                            }
-                            Err(e) => {
-                                println!("Invalid input: {e}");
-                                debug!("User provided invalid input during permission prompt: {e}");
-                                continue;
-                            }
-                        }
-                    }
-                    Err(rustyline::error::ReadlineError::Interrupted) => {
-                        println!("Operation cancelled");
-                        info!("Permission prompt interrupted by user (Ctrl+C)");
-                        let _ = tx.send(Ok(PermissionResponse::Deny));
-                        break;
-                    }
-                    Err(rustyline::error::ReadlineError::Eof) => {
-                        println!("EOF received, cancelling operation");
-                        info!("Permission prompt received EOF, denying permission");
-                        let _ = tx.send(Ok(PermissionResponse::Deny));
-                        break;
-                    }
-                    Err(err) => {
-                        let _ = tx.send(Err(crate::infrastructure::error::ClientError::Client(
-                            format!("Failed to read user input: {err}")
-                        )));
-                        break;
-                    }
-                }
-            }
-            Ok::<(), crate::infrastructure::error::ClientError>(())
-        });
-        
-        // Race between the user input and the timeout
-        match time::timeout(timeout, rx).await {
-            Ok(Ok(result)) => {
-                // User provided input within timeout
-                debug!("Permission prompt completed successfully within timeout");
-                result.map_err(|e| e.into())
-            }
-            Ok(Err(_)) => {
-                // Channel was closed (shouldn't happen in normal operation)
-                handle.abort();
-                warn!("Permission prompt channel was unexpectedly closed");
-                Err(crate::infrastructure::error::ClientError::Client(
-                    "Permission prompt was cancelled".to_string()
-                ).into())
-            }
-            Err(_) => {
-                // Timeout occurred
-                handle.abort();
-                warn!("Permission prompt timed out after {}s for tool: {tool_name}", timeout.as_secs());
-                println!("\n⏰ Permission prompt timed out after {}s - denying by default", timeout.as_secs());
-                Err(crate::infrastructure::error::ClientError::Timeout {
-                    operation: format!("Permission prompt for tool '{tool_name}'"),
-                    timeout_ms: timeout.as_millis() as u64,
-                }.into())
             }
         }
     }
@@ -712,8 +595,7 @@ mod tests {
         let tool_name = "blocked_tool";
         let args = json!({"param": "value"});
         
-        // TODO: This will fail until we implement permission checking in call_tool_with_permissions
-        let result = repl.call_tool_with_permissions(tool_name, args).await;
+        let result = repl.call_tool(tool_name, args).await;
         assert!(result.is_err(), "Should return error for disabled tool");
         
         let error_msg = result.unwrap_err().to_string();
@@ -788,18 +670,18 @@ mod tests {
         let tool_name = "test_tool";
         let args = json!({"param": "value"});
         
-        // TODO: This will fail until we implement call_tool_with_permissions
-        let result = repl.call_tool_with_permissions_and_prompter(tool_name, args.clone(), &mut mock_prompter).await;
+        // TODO: This will fail until we implement call_tool
+        let result = repl.call_tool_and_prompter(tool_name, args.clone(), &mut mock_prompter).await;
         assert!(result.is_ok(), "Should succeed when user accepts");
         
         // Test user denies execution
         let mut mock_prompter = MockPrompter::new(vec![PermissionResponse::Deny]);
-        let result = repl.call_tool_with_permissions_and_prompter(tool_name, args.clone(), &mut mock_prompter).await;
+        let result = repl.call_tool_and_prompter(tool_name, args.clone(), &mut mock_prompter).await;
         assert!(result.is_ok(), "Should succeed (but skip execution) when user denies");
         
         // Test user chooses always
         let mut mock_prompter = MockPrompter::new(vec![PermissionResponse::Always]);
-        let result = repl.call_tool_with_permissions_and_prompter(tool_name, args, &mut mock_prompter).await;
+        let result = repl.call_tool_and_prompter(tool_name, args, &mut mock_prompter).await;
         assert!(result.is_ok(), "Should succeed when user chooses always");
         
         // Verify tool is now in always_allowed (should not prompt next time)
@@ -809,7 +691,7 @@ mod tests {
     
     impl McpRepl {
         /// Test helper method to call tool with mock prompter (mocks execution for testing)
-        pub async fn call_tool_with_permissions_and_prompter(
+        pub async fn call_tool_and_prompter(
             &mut self,
             tool_name: &str,
             args: Value,
@@ -818,7 +700,7 @@ mod tests {
             // Check if tool is disabled first - completely block execution
             if self.client.is_tool_disabled(tool_name) {
                 let error_msg = format!("Tool '{tool_name}' is disabled for this server");
-                return Err(crate::infrastructure::error::ClientError::ToolError(error_msg).into());
+                return Err(crate::infrastructure::error::ClientError::ToolError(error_msg));
             }
 
             // Check if tool is in always_allowed - execute immediately
@@ -850,27 +732,4 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_permission_prompt_timeout() {
-        // Test timeout behavior using the timeout functionality
-        let client = create_test_client_with_profile(vec![], vec![]).await;
-        let mut repl = McpRepl::new(client, "test-server".to_string());
-
-        // Test with very short timeout - in test environment this will hit EOF immediately
-        // which is the correct graceful behavior (returns Deny)
-        let result = repl
-            .prompt_user_permission_with_timeout(
-                "test_tool",
-                &json!({}),
-                std::time::Duration::from_millis(1),
-            )
-            .await;
-        
-        // In test environment, EOF is hit immediately which returns Ok(Deny)
-        // This demonstrates the graceful handling works correctly
-        assert!(result.is_ok(), "Should handle EOF gracefully");
-        if let Ok(response) = result {
-            assert_eq!(response, PermissionResponse::Deny, "Should deny on EOF");
-        }
-    }
 }

@@ -16,13 +16,12 @@ use utoipa::ToSchema;
 /// Auto-generated parameters struct for `/{{ endpoint }}` endpoint.
 /// Spec: {{ spec_file_name | default(value="") }}
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
-pub struct {{ parameters_type }} {
+pub struct {{ parameters_type }} {{% if parameters | length > 0 %}
     {% for p in parameters %}{%- if p.description %}
     #[schemars(description = r#"{{ p.description }}"#)]
     {%- endif %}
     pub {{ p.name }}: Option<{{ p.target_type }}>,
-    {% endfor %}
-}
+    {% endfor %}{% endif %}}
 
 // Implement Endpoint for generic handler
 impl Endpoint for {{ parameters_type }} {
@@ -48,12 +47,11 @@ impl Endpoint for {{ parameters_type }} {
 /// Auto-generated properties struct for `/{{ endpoint }}` endpoint.
 /// Spec: {{ spec_file_name | default(value="") }}
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
-pub struct {{ properties_type }} {
-{%- for prop in properties %}
+pub struct {{ properties_type }} {{% if properties | length > 0 %}
+    {% for prop in properties %}
     #[schemars(description = r#"{{ prop.title }} - {{ prop.description }}"#)]
     pub {{ prop.name }}: Option<{{ prop.rust_type }}>,
-{% endfor %}
-}
+{% endfor %}{% endif %}}
 
 {%- if response_is_array %}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, ToSchema)]
@@ -102,7 +100,10 @@ Responses:
     503: Service Unavailable
     504: Gateway Timeout
 Tag: {{ tags.0 }}"#]
-pub async fn {{ endpoint }}_handler(config: &Config, params: &{{ parameters_type }}) -> Result<CallToolResult, agenterra_rmcp::Error> {
+pub async fn {{ endpoint }}_handler(
+    config: &Config,
+    params: &{{ parameters_type }},
+) -> Result<CallToolResult, agenterra_rmcp::Error> {
     // Log incoming request parameters and request details as structured JSON
     info!(
         target = "handler",
@@ -111,11 +112,15 @@ pub async fn {{ endpoint }}_handler(config: &Config, params: &{{ parameters_type
         method = "GET",
         path = "{{ path }}",
         params = serde_json::to_string(params).unwrap_or_else(|e| {
-            warn!("Failed to serialize request params: {}", e);
+            warn!("Failed to serialize request params: {e}");
             "{}".to_string()
         })
     );
-    debug!(target = "handler", event = "before_api_call", endpoint = "{{ endpoint }}");
+    debug!(
+        target = "handler",
+        event = "before_api_call",
+        endpoint = "{{ endpoint }}"
+    );
     let resp = get_endpoint_response::<_, {{ response_type }}>(config, params).await;
 
     match &resp {
@@ -126,7 +131,7 @@ pub async fn {{ endpoint }}_handler(config: &Config, params: &{{ parameters_type
                 endpoint = "{{ endpoint }}",
                 response = ?r
             );
-        },
+        }
         Err(e) => {
             error!(target = "handler", event = "api_error", endpoint = "{{ endpoint }}", error = ?e);
         }
@@ -142,21 +147,19 @@ mod tests {
     use serde_json;
     #[test]
     fn test_parameters_struct_serialization() {
-        let params = {{ parameters_type }} {
+        let params = {{ parameters_type }} {{% if parameters | length > 0 %}
             {% for p in parameters %}
             {{ p.name }}: None,
-            {% endfor %}
-        };
+            {% endfor %}{% endif %}};
         let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");
     }
 
     #[test]
     fn test_properties_struct_serialization() {
-        let props = {{ properties_type }} {
+        let props = {{ properties_type }} {{% if properties | length > 0 %}
             {% for prop in properties %}
             {{ prop.name | lower }}: None,
-            {% endfor %}
-        };
+            {% endfor %}{% endif %}};
         let _ = serde_json::to_string(&props).expect("Serializing test properties should not fail");
     }
 }

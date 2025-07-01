@@ -13,7 +13,7 @@ use dirs;
 use crate::infrastructure::error::{ClientError, Result};
 
 /// Main validation configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ValidationConfig {
     /// Top-level validation settings
     #[serde(default)]
@@ -161,7 +161,7 @@ pub struct ContentSettings {
 }
 
 /// Field-specific settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FieldSettings {
     /// Maximum length for this field
     pub max_length: Option<usize>,
@@ -213,7 +213,7 @@ pub struct PerformanceSettings {
 fn default_security_level() -> String { "balanced".to_string() }
 fn default_validation_action() -> ValidationAction { ValidationAction::Sanitize }
 fn default_audit_log_path() -> String { 
-    format!("~/.{{ project_name }}/validation-audit.log") 
+    "~/.{{ project_name }}/validation-audit.log".to_string()
 }
 fn default_true() -> bool { true }
 fn default_max_tokens() -> u32 { 3 }
@@ -225,19 +225,6 @@ fn default_cache_size() -> usize { 1000 }
 fn default_cache_ttl() -> u64 { 300 }
 fn default_max_concurrent() -> usize { 10 }
 
-impl Default for ValidationConfig {
-    fn default() -> Self {
-        Self {
-            validation: ValidationSettings::default(),
-            unicode: UnicodeSettings::default(),
-            patterns: PatternSettings::default(),
-            content: ContentSettings::default(),
-            server_overrides: HashMap::new(),
-            field_specific: HashMap::new(),
-            performance: PerformanceSettings::default(),
-        }
-    }
-}
 
 impl Default for ValidationSettings {
     fn default() -> Self {
@@ -354,9 +341,9 @@ impl ValidationConfig {
         let path_str = &self.validation.audit_log_path;
         
         // Handle tilde expansion
-        if path_str.starts_with("~/") {
+        if let Some(stripped) = path_str.strip_prefix("~/") {
             if let Some(home_dir) = dirs::home_dir() {
-                return home_dir.join(&path_str[2..]);
+                return home_dir.join(stripped);
             }
         }
         
@@ -393,13 +380,15 @@ pub enum ValidationAction {
     Warn,
 }
 
-impl ValidationAction {
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for ValidationAction {
+    type Err = String;
+    
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "reject" => ValidationAction::Reject,
-            "sanitize" => ValidationAction::Sanitize,
-            "warn" => ValidationAction::Warn,
-            _ => ValidationAction::Sanitize, // Default
+            "reject" => Ok(ValidationAction::Reject),
+            "sanitize" => Ok(ValidationAction::Sanitize),
+            "warn" => Ok(ValidationAction::Warn),
+            _ => Err(format!("Unknown validation action: {}", s)),
         }
     }
 }
@@ -413,14 +402,16 @@ pub enum SecurityLevel {
     Custom,
 }
 
-impl SecurityLevel {
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for SecurityLevel {
+    type Err = String;
+    
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "permissive" => SecurityLevel::Permissive,
-            "balanced" => SecurityLevel::Balanced,
-            "high" | "strict" => SecurityLevel::High,
-            "custom" => SecurityLevel::Custom,
-            _ => SecurityLevel::Balanced, // Default
+            "permissive" => Ok(SecurityLevel::Permissive),
+            "balanced" => Ok(SecurityLevel::Balanced),
+            "high" | "strict" => Ok(SecurityLevel::High),
+            "custom" => Ok(SecurityLevel::Custom),
+            _ => Err(format!("Unknown security level: {}", s)),
         }
     }
 }

@@ -26,11 +26,11 @@ where
     // Clone params to allow modification without affecting caller's original
     let mut params = endpoint.get_params();
     let client = reqwest::Client::new();
-    
+
     // Build URL with path parameter substitution
     let mut path = <E as Endpoint>::path().to_string();
     let mut path_params_used = Vec::new();
-    
+
     // Replace {paramName} placeholders in path with actual values
     for (key, value) in &params {
         let placeholder = format!("{% raw %}{{{}}}{% endraw %}", key);
@@ -39,12 +39,12 @@ where
             path_params_used.push(key.clone());
         }
     }
-    
+
     // Remove path parameters from query params since they're now in the URL
     for key in &path_params_used {
         params.remove(key);
     }
-    
+
     let url = format!(
         "{}/{}",
         config.api_url.trim_end_matches('/'),
@@ -120,7 +120,6 @@ where
         }
     }
 }
-
 
 // Map reqwest errors to agenterra_rmcp::Error
 fn reqwest_to_rmcp_error(e: reqwest::Error) -> agenterra_rmcp::Error {

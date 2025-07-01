@@ -37,7 +37,7 @@ impl std::str::FromStr for Transport {
         match s.to_lowercase().as_str() {
             "stdio" => Ok(Transport::Stdio),
             "sse" => Ok(Transport::Sse),
-            _ => Err(format!("Invalid transport: '{}'. Valid options are: stdio, sse", s)),
+            _ => Err(format!("Invalid transport: '{s}'. Valid options are: stdio, sse")),
         }
     }
 }

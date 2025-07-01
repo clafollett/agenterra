@@ -22,10 +22,12 @@ pub struct Config {
     #[serde(default = "default_sse_addr")]
     pub sse_addr: std::net::SocketAddr,
     /// SSE keep alive duration in seconds
-    #[serde(default = "default_sse_keep_alive", deserialize_with = "deserialize_duration_secs")]
+    #[serde(
+        default = "default_sse_keep_alive",
+        deserialize_with = "deserialize_duration_secs"
+    )]
     pub sse_keep_alive: Duration,
 }
-
 
 impl Default for Config {
     fn default() -> Self {
@@ -49,7 +51,8 @@ fn default_api_url() -> String {
 }
 
 fn default_sse_addr() -> std::net::SocketAddr {
-    "127.0.0.1:{{ server_port | default(value=8080) }}".parse()
+    "127.0.0.1:{{ server_port | default(value=8080) }}"
+        .parse()
         .expect("Default SSE address should be valid")
 }
 

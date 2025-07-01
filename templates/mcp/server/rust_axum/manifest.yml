@@ -55,4 +55,6 @@ required_directories:
 # Hooks that run before/after generation (optional)
 hooks:
   # pre_generate: "echo 'Running pre-generation tasks...'"
-  # post_generate: "cargo fmt --all"
+  post_generate:
+    - "cargo fmt"
+    - "cargo check"

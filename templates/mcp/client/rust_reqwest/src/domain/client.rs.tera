@@ -488,8 +488,7 @@ impl McpClient {
             ValidationResult::Ok(sanitized) => {
                 // Re-parse sanitized arguments
                 arguments = serde_json::from_str(&sanitized)
-                    ClientError::Validation(format!("Failed to parse sanitized arguments: {e}"))
-                })?;
+                    .map_err(|e| ClientError::Validation(format!("Failed to parse sanitized arguments: {e}")))?;
             }
             ValidationResult::Warning(sanitized, issues) => {
                 // Log warnings but proceed
@@ -497,8 +496,7 @@ impl McpClient {
                     tracing::warn!("Validation warning for tool '{}': {}", tool_name, issue.message);
                 }
                 arguments = serde_json::from_str(&sanitized)
-                    ClientError::Validation(format!("Failed to parse sanitized arguments: {e}"))
-                })?;
+                    .map_err(|e| ClientError::Validation(format!("Failed to parse sanitized arguments: {e}")))?;
             }
             ValidationResult::Error(issues) => {
                 // Combine all error messages

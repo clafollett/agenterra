@@ -178,7 +178,7 @@ impl SimpleMockServer {
     
     /// Check if a tool should be always allowed for the comprehensive test profile
     pub fn is_always_allowed(tool_name: &str) -> bool {
-        let always_allowed = vec![
+        let always_allowed = [
             "ping", "status", "help", "version", "list_files", "read_config",
             "safe_tool", "read_only_tool", "status_check"
         ];
@@ -187,7 +187,7 @@ impl SimpleMockServer {
     
     /// Check if a tool should be disabled for the comprehensive test profile  
     pub fn is_disabled(tool_name: &str) -> bool {
-        let disabled = vec![
+        let disabled = [
             "format_disk", "delete_all", "shutdown", "modify_system", 
             "execute_arbitrary_code", "dangerous_tool", "delete_everything",
             "admin_tool", "blocked_tool_1", "blocked_tool_2", "restricted_access"

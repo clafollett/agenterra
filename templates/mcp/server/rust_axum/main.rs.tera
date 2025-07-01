@@ -39,9 +39,9 @@ struct Args {
     #[arg(long, default_value = "30")]
     sse_keep_alive: u64,
 
-    /// Log directory path
-    #[arg(long, default_value = "logs")]
-    log_dir: String,
+    /// Log directory path (defaults to OS-specific location)
+    #[arg(long)]
+    log_dir: Option<String>,
 
     /// API URL for backend services
     #[arg(long, default_value = "{{ base_api_url }}")]
@@ -74,13 +74,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Command-line arguments always override config file settings
     config.transport = args.transport;
     config.api_url = args.api_url;
-    config.log_dir = std::path::PathBuf::from(args.log_dir);
+    config.log_dir = if let Some(log_dir) = args.log_dir {
+        std::path::PathBuf::from(log_dir)
+    } else {
+        get_default_log_dir()
+    };
     
     // Parse and apply SSE address
     config.sse_addr = args.sse_addr.parse()
         .map_err(|e| {
-            eprintln!("Invalid SSE address '{}': {}", args.sse_addr, e);
-            eprintln!("Using default address: 127.0.0.1:{{ server_port | default(value=8080) }}");
+            tracing::error!("Invalid SSE address '{}': {}", args.sse_addr, e);
+            tracing::warn!("Using default address: 127.0.0.1:{{ server_port | default(value=8080) }}");
         })
         .unwrap_or_else(|_| {
             "127.0.0.1:{{ server_port | default(value=8080) }}"
@@ -129,4 +133,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run unified server orchestrator (handles transport, hot reload, shutdown)
     server::start(cfg.clone(), file_guard, stderr_guard).await
+}
+
+/// Get the default log directory based on the operating system
+fn get_default_log_dir() -> std::path::PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: %LOCALAPPDATA%\{{ project_name }}\logs
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            std::path::PathBuf::from(local_app_data)
+                .join("{{ project_name }}")
+                .join("logs")
+        } else {
+            // Fallback to current directory
+            std::path::PathBuf::from("logs")
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: ~/Library/Logs/{{ project_name }}
+        if let Some(home) = dirs::home_dir() {
+            home.join("Library")
+                .join("Logs")
+                .join("{{ project_name }}")
+        } else {
+            // Fallback to current directory
+            std::path::PathBuf::from("logs")
+        }
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // Linux and other Unix-like systems
+        // Try /var/log first (if we have permissions), otherwise use user directory
+        let system_log_dir = std::path::Path::new("/var/log/{{ project_name }}");
+        
+        if system_log_dir.exists() && is_writable(system_log_dir) {
+            system_log_dir.to_path_buf()
+        } else if let Some(data_dir) = dirs::data_dir() {
+            // Use ~/.local/share/{{ project_name }}/logs
+            data_dir.join("{{ project_name }}").join("logs")
+        } else if let Some(home) = dirs::home_dir() {
+            // Fallback to ~/.{{ project_name }}/logs
+            home.join(".{{ project_name }}").join("logs")
+        } else {
+            // Last resort: current directory
+            std::path::PathBuf::from("logs")
+        }
+    }
+}
+
+/// Check if a directory is writable
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn is_writable(path: &std::path::Path) -> bool {
+    // Try to create a temporary file to test write permissions
+    if let Ok(temp_file) = tempfile::tempfile_in(path) {
+        // Clean up is automatic when temp_file is dropped
+        drop(temp_file);
+        true
+    } else {
+        false
+    }
 }

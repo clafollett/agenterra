@@ -89,6 +89,12 @@ pub struct InputValidator {
     config: Arc<ValidationConfig>,
 }
 
+impl Default for InputValidator {
+    fn default() -> Self {
+        Self::new(ValidationConfig::default())
+    }
+}
+
 impl InputValidator {
     /// Create a new validator with custom configuration
     pub fn new(config: ValidationConfig) -> Self {
@@ -97,10 +103,6 @@ impl InputValidator {
         }
     }
     
-    /// Create a validator with default configuration
-    pub fn default() -> Self {
-        Self::new(ValidationConfig::default())
-    }
     
     /// Load validator with configuration from file
     pub fn load() -> Result<Self> {
@@ -724,7 +726,7 @@ impl InputValidator {
     fn check_regional_indicators(&self, input: &str) -> bool {
         // Count consecutive regional indicators that could spell words
         let regional_indicators: Vec<char> = input.chars()
-            .filter(|&c| c >= '\u{1F1E6}' && c <= '\u{1F1FF}')
+            .filter(|&c| ('\u{1F1E6}'..='\u{1F1FF}').contains(&c))
             .collect();
         
         // If we have 6 or more regional indicators, they could spell words like "IGNORE"
@@ -990,8 +992,8 @@ impl InputValidator {
     fn check_regional_indicator_abuse(&self, start_idx: usize, graphemes: &[&str]) -> Option<String> {
         let mut sequence = String::new();
         
-        for i in start_idx..graphemes.len() {
-            let chars: Vec<char> = graphemes[i].chars().collect();
+        for grapheme in graphemes.iter().skip(start_idx) {
+            let chars: Vec<char> = grapheme.chars().collect();
             if chars.len() == 1 && matches!(chars[0], '\u{1F1E6}'..='\u{1F1FF}') {
                 // Convert to letter
                 let letter = ((chars[0] as u32 - 0x1F1E6) as u8 + b'A') as char;
@@ -1408,19 +1410,6 @@ impl InputValidator {
     }
 }
 
-impl Default for FieldSettings {
-    fn default() -> Self {
-        Self {
-            max_length: None,
-            allow_emoji: None,
-            strict_unicode_filtering: None,
-            pattern: None,
-            check_path_traversal: None,
-            allowed_prefixes: None,
-            blocked_prefixes: None,
-        }
-    }
-}
 
 // We need to add this external crate feature to check Unicode categories
 // For now, we'll use a simplified version
