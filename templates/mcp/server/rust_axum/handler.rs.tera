@@ -16,12 +16,16 @@ use utoipa::ToSchema;
 /// Auto-generated parameters struct for `/{{ endpoint }}` endpoint.
 /// Spec: {{ spec_file_name | default(value="") }}
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
-pub struct {{ parameters_type }} {{% if parameters | length > 0 %}
-    {% for p in parameters %}{%- if p.description %}
+pub struct {{ parameters_type }} {
+{% if parameters | length > 0 -%}
+    {% for p in parameters -%}
+    {% if p.description -%}
     #[schemars(description = r#"{{ p.description }}"#)]
-    {%- endif %}
+    {% endif -%}
     pub {{ p.name }}: Option<{{ p.target_type }}>,
-    {% endfor %}{% endif %}}
+    {% endfor -%}
+{% endif -%}
+}
 
 // Implement Endpoint for generic handler
 impl Endpoint for {{ parameters_type }} {
@@ -47,11 +51,14 @@ impl Endpoint for {{ parameters_type }} {
 /// Auto-generated properties struct for `/{{ endpoint }}` endpoint.
 /// Spec: {{ spec_file_name | default(value="") }}
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
-pub struct {{ properties_type }} {{% if properties | length > 0 %}
-    {% for prop in properties %}
+pub struct {{ properties_type }} {
+{% if properties | length > 0 -%}
+    {% for prop in properties -%}
     #[schemars(description = r#"{{ prop.title }} - {{ prop.description }}"#)]
     pub {{ prop.name }}: Option<{{ prop.rust_type }}>,
-{% endfor %}{% endif %}}
+    {% endfor -%}
+{% endif -%}
+}
 
 {%- if response_is_array %}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, ToSchema)]
@@ -147,19 +154,25 @@ mod tests {
     use serde_json;
     #[test]
     fn test_parameters_struct_serialization() {
-        let params = {{ parameters_type }} {{% if parameters | length > 0 %}
-            {% for p in parameters %}
+        let params = {{ parameters_type }} {
+        {% if parameters | length > 0 -%}
+            {% for p in parameters -%}
             {{ p.name }}: None,
-            {% endfor %}{% endif %}};
+            {% endfor -%}
+        {% endif -%}
+        };
         let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");
     }
 
     #[test]
     fn test_properties_struct_serialization() {
-        let props = {{ properties_type }} {{% if properties | length > 0 %}
-            {% for prop in properties %}
+        let props = {{ properties_type }} {
+        {% if properties | length > 0 -%}
+            {% for prop in properties -%}
             {{ prop.name | lower }}: None,
-            {% endfor %}{% endif %}};
+            {% endfor -%}
+        {% endif -%}
+        };
         let _ = serde_json::to_string(&props).expect("Serializing test properties should not fail");
     }
 }
