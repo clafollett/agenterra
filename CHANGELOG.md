@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/clafollett/agenterra/compare/agenterra-v0.1.4...agenterra-v0.2.0) - 2025-07-02
+
+### Added
+
+- [**breaking**] complete SSE support and comprehensive security enhancements ([#18](https://github.com/clafollett/agenterra/pull/18)) ([#101](https://github.com/clafollett/agenterra/pull/101))
+
 ## [0.1.4](https://github.com/clafollett/agenterra/compare/agenterra-v0.1.3...agenterra-v0.1.4) - 2025-06-24
 
 ### Fixed
