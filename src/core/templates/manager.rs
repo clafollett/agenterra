@@ -17,8 +17,8 @@ use crate::core::{
 use crate::mcp::builders::EndpointContext;
 
 use super::{
-    ClientTemplateKind, ManifestTemplateFile, ServerTemplateKind, TemplateDir, TemplateManifest,
-    TemplateOptions,
+    ClientTemplateKind, EmbeddedTemplateRepository, ManifestTemplateFile, ServerTemplateKind,
+    TemplateDir, TemplateManifest, TemplateOptions, TemplateRepository,
 };
 
 // External imports (alphabetized)
@@ -1119,6 +1119,92 @@ impl TemplateManager {
         }
         Ok(())
     }
+}
+
+/// Load embedded templates into Tera
+#[allow(dead_code)]
+pub fn load_embedded_templates_into_tera(
+    tera: &mut Tera,
+    template_path: &str,
+    repo: &EmbeddedTemplateRepository,
+) -> io::Result<()> {
+    let files = repo.get_template_files(template_path);
+
+    tracing::info!(
+        "Loading {} embedded template files for {}",
+        files.len(),
+        template_path
+    );
+
+    for file in files {
+        // Only process .tera files
+        if file.relative_path.ends_with(".tera") {
+            let content = String::from_utf8(file.contents).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Template {} is not valid UTF-8: {}", file.relative_path, e),
+                )
+            })?;
+
+            // Add template to Tera with its relative path
+            tera.add_raw_template(&file.relative_path, &content)
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Failed to add template {}: {}", file.relative_path, e),
+                    )
+                })?;
+
+            debug!("Added embedded template: {}", file.relative_path);
+        }
+    }
+
+    Ok(())
+}
+
+/// Load manifest from embedded templates
+#[allow(dead_code)]
+pub async fn load_embedded_manifest(
+    template_path: &str,
+    repo: &EmbeddedTemplateRepository,
+) -> io::Result<TemplateManifest> {
+    let files = repo.get_template_files(template_path);
+
+    // Look for manifest.yml or manifest.toml
+    for file in files {
+        if file.relative_path == "manifest.yml" {
+            let content = String::from_utf8(file.contents).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Manifest is not valid UTF-8: {e}"),
+                )
+            })?;
+
+            return serde_yaml::from_str(&content).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Failed to parse manifest.yml: {e}"),
+                )
+            });
+        } else if file.relative_path == "manifest.toml" {
+            let content = String::from_utf8(file.contents).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Manifest is not valid UTF-8: {e}"),
+                )
+            })?;
+
+            return toml::from_str(&content).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Failed to parse manifest.toml: {e}"),
+                )
+            });
+        }
+    }
+
+    // Return default manifest if not found
+    Ok(TemplateManifest::default())
 }
 
 #[cfg(test)]

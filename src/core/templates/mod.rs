@@ -17,16 +17,15 @@ pub mod kind;
 pub mod manager;
 pub mod manifest;
 pub mod options;
+pub mod repository;
+pub mod source;
 pub mod types;
 
 pub use dir::*;
-#[allow(unused_imports)]
-pub use embedded::{
-    EmbeddedTemplate, EmbeddedTemplateFile, EmbeddedTemplateRepository, RustEmbedTemplateExporter,
-    RustEmbedTemplateRepository, TemplateExporter, TemplateType,
-};
-pub use kind::{ClientTemplateKind, ServerTemplateKind};
+pub use embedded::*;
+pub use kind::*;
 pub use manager::*;
 pub use manifest::*;
 pub use options::*;
+pub use repository::*;
 pub use types::*;
