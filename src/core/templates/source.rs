@@ -1,4 +1,21 @@
-//! Unified template source abstraction for filesystem and embedded templates
+//! Unified template source abstraction for filesystem and embedded templates.
+//!
+//! This module provides a unified interface for discovering and accessing templates
+//! regardless of their source (embedded in binary or on filesystem). It implements
+//! a fallback strategy that prefers embedded templates but can use filesystem
+//! templates when needed.
+//!
+//! # Template Discovery Strategy
+//!
+//! 1. If a custom directory is provided, use it directly (filesystem)
+//! 2. Check for embedded templates matching the protocol/kind
+//! 3. Fall back to filesystem discovery if not found embedded
+//!
+//! # Use Cases
+//!
+//! - **Production**: Uses embedded templates from the binary
+//! - **Development**: Can use filesystem templates for testing
+//! - **Customization**: Users can provide custom template directories
 
 #![allow(dead_code)]
 
@@ -7,35 +24,80 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 use super::{
-    ClientTemplateKind, TemplateRepository, ServerTemplateKind, TemplateDir,
-    EmbeddedTemplateRepository,
+    ClientTemplateKind, EmbeddedTemplateRepository, ServerTemplateKind, TemplateDir,
+    TemplateRepository,
 };
 use crate::core::protocol::Protocol;
 
-/// Represents the source of templates
+/// Represents the source location of templates.
+///
+/// This enum distinguishes between templates that are embedded in the binary
+/// at compile time versus those that exist on the filesystem at runtime.
 #[derive(Debug, Clone)]
 pub enum TemplateSource {
-    /// Templates from filesystem
+    /// Templates located on the filesystem.
+    ///
+    /// The path points to the root directory of the template.
     Filesystem(PathBuf),
-    /// Templates embedded in binary
+    
+    /// Templates embedded in the binary at compile time.
+    ///
+    /// These templates are always available and version-consistent with the CLI.
     Embedded,
 }
 
-/// Unified template provider that can work with both filesystem and embedded templates
+/// Provides unified access to templates from multiple sources.
+///
+/// The `TemplateProvider` implements a discovery strategy that checks embedded
+/// templates first, then falls back to filesystem templates. This allows the
+/// CLI to work out-of-the-box with embedded templates while still supporting
+/// custom template directories.
+///
+/// # Example
+///
+/// ```no_run
+/// use agenterra::core::templates::{TemplateProvider, ServerTemplateKind};
+/// use agenterra::core::protocol::Protocol;
+///
+/// let provider = TemplateProvider::new();
+/// let (source, path) = provider.discover_server_template(
+///     Protocol::Mcp,
+///     ServerTemplateKind::RustAxum,
+///     None, // No custom directory
+/// )?;
+/// # Ok::<(), std::io::Error>(())
+/// ```
 pub struct TemplateProvider {
     embedded_repo: EmbeddedTemplateRepository,
 }
 
 impl TemplateProvider {
-    /// Create a new template provider
+    /// Create a new template provider with default embedded repository.
     pub fn new() -> Self {
         Self {
             embedded_repo: EmbeddedTemplateRepository::new(),
         }
     }
 
-    /// Discover server template with protocol support
-    /// Checks embedded templates first, then falls back to filesystem
+    /// Discover a server template with the specified protocol and kind.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - The protocol to use (e.g., MCP, REST, gRPC)
+    /// * `kind` - The server template kind (e.g., RustAxum, PythonFastAPI)
+    /// * `custom_dir` - Optional custom directory to use instead of discovery
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of:
+    /// - The template source (Embedded or Filesystem)
+    /// - The path to the template directory
+    ///
+    /// # Discovery Process
+    ///
+    /// 1. If `custom_dir` is provided, use it directly as a filesystem source
+    /// 2. Check if the template exists in embedded resources
+    /// 3. Fall back to filesystem discovery using standard paths
     pub fn discover_server_template(
         &self,
         protocol: Protocol,
@@ -76,7 +138,23 @@ impl TemplateProvider {
         ))
     }
 
-    /// Discover client template with protocol support
+    /// Discover a client template with the specified protocol and kind.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - The protocol to use (e.g., MCP, REST, gRPC)
+    /// * `kind` - The client template kind (e.g., RustReqwest, TypeScriptFetch)
+    /// * `custom_dir` - Optional custom directory to use instead of discovery
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of:
+    /// - The template source (Embedded or Filesystem)
+    /// - The path to the template directory
+    ///
+    /// # Discovery Process
+    ///
+    /// Same as `discover_server_template` but for client templates.
     pub fn discover_client_template(
         &self,
         protocol: Protocol,
@@ -116,7 +194,10 @@ impl TemplateProvider {
         ))
     }
 
-    /// Get embedded template repository
+    /// Get a reference to the embedded template repository.
+    ///
+    /// This is useful when you need direct access to embedded templates
+    /// without going through the discovery process.
     pub fn embedded_repository(&self) -> &EmbeddedTemplateRepository {
         &self.embedded_repo
     }

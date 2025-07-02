@@ -1,4 +1,35 @@
-//! Template system for code generation
+//! Template management and rendering for code generation.
+//!
+//! This module provides the core template management functionality for Agenterra.
+//! It handles loading templates, rendering them with context data, and generating
+//! code files based on OpenAPI specifications.
+//!
+//! # Architecture
+//!
+//! The `TemplateManager` is responsible for:
+//! - Loading and caching Tera templates
+//! - Managing template manifests
+//! - Rendering templates with context data
+//! - Processing template files based on manifest rules
+//! - Executing post-generation hooks
+//!
+//! # Template Processing
+//!
+//! Templates are processed in several stages:
+//! 1. **Discovery**: Find template directory based on protocol/kind
+//! 2. **Loading**: Load manifest and template files into Tera
+//! 3. **Context Building**: Create context with OpenAPI and language-specific data
+//! 4. **Rendering**: Process Tera templates with context
+//! 5. **Writing**: Generate output files in target directory
+//! 6. **Post-processing**: Run any configured hooks
+//!
+//! # Context Variables
+//!
+//! Templates have access to various context variables:
+//! - OpenAPI specification data
+//! - Language-specific helpers and naming conventions
+//! - Project metadata (name, version, etc.)
+//! - Operation-specific data for endpoint generation
 
 // Internal imports (std, crate)
 use std::{

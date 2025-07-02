@@ -1,8 +1,34 @@
-//! Embedded template management for binary distribution
+//! Embedded template management for binary distribution.
 //!
 //! This module provides access to templates embedded in the binary at compile time,
 //! allowing Agenterra to work immediately after `cargo install` without requiring
 //! separate template files.
+//!
+//! # Architecture
+//!
+//! The module uses the `rust-embed` crate to include all files from the `templates/`
+//! directory at compile time. This means:
+//! - Templates are part of the binary and always available
+//! - No filesystem access needed to use templates
+//! - Version consistency between CLI and templates
+//!
+//! # Template Discovery
+//!
+//! Templates are discovered by scanning the embedded file paths and identifying
+//! directories that contain a `manifest.yml` or `manifest.toml` file. The path
+//! structure follows the convention: `{protocol}/{role}/{kind}/`
+//!
+//! # Usage
+//!
+//! ```no_run
+//! use agenterra::core::templates::{EmbeddedTemplateRepository, TemplateRepository};
+//!
+//! let repo = EmbeddedTemplateRepository::new();
+//! let templates = repo.list_templates();
+//! for template in templates {
+//!     println!("Found template: {}", template.path);
+//! }
+//! ```
 
 use crate::core::templates::repository::*;
 use rust_embed::RustEmbed;
@@ -10,21 +36,54 @@ use std::io;
 use std::path::Path;
 use tracing::{debug, info};
 
-/// Embedded templates from the templates/ directory
+/// Container for all templates embedded at compile time.
+///
+/// This struct uses the `rust-embed` derive macro to include all files
+/// from the `templates/` directory in the binary. The entire directory
+/// structure is preserved, allowing templates to include any type of file.
 #[derive(RustEmbed)]
 #[folder = "templates/"]
 pub struct EmbeddedTemplates;
 
-/// Production implementation of embedded template repository
+/// Implementation of `TemplateRepository` that reads from embedded resources.
+///
+/// This repository provides access to templates that were embedded in the
+/// binary at compile time. It implements lazy discovery of templates by
+/// scanning the embedded file paths when needed.
+///
+/// # Performance
+///
+/// - Template discovery scans all embedded files once
+/// - File contents are decompressed on demand
+/// - No filesystem I/O required
 pub struct EmbeddedTemplateRepository;
 
 impl EmbeddedTemplateRepository {
-    /// Create a new embedded template repository
+    /// Create a new embedded template repository.
+    ///
+    /// This creates a repository that accesses templates embedded in the binary.
+    /// The templates are discovered lazily when methods are called.
     pub fn new() -> Self {
         Self
     }
 
-    /// Parse template path to extract metadata
+    /// Parse a template path to extract its protocol, type, and kind.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - A template path like "mcp/server/rust_axum"
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some((protocol, type, kind))` if the path is valid, or `None`
+    /// if the path doesn't follow the expected format.
+    ///
+    /// # Path Format
+    ///
+    /// Expected format: `{protocol}/{role}/{kind}/...`
+    /// - `protocol`: Communication protocol (e.g., "mcp", "rest", "grpc")
+    /// - `role`: Either "server" or "client"
+    /// - `kind`: Template variant (e.g., "rust_axum", "python_fastapi")
     fn parse_template_path(path: &str) -> Option<(String, TemplateType, String)> {
         let parts: Vec<&str> = path.split('/').collect();
 
@@ -54,7 +113,7 @@ impl Default for EmbeddedTemplateRepository {
 }
 
 impl TemplateRepository for EmbeddedTemplateRepository {
-    fn list_templates(&self) -> Vec<Template> {
+    fn list_templates(&self) -> Vec<TemplateMetadata> {
         let mut templates = Vec::new();
         let mut seen_templates = std::collections::HashSet::new();
 
@@ -86,7 +145,7 @@ impl TemplateRepository for EmbeddedTemplateRepository {
                             .map(|s| s.to_string())
                     });
 
-                    templates.push(Template {
+                    templates.push(TemplateMetadata {
                         path: template_path.clone(),
                         template_type,
                         kind,
@@ -104,7 +163,7 @@ impl TemplateRepository for EmbeddedTemplateRepository {
         templates
     }
 
-    fn get_template(&self, path: &str) -> Option<Template> {
+    fn get_template(&self, path: &str) -> Option<TemplateMetadata> {
         // Verify the template exists by checking for a manifest
         let manifest_paths = [
             format!("{path}/manifest.yml"),
@@ -144,7 +203,7 @@ impl TemplateRepository for EmbeddedTemplateRepository {
                 }
             });
 
-        Some(Template {
+        Some(TemplateMetadata {
             path: path.to_string(),
             template_type,
             kind,
@@ -181,13 +240,34 @@ impl TemplateRepository for EmbeddedTemplateRepository {
     }
 }
 
-/// Production implementation of template exporter
+/// Implementation of `TemplateExporter` for embedded templates.
+///
+/// This exporter reads templates from embedded resources and writes them
+/// to the filesystem. It's useful for:
+/// - Extracting templates for inspection or modification
+/// - Creating a local template directory for development
+/// - Bootstrapping custom template collections
+///
+/// # Example
+///
+/// ```no_run
+/// use agenterra::core::templates::{EmbeddedTemplateExporter, TemplateExporter};
+/// use std::path::Path;
+///
+/// let exporter = EmbeddedTemplateExporter::new();
+/// let count = exporter.export_all_templates(Path::new("/tmp/templates"))?;
+/// println!("Exported {} templates", count);
+/// # Ok::<(), std::io::Error>(())
+/// ```
 pub struct EmbeddedTemplateExporter {
     repository: EmbeddedTemplateRepository,
 }
 
 impl EmbeddedTemplateExporter {
-    /// Create a new template exporter
+    /// Create a new template exporter for embedded templates.
+    ///
+    /// The exporter will use an embedded repository to access templates
+    /// that were compiled into the binary.
     pub fn new() -> Self {
         Self {
             repository: EmbeddedTemplateRepository::new(),
@@ -202,7 +282,7 @@ impl Default for EmbeddedTemplateExporter {
 }
 
 impl TemplateExporter for EmbeddedTemplateExporter {
-    fn export_template(&self, template: &Template, output_dir: &Path) -> io::Result<()> {
+    fn export_template(&self, template: &TemplateMetadata, output_dir: &Path) -> io::Result<()> {
         let template_output_dir = output_dir.join(&template.path);
 
         info!(
@@ -269,21 +349,21 @@ mod tests {
 
     /// Mock implementation for testing
     struct MockEmbeddedTemplateRepository {
-        templates: Vec<Template>,
+        templates: Vec<TemplateMetadata>,
     }
 
     impl MockEmbeddedTemplateRepository {
         fn new() -> Self {
             Self {
                 templates: vec![
-                    Template {
+                    TemplateMetadata {
                         path: "mcp/server/rust_axum".to_string(),
                         template_type: TemplateType::Server,
                         kind: "rust_axum".to_string(),
                         protocol: "mcp".to_string(),
                         description: Some("Rust MCP server using Axum framework".to_string()),
                     },
-                    Template {
+                    TemplateMetadata {
                         path: "mcp/client/rust_reqwest".to_string(),
                         template_type: TemplateType::Client,
                         kind: "rust_reqwest".to_string(),
@@ -296,11 +376,11 @@ mod tests {
     }
 
     impl TemplateRepository for MockEmbeddedTemplateRepository {
-        fn list_templates(&self) -> Vec<Template> {
+        fn list_templates(&self) -> Vec<TemplateMetadata> {
             self.templates.clone()
         }
 
-        fn get_template(&self, path: &str) -> Option<Template> {
+        fn get_template(&self, path: &str) -> Option<TemplateMetadata> {
             self.templates.iter().find(|t| t.path == path).cloned()
         }
 
@@ -429,7 +509,11 @@ mod tests {
         struct MockTemplateExporter;
 
         impl TemplateExporter for MockTemplateExporter {
-            fn export_template(&self, template: &Template, output_dir: &Path) -> io::Result<()> {
+            fn export_template(
+                &self,
+                template: &TemplateMetadata,
+                output_dir: &Path,
+            ) -> io::Result<()> {
                 let template_dir = output_dir.join(&template.path);
                 fs::create_dir_all(&template_dir)?;
 
@@ -457,7 +541,7 @@ mod tests {
             let temp_dir = TempDir::new().unwrap();
             let exporter = MockTemplateExporter;
 
-            let template = Template {
+            let template = TemplateMetadata {
                 path: "mcp/server/rust_axum".to_string(),
                 template_type: TemplateType::Server,
                 kind: "rust_axum".to_string(),
