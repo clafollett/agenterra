@@ -14,7 +14,7 @@ use core::{
         dir::resolve_output_dir,
     },
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // External imports (alphabetized)
 use anyhow::Context;
@@ -166,7 +166,7 @@ async fn main() -> anyhow::Result<()> {
                 list_templates().await?;
             }
             TemplateCommands::Export { path, template } => {
-                export_templates(path, template).await?;
+                export_templates(path.as_path(), template).await?;
             }
             TemplateCommands::Info { template } => {
                 show_template_info(template).await?;
@@ -377,27 +377,27 @@ async fn list_templates() -> anyhow::Result<()> {
 }
 
 /// Export templates to a directory (all or a specific one)
-async fn export_templates(path: &PathBuf, template: &Option<String>) -> anyhow::Result<()> {
+async fn export_templates(path: &Path, template: &Option<String>) -> anyhow::Result<()> {
     info!("Exporting templates to: {}", path.display());
 
     let exporter = EmbeddedTemplateExporter::new();
     let repository = EmbeddedTemplateRepository::new();
-    
+
     match template {
         Some(template_path) => {
             // Export single template
             info!("Exporting single template: {}", template_path);
-            
+
             // Get the template metadata
             let template_meta = repository
                 .get_template(template_path)
-                .with_context(|| format!("Template not found: {}", template_path))?;
-            
+                .with_context(|| format!("Template not found: {template_path}"))?;
+
             // Export the template
             exporter
                 .export_template(&template_meta, path)
                 .context("Failed to export template")?;
-            
+
             info!(
                 "Successfully exported template {} to {}",
                 template_path,
@@ -457,7 +457,7 @@ async fn show_template_info(template_path: &str) -> anyhow::Result<()> {
             }
         }
         None => {
-            eprintln!("Template not found: {}", template_path);
+            eprintln!("Template not found: {template_path}");
             eprintln!("\nRun 'agenterra templates list' to see available templates.");
             std::process::exit(1);
         }
