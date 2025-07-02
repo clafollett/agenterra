@@ -1,0 +1,21 @@
+//! Application services for {{ project_name }}
+//!
+//! Contains application-level services that orchestrate
+//! domain logic and infrastructure.
+
+pub mod auth;
+pub mod config;
+pub mod registry;
+pub mod result;
+pub mod session_manager;
+pub mod validation_config;
+pub mod validation;
+
+// Re-export main types
+pub use auth::{AuthConfig, AuthMethod, CredentialType, SecureCredential};
+pub use config::{ConfigManager, ServerProfile, AuthCredential, SessionHistory};
+pub use registry::{ToolInfo, ToolRegistry};
+pub use result::{ContentType, ToolResult};
+pub use session_manager::McpSessionManager;
+pub use validation::InputValidator;
+pub use validation_config::{ValidationConfig, ValidationAction, FieldSettings};

@@ -1,0 +1,139 @@
+//! Headless mode command handling for {{ project_name }}
+
+use crate::cli::args::Cli;
+use crate::domain::client::McpClient;
+use crate::application::config::ConfigManager;
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
+use crate::ui::headless::{HeadlessRunner, ExitCode};
+use crate::infrastructure::transport::TransportProtocol;
+use std::sync::Arc;
+use tracing::info;
+
+/// Handle the Run command for headless mode
+pub async fn handle_run_command(
+    cli: &Cli,
+    call: &str,
+    args: &Option<String>,
+    server: &Option<String>,
+    profile: &Option<String>,
+    timeout: &Option<u64>,
+) -> Result<()> {
+    // Determine server to connect to based on transport type
+    let (server_command, server_args, connect_timeout, transport_type, sse_url) = if let Some(profile_name) = profile {
+        // Use specified profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        let profile = config_manager.get_server(profile_name).await?
+            .ok_or_else(|| ClientError::ConfigError(format!("Profile '{}' not found", profile_name)))?;
+        
+        // Check if server is disabled
+        if profile.disabled {
+            return Err(ClientError::ConfigError(
+                format!("Server profile '{}' is disabled", profile_name)
+            ));
+        }
+        
+        // Use From trait to convert transport string
+        let transport: TransportProtocol = profile.transport.into();
+        
+        (
+            profile.command.clone(),
+            profile.args.clone(),
+            std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10))),
+            transport,
+            None // SSE URL would come from profile.command for SSE transport
+        )
+    } else if let Some(server_path) = server {
+        // Use specified server with CLI transport
+        (
+            server_path.clone(),
+            cli.args.clone(),
+            std::time::Duration::from_secs(timeout.unwrap_or(cli.timeout)),
+            cli.transport,
+            cli.sse_url.clone()
+        )
+    } else {
+        // Try to use default profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        
+        if let Some(profile) = config_manager.get_default_server().await? {
+            // Check if server is disabled
+            if profile.disabled {
+                return Err(ClientError::ConfigError(
+                    format!("Default server profile '{}' is disabled", profile.name)
+                ));
+            }
+            
+            // Use From trait to convert transport string
+            let transport: TransportProtocol = profile.transport.into();
+            
+            (
+                profile.command.clone(),
+                profile.args.clone(),
+                std::time::Duration::from_secs(timeout.unwrap_or(profile.timeout.unwrap_or(10))),
+                transport,
+                None
+            )
+        } else {
+            return Err(ClientError::ConfigError(
+                "No server specified. Use --server, --profile, or set a default profile.".to_string()
+            ));
+        }
+    };
+    
+    // Create and connect client
+    let mut client = McpClient::new_with_timeout(connect_timeout.as_secs()).await?;
+    
+    // Connect based on transport type
+    match transport_type {
+        TransportProtocol::Stdio => {
+            info!("Connecting to MCP server via STDIO: {} {:?}", server_command, server_args);
+            let mut command = tokio::process::Command::new(&server_command);
+            for arg in &server_args {
+                command.arg(arg);
+            }
+            client.connect_stdio(command).await?;
+        }
+        TransportProtocol::Sse => {
+            // For SSE, the server_command should be the URL, or we use the sse_url parameter
+            let url = if let Some(url) = sse_url {
+                url
+            } else if server_command.starts_with("http://") || server_command.starts_with("https://") {
+                server_command.clone()
+            } else {
+                return Err(ClientError::ConfigError(
+                    "SSE transport requires a valid HTTP/HTTPS URL. Use --sse-url or provide URL as server path.".to_string()
+                ));
+            };
+            
+            info!("Connecting to MCP server via SSE: {}", url);
+            client.connect_sse(&url).await?;
+        }
+    }
+    
+    // Create headless runner
+    let mut runner = HeadlessRunner::new(client, server_command.clone());
+    
+    // Parse arguments
+    let tool_args = if let Some(args_str) = args {
+        serde_json::from_str(args_str)
+            .map_err(|e| ClientError::Validation(format!("Invalid JSON arguments: {}", e)))?
+    } else {
+        serde_json::json!({})
+    };
+    
+    // Call the tool
+    match runner.call_tool(call, tool_args).await {
+        Ok(result) => {
+            // Print result as JSON
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(ExitCode::ToolCallFailed as i32);
+        }
+    }
+}

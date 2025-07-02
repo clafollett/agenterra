@@ -1,0 +1,328 @@
+//! Configuration command handlers for {{ project_name }}
+
+use crate::application::config::{ConfigManager, ServerProfile};
+use crate::application::validation::{InputValidator, ValidationResult};
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
+use crate::cli::args::ServerCommands;
+use std::sync::Arc;
+use chrono::Utc;
+use tracing::info;
+use uuid::Uuid;
+use serde_json;
+
+/// Handle server management commands
+pub async fn handle_server_command(action: &ServerCommands) -> Result<()> {
+    // Initialize shared database
+    let db = Arc::new(DatabaseManager::new().await?);
+    let config_manager = ConfigManager::new(db).await?;
+    
+    match action {
+        ServerCommands::Add { 
+            name, 
+            description, 
+            command,
+            args, 
+            timeout,
+            transport,
+            env,
+            disabled_tools,
+            always_allowed,
+            disabled,
+            set_default 
+        } => {
+            // Create validator instance
+            let validator = InputValidator::default();
+            
+            // Validate inputs
+            match validator.validate_server_name(name) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid server name: {}", issues[0].message)));
+                }
+            }
+            
+            match validator.validate_command(command) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid command: {}", issues[0].message)));
+                }
+            }
+            
+            match validator.validate_args(args) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid args: {}", issues[0].message)));
+                }
+            }
+            
+            if let Some(desc) = description {
+                match validator.validate_description(desc) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid description: {}", issues[0].message)));
+                    }
+                }
+            }
+            
+            // Parse and validate environment variables if provided
+            let environment = if let Some(env_str) = env {
+                // validate_environment returns Result<HashMap<String, String>>
+                match validator.validate_environment(env_str) {
+                    Ok(env_map) => Some(env_map),
+                    Err(e) => return Err(e),
+                }
+            } else {
+                None
+            };
+            
+            // Parse and validate disabled tools if provided
+            let disabled_tools_list = if let Some(tools_str) = disabled_tools {
+                match validator.validate_disabled_tools(tools_str) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {
+                        Some(tools_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                    },
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid disabled tools: {}", issues[0].message)));
+                    }
+                }
+            } else {
+                None
+            };
+            
+            // Parse and validate always allowed tools if provided
+            let always_allowed_list = if let Some(tools_str) = always_allowed {
+                match validator.validate_disabled_tools(tools_str) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {
+                        Some(tools_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                    },
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid always allowed tools: {}", issues[0].message)));
+                    }
+                }
+            } else {
+                None
+            };
+            
+            let profile = ServerProfile {
+                id: Uuid::new_v4().to_string(),
+                name: name.clone(),
+                description: description.clone(),
+                command: command.clone(),
+                args: args.clone(),
+                environment,
+                timeout: *timeout,
+                is_default: *set_default,
+                transport: transport.map(|t| t.to_string()),
+                disabled: *disabled,
+                always_allowed: always_allowed_list,
+                disabled_tools: disabled_tools_list,
+                created_at: Utc::now(),
+                last_used: None,
+            };
+            
+            config_manager.add_server(profile).await?;
+            info!("✅ Added server profile: {}", name);
+            
+            if *set_default {
+                info!("✅ Set as default server");
+            }
+        }
+        
+        ServerCommands::List => {
+            let servers = config_manager.list_servers().await?;
+            
+            if servers.is_empty() {
+                info!("No server profiles configured");
+            } else {
+                info!("Server profiles:");
+                for server in servers {
+                    let default_marker = if server.is_default { " (default)" } else { "" };
+                    let disabled_marker = if server.disabled { " [DISABLED]" } else { "" };
+                    let transport = server.transport.as_deref().unwrap_or("stdio");
+                    info!("  {} - {} [{}]{}{}",
+                        server.name,
+                        server.command,
+                        transport,
+                        default_marker,
+                        disabled_marker
+                    );
+                    if let Some(desc) = &server.description {
+                        info!("    {}", desc);
+                    }
+                }
+            }
+        }
+        
+        ServerCommands::SetDefault { name } => {
+            config_manager.set_default_server(name).await?;
+            info!("✅ Set '{}' as default server", name);
+        }
+        
+        ServerCommands::Remove { name } => {
+            config_manager.remove_server(name).await?;
+            info!("✅ Removed server profile: {}", name);
+        }
+        
+        ServerCommands::Export { format } => {
+            let servers = config_manager.list_servers().await?;
+            match format.as_str() {
+                "json" => {
+                    info!("{}", serde_json::to_string_pretty(&servers)?);
+                }
+                _ => {
+                    info!("{}", serde_json::to_string_pretty(&servers)?);
+                }
+            }
+        }
+        
+        ServerCommands::Import { path } => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| ClientError::ConfigError(format!("Failed to read file: {}", e)))?;
+            
+            let servers: Vec<ServerProfile> = serde_json::from_str(&content)
+                .map_err(|e| ClientError::ConfigError(format!("Invalid JSON: {}", e)))?;
+            
+            for server in servers {
+                config_manager.add_server(server).await?;
+            }
+            
+            info!("✅ Imported configuration successfully");
+        }
+        
+        ServerCommands::Get { name } => {
+            let server = config_manager.get_server(name).await?
+                .ok_or_else(|| ClientError::ConfigError(format!("Server '{}' not found", name)))?;
+            
+            info!("Server: {}", server.name);
+            info!("Command: {}", server.command);
+            if !server.args.is_empty() {
+                info!("Arguments: {}", server.args.join(" "));
+            }
+            if let Some(desc) = &server.description {
+                info!("Description: {}", desc);
+            }
+            if let Some(transport) = &server.transport {
+                info!("Transport: {}", transport);
+            } else {
+                info!("Transport: stdio (default)");
+            }
+            if let Some(timeout) = server.timeout {
+                info!("Timeout: {}s", timeout);
+            }
+            if let Some(env) = &server.environment {
+                info!("Environment: {}", serde_json::to_string_pretty(env)?);
+            }
+            if let Some(tools) = &server.disabled_tools {
+                info!("Disabled tools: {}", tools.join(", "));
+            }
+            if let Some(tools) = &server.always_allowed {
+                info!("Always allowed tools: {}", tools.join(", "));
+            }
+            info!("Default: {}", if server.is_default { "Yes" } else { "No" });
+            info!("Disabled: {}", if server.disabled { "Yes" } else { "No" });
+            info!("Created: {}", server.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
+            if let Some(last_used) = server.last_used {
+                info!("Last used: {}", last_used.format("%Y-%m-%d %H:%M:%S UTC"));
+            }
+        }
+        
+        ServerCommands::AddJson { name, json } => {
+            // Create validator instance
+            let validator = InputValidator::default();
+            
+            // Validate name
+            match validator.validate_server_name(name) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid server name: {}", issues[0].message)));
+                }
+            }
+            
+            // Validate JSON structure before parsing
+            match validator.validate_json_input(json) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid JSON: {}", issues[0].message)));
+                }
+            }
+            
+            let mut profile: ServerProfile = serde_json::from_str(json)
+                .map_err(|e| ClientError::ConfigError(format!("Invalid JSON: {}", e)))?;
+            
+            // Validate the parsed profile data
+            match validator.validate_command(&profile.command) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid command: {}", issues[0].message)));
+                }
+            }
+            
+            match validator.validate_args(&profile.args) {
+                ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                ValidationResult::Error(issues) => {
+                    return Err(ClientError::ConfigError(format!("Invalid args: {}", issues[0].message)));
+                }
+            }
+            
+            if let Some(desc) = &profile.description {
+                match validator.validate_description(desc) {
+                    ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                    ValidationResult::Error(issues) => {
+                        return Err(ClientError::ConfigError(format!("Invalid description: {}", issues[0].message)));
+                    }
+                }
+            }
+            
+            if let Some(env) = &profile.environment {
+                // Validate each environment variable
+                for (key, value) in env {
+                    match validator.validate_identifier(key, "Environment variable name", false) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid environment variable name '{}': {}", key, issues[0].message)));
+                        }
+                    }
+                    match validator.validate_general_input(value) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid environment value: {}", issues[0].message)));
+                        }
+                    }
+                }
+            }
+            
+            if let Some(tools) = &profile.disabled_tools {
+                for tool in tools {
+                    match validator.validate_identifier(tool, "Tool name", true) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid disabled tool name '{}': {}", tool, issues[0].message)));
+                        }
+                    }
+                }
+            }
+            
+            if let Some(tools) = &profile.always_allowed {
+                for tool in tools {
+                    match validator.validate_identifier(tool, "Tool name", true) {
+                        ValidationResult::Ok(_) | ValidationResult::Warning(_, _) => {},
+                        ValidationResult::Error(issues) => {
+                            return Err(ClientError::ConfigError(format!("Invalid allowed tool name '{}': {}", tool, issues[0].message)));
+                        }
+                    }
+                }
+            }
+            
+            // Override the name with the provided one
+            profile.name = name.clone();
+            profile.id = Uuid::new_v4().to_string();
+            profile.created_at = Utc::now();
+            
+            config_manager.add_server(profile).await?;
+            info!("✅ Added server profile from JSON: {}", name);
+        }
+    }
+    
+    Ok(())
+}

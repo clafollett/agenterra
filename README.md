@@ -26,7 +26,20 @@
 - **🚀 Production Ready** - Includes logging, error handling, and configuration out of the box
 - **🔌 MCP Protocol Support** - Full compatibility with Model Context Protocol
 - **💾 SQLite Resource Caching** - Built-in resource caching with connection pooling for MCP clients
+- **🛡️ Client Permission Management** - Interactive tool permission prompting with persistent preferences
 - **📦 Binary Distribution** - Easy installation and deployment
+
+## 🔒 Enterprise Security
+
+Agenterra generates code with enterprise-grade security features built-in. Every generated server and client includes comprehensive protection against modern attack vectors.
+
+**Key Security Features:**
+- **Input Validation**: Protection against SQL injection, command injection, and prompt injection
+- **Unicode Security**: Detection of zero-width characters and emoji-based attacks
+- **Transport Security**: Secure SSE mode with URL validation
+- **Resource Protection**: Size limits and rate limiting to prevent DoS
+
+See [Enterprise Security Features](docs/ENTERPRISE_SECURITY.md) for complete details.
 
 ## 🚀 Quick Start
 
@@ -121,7 +134,10 @@ Add this to your Cursor settings (File > Preferences > Settings > Extensions > M
   "mcpServers": {
     "petstore": {
       "command": "cargo",
-      "args": ["run", "--manifest-path", "/path/to/petstore-server/Cargo.toml"]
+      "args": ["run", "--manifest-path", "/path/to/petstore-server/Cargo.toml"],
+      "disabled": false,
+      "alwaysAllowed": ["listPets", "showPetById"],
+      "disabledTools": ["deletePet"]
     }
   }
 }
@@ -132,12 +148,32 @@ Add this to your Cursor settings (File > Preferences > Settings > Extensions > M
 Test your MCP server with the MCP Inspector:
 
 ```bash
-# Run directly with npx
+# Test STDIO mode (default)
 npx @modelcontextprotocol/inspector cargo run --manifest-path=/path/to/petstore-server/Cargo.toml
+
+# Test SSE mode
+npx @modelcontextprotocol/inspector cargo run --manifest-path=/path/to/petstore-server/Cargo.toml -- --transport sse
 
 # Or install globally
 npm install -g @modelcontextprotocol/inspector
 modelcontextprotocol-inspector cargo run --manifest-path=/path/to/petstore-server/Cargo.toml
+```
+
+#### Testing SSE Endpoints
+
+When running in SSE mode, the server exposes HTTP endpoints:
+
+```bash
+# Start server in SSE mode
+cargo run -- --transport sse --sse-addr 127.0.0.1:8080
+
+# Test SSE endpoint with curl
+curl -N -H "Accept: text/event-stream" http://localhost:8080/sse
+
+# Send MCP messages via POST
+curl -X POST http://localhost:8080/message \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
 
@@ -161,7 +197,7 @@ Postman now offers robust support for the Model Context Protocol (MCP), includin
 - Visual agent-building and cloud collaboration
 
 **When should you use Agenterra?**
-- **Offline, air-gapped, or regulated environments** where cloud-based tools aren’t an option
+- **Offline, air-gapped, or regulated environments** where cloud-based tools aren't an option
 - **Rust-first, codegen-centric workflows:** Generate type-safe, production-grade Rust MCP servers from OpenAPI specs, ready for CI/CD and self-hosting
 - **Full template control:** Tweak every line of generated code, use custom templates, and integrate with your own infra
 - **CLI-first automation:** Perfect for embedding in build scripts and automated workflows
@@ -179,7 +215,7 @@ Postman now offers robust support for the Model Context Protocol (MCP), includin
 
 ## 🏛️ Architecture
 
-Agenterra is built for extensibility, automation, and code quality. Here’s how the core pieces fit together:
+Agenterra is built for extensibility, automation, and code quality. Here's how the core pieces fit together:
 
 **Core Modules:**
 - `openapi`: Loads and validates OpenAPI specs (YAML/JSON, local or URL)
@@ -205,8 +241,36 @@ OpenAPI Spec (local file or URL)
 Generated Rust MCP Server (Axum, etc.)
 ```
 
-- The generated server uses [Stdio](https://modelcontextprotocol.io/introduction) as the primary MCP protocol for agent integration, but can be extended for HTTP/SSE and other transports.
-- All code is idiomatic Rust, ready for further customization and production deployment.
+- The generated servers support both **STDIO** and **SSE (Server-Sent Events)** transports for MCP protocol
+- All code is idiomatic Rust, ready for further customization and production deployment
+
+### 🚀 Transport Configuration
+
+Generated servers and clients support multiple transport modes:
+
+#### Server Transport Options
+```bash
+# STDIO mode (default) - for direct process communication
+./my-server
+
+# SSE mode - for HTTP-based communication
+./my-server --transport sse --sse-addr 127.0.0.1:8080
+
+# With custom keep-alive interval
+./my-server --transport sse --sse-addr 0.0.0.0:9000 --sse-keep-alive 60
+
+# Configuration via command-line arguments only
+./my-server --transport sse --sse-addr 127.0.0.1:8080
+```
+
+#### Client Transport Options
+```bash
+# STDIO mode (default) - connects to server process
+./my-client --server /path/to/server
+
+# SSE mode - connects to HTTP endpoint
+./my-client --transport sse --sse-url http://localhost:8080
+```
 
 ## 💾 Resource Caching
 
@@ -214,7 +278,6 @@ Generated MCP clients include a sophisticated SQLite-powered resource caching sy
 
 **Features:**
 - **Connection Pooling** - r2d2 connection pool for concurrent access
-- **Character Encoding** - Automatic charset detection from HTTP headers
 - **TTL Support** - Configurable time-to-live for cache entries
 - **Analytics** - Built-in cache hit/miss tracking and performance metrics
 - **ACID Transactions** - Database integrity with rollback support
@@ -222,14 +285,19 @@ Generated MCP clients include a sophisticated SQLite-powered resource caching sy
 
 **Configuration Options:**
 ```rust
-let config = CacheConfig {
-    database_path: "cache.db".to_string(),
+// Resource cache configuration
+let cache_config = CacheConfig {
     default_ttl: Duration::from_secs(3600),
     max_size_mb: 100,
-    pool_max_connections: Some(10),
-    pool_max_lifetime: Some(Duration::from_secs(300)),
     auto_cleanup: true,
-    ..Default::default()
+};
+
+// Database connection configuration (separate from cache config)
+let db_config = DatabaseConfig {
+    database_path: PathBuf::from("cache.db"),
+    pool_max_connections: 10,
+    pool_connection_timeout: Some(Duration::from_secs(5)),
+    pool_max_lifetime: Some(Duration::from_secs(300)),
 };
 ```
 
@@ -261,7 +329,7 @@ For more details, see [CONTRIBUTING.md](CONTRIBUTING.md) if available.
 
 ## 🛠️ Developer Workflow
 
-Here’s how to work productively with Agenterra as a contributor or advanced user:
+Here's how to work productively with Agenterra as a contributor or advanced user:
 
 ### 🧪 Running Tests
 - **Unit & Integration Tests:**
@@ -282,28 +350,6 @@ Here’s how to work productively with Agenterra as a contributor or advanced us
 ### 🧩 Custom Templates
 - See [`docs/TEMPLATES.md`](docs/TEMPLATES.md) for template development
 - Add templates under `templates/` directory
-
----
-
-## 🏗️ Generated Project Structure
-
-```
-petstore-server/
-├── Cargo.toml          # Rust project manifest
-├── src/
-│   ├── mcp/            # MCP protocol implementation
-│   │   ├── mod.rs       # MCP server implementation
-│   │   └── handlers/    # MCP request handlers
-│   ├── api/             # Generated API code
-│   │   ├── mod.rs       # API module exports
-│   │   ├── models/      # Generated data models
-│   │   └── operations/  # API operation handlers
-│   ├── config.rs        # Server configuration
-│   ├── error.rs         # Error handling
-│   └── main.rs          # MCP server entry point
-├── .env                # Environment variables
-└── README.md           # Project documentation
-```
 
 ---
 
@@ -358,6 +404,9 @@ Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation.
 **Custom Templates:**
 - Create templates under `templates/mcp/server/` or `templates/mcp/client/`
 - **Details**: See [`docs/TEMPLATES.md`](docs/TEMPLATES.md)
+
+**Project Structure:**
+Each generated project includes a detailed README.md with template-specific project structure documentation, usage examples, and configuration options.
 
 ## 📄 License
 

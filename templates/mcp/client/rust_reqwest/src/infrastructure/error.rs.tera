@@ -1,0 +1,116 @@
+//! Error types for the {{ project_name }}
+//!
+//! {{ description }}
+//! Version: {{ version }}
+
+use thiserror::Error;
+
+/// Result type alias for client operations
+pub type Result<T> = std::result::Result<T, ClientError>;
+
+/// Errors that can occur during MCP client operations
+#[derive(Error, Debug)]
+pub enum ClientError {
+    /// Transport-level errors (connection, I/O, etc.)
+    #[error("Transport error: {0}")]
+    Transport(String),
+
+    /// Protocol-level errors (invalid messages, unknown methods, etc.)
+    #[error("Protocol error: {0}")]
+    Protocol(String),
+
+    /// Timeout errors for operations that exceed their deadline
+    #[error("Operation timed out after {timeout_ms}ms: {operation}")]
+    Timeout { operation: String, timeout_ms: u64 },
+
+    /// Connection errors with configurable timeout
+    #[error("Connection error: {0}")]
+    Connection(String),
+
+    /// Server returned an error response
+    #[error("Server error: {message}")]
+    Server { message: String },
+
+    /// Client configuration or usage errors
+    #[error("Client error: {0}")]
+    Client(String),
+
+    /// Parameter validation errors
+    #[error("Validation error: {0}")]
+    Validation(String),
+
+    /// Connection pool errors (pool exhaustion, timeout, etc.)
+    #[error("Pool error: {0}")]
+    Pool(String),
+
+    /// Thread pool spawn errors (tokio task spawn failures)
+    #[error("Spawn error: {0}")]
+    Spawn(String),
+    
+    /// Database migration errors
+    #[error("Migration error: {0}")]
+    Migration(String),
+
+    /// {{ project_name }}-specific runtime errors
+    #[error("Runtime error: {0}")]
+    Runtime(String),
+
+    /// Configuration-related errors
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+    
+    /// Tool-related errors (disabled tools, permission denied, etc.)
+    #[error("Tool error: {0}")]
+    ToolError(String),
+    
+    /// I/O errors (file operations, etc.)
+    #[error("I/O error: {0}")]
+    Io(String),
+    
+    /// Configuration parsing errors
+    #[error("Config error: {0}")]
+    Config(String),
+}
+
+impl From<serde_json::Error> for ClientError {
+    fn from(err: serde_json::Error) -> Self {
+        ClientError::Protocol(format!("JSON serialization error: {err}"))
+    }
+}
+
+impl From<agenterra_rmcp::service::ServiceError> for ClientError {
+    fn from(err: agenterra_rmcp::service::ServiceError) -> Self {
+        use agenterra_rmcp::service::ServiceError;
+        match err {
+            ServiceError::McpError(mcp_err) => {
+                ClientError::Protocol(format!("MCP error {}: {}", mcp_err.code.0, mcp_err.message))
+            }
+            ServiceError::TransportSend(_) => {
+                ClientError::Transport(format!("Transport send error: {err}"))
+            }
+            ServiceError::TransportClosed => {
+                ClientError::Connection("Transport closed unexpectedly".to_string())
+            }
+            ServiceError::UnexpectedResponse => {
+                ClientError::Protocol("Unexpected response type from server".to_string())
+            }
+            ServiceError::Cancelled { reason } => {
+                ClientError::Client(format!("Operation cancelled: {}", reason.as_deref().unwrap_or("unknown reason")))
+            }
+            ServiceError::Timeout { timeout } => {
+                ClientError::Timeout {
+                    operation: "Service call".to_string(),
+                    timeout_ms: timeout.as_millis() as u64,
+                }
+            }
+            // Handle any future variants
+            _ => ClientError::Protocol(format!("Service error: {err}")),
+        }
+    }
+}
+
+impl From<agenterra_rmcp::Error> for ClientError {
+    fn from(err: agenterra_rmcp::Error) -> Self {
+        ClientError::Protocol(format!("MCP error {}: {}", err.code.0, err.message))
+    }
+}

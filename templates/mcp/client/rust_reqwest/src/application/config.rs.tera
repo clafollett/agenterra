@@ -6,8 +6,8 @@
 //! Version: {{ version }}
 //! Database: Unified SQLite database via DatabaseManager
 
-use crate::database::DatabaseManager;
-use crate::error::{ClientError, Result};
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,8 @@ pub struct ServerProfile {
     pub id: String,
     /// Profile name (user-friendly identifier)
     pub name: String,
+    /// Description of the server
+    pub description: Option<String>,
     /// Server command
     pub command: String,
     /// Command arguments (stored as JSON array)
@@ -31,10 +33,16 @@ pub struct ServerProfile {
     pub environment: Option<HashMap<String, String>>,
     /// Connection timeout in seconds
     pub timeout: Option<u64>,
-    /// Description of the server
-    pub description: Option<String>,
     /// Whether this is the default server
     pub is_default: bool,
+    /// Transport protocol (stdio, sse)
+    pub transport: Option<String>,
+    /// Whether this server is disabled (prevents all calls)
+    pub disabled: bool,
+    /// Tools that are always allowed regardless of approval prompts (stored as JSON array)
+    pub always_allowed: Option<Vec<String>>,
+    /// Tools to disable for this server (stored as JSON array)
+    pub disabled_tools: Option<Vec<String>>,
     /// When the profile was created
     pub created_at: DateTime<Utc>,
     /// When the profile was last used
@@ -112,29 +120,43 @@ impl ConfigManager {
     /// existing default server.
     pub async fn add_server(&self, profile: ServerProfile) -> Result<()> {
         let args_json = serde_json::to_string(&profile.args)
-            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize args: {}", e)))?;
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize args: {e}")))?;
 
         let env_json = profile.environment.as_ref()
             .map(serde_json::to_string)
             .transpose()
-            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize environment: {}", e)))?;
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize environment: {e}")))?;
+
+        let disabled_tools_json = profile.disabled_tools.as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize disabled_tools: {e}")))?;
+
+        let always_allowed_json = profile.always_allowed.as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| ClientError::ConfigError(format!("Failed to serialize always_allowed: {e}")))?;
 
         let is_default = profile.is_default;
         let name = profile.name.clone();
 
         self.db.with_connection(move |conn| {
             conn.execute(
-                "INSERT INTO servers (id, name, command, args, environment, timeout, description, is_default, created_at, last_used)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO servers (id, name, description, command, args, environment, timeout, is_default, transport, disabled, always_allowed, disabled_tools, created_at, last_used)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     profile.id,
                     profile.name,
+                    profile.description,
                     profile.command,
                     args_json,
                     env_json,
                     profile.timeout,
-                    profile.description,
                     profile.is_default as i32,
+                    profile.transport.as_deref().unwrap_or("stdio"),
+                    profile.disabled as i32,
+                    always_allowed_json,
+                    disabled_tools_json,
                     profile.created_at.timestamp(),
                     profile.last_used.map(|dt| dt.timestamp())
                 ]
@@ -159,36 +181,56 @@ impl ConfigManager {
 
         self.db.with_connection(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                "SELECT id, name, description, command, args, environment, timeout, is_default, transport, disabled, always_allowed, disabled_tools, created_at, last_used
                  FROM servers WHERE name = ?1"
             )?;
 
             let profile = stmt.query_row(params![name_clone], |row| {
-                let args_json: String = row.get(3)?;
+                let args_json: String = row.get(4)?;
                 let args: Vec<String> = serde_json::from_str(&args_json)
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        3, rusqlite::types::Type::Text, Box::new(e)
+                        4, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
-                let env_json: Option<String> = row.get(4)?;
+                let env_json: Option<String> = row.get(5)?;
                 let environment = env_json.as_ref()
                     .map(|json| serde_json::from_str(json))
                     .transpose()
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4, rusqlite::types::Type::Text, Box::new(e)
+                        5, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let always_allowed_json: Option<String> = row.get(10)?;
+                let always_allowed = always_allowed_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        10, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let disabled_tools_json: Option<String> = row.get(11)?;
+                let disabled_tools = disabled_tools_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        11, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
                 Ok(ServerProfile {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    command: row.get(2)?,
+                    description: row.get(2)?,
+                    command: row.get(3)?,
                     args,
                     environment,
-                    timeout: row.get(5)?,
-                    description: row.get(6)?,
+                    timeout: row.get(6)?,
                     is_default: row.get::<_, i32>(7)? != 0,
-                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
-                    last_used: row.get::<_, Option<i64>>(9)?
+                    transport: row.get(8)?,
+                    disabled: row.get::<_, i32>(9)? != 0,
+                    always_allowed,
+                    disabled_tools,
+                    created_at: DateTime::from_timestamp(row.get(12)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(13)?
                         .and_then(|ts| DateTime::from_timestamp(ts, 0)),
                 })
             }).optional()?;
@@ -204,36 +246,56 @@ impl ConfigManager {
     pub async fn list_servers(&self) -> Result<Vec<ServerProfile>> {
         self.db.with_connection(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                "SELECT id, name, description, command, args, environment, timeout, is_default, transport, disabled, always_allowed, disabled_tools, created_at, last_used
                  FROM servers ORDER BY name"
             )?;
 
             let profiles = stmt.query_map(params![], |row| {
-                let args_json: String = row.get(3)?;
+                let args_json: String = row.get(4)?;
                 let args: Vec<String> = serde_json::from_str(&args_json)
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        3, rusqlite::types::Type::Text, Box::new(e)
+                        4, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
-                let env_json: Option<String> = row.get(4)?;
+                let env_json: Option<String> = row.get(5)?;
                 let environment = env_json.as_ref()
                     .map(|json| serde_json::from_str(json))
                     .transpose()
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4, rusqlite::types::Type::Text, Box::new(e)
+                        5, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let always_allowed_json: Option<String> = row.get(10)?;
+                let always_allowed = always_allowed_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        10, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let disabled_tools_json: Option<String> = row.get(11)?;
+                let disabled_tools = disabled_tools_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        11, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
                 Ok(ServerProfile {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    command: row.get(2)?,
+                    description: row.get(2)?,
+                    command: row.get(3)?,
                     args,
                     environment,
-                    timeout: row.get(5)?,
-                    description: row.get(6)?,
+                    timeout: row.get(6)?,
                     is_default: row.get::<_, i32>(7)? != 0,
-                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
-                    last_used: row.get::<_, Option<i64>>(9)?
+                    transport: row.get(8)?,
+                    disabled: row.get::<_, i32>(9)? != 0,
+                    always_allowed,
+                    disabled_tools,
+                    created_at: DateTime::from_timestamp(row.get(12)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(13)?
                         .and_then(|ts| DateTime::from_timestamp(ts, 0)),
                 })
             })?
@@ -287,10 +349,76 @@ impl ConfigManager {
             Ok(())
         }).await.map_err(|e| match e {
             ClientError::Client(msg) if msg.contains("QueryReturnedNoRows") => {
-                ClientError::ConfigError(format!("Server '{}' not found", name))
+                ClientError::ConfigError(format!("Server '{name}' not found"))
             }
             _ => e
         })
+    }
+
+    /// List only enabled server profiles
+    ///
+    /// Retrieves all server profiles that are not disabled, ordered by name.
+    /// This is useful for filtering out servers that should not be used.
+    pub async fn list_enabled_servers(&self) -> Result<Vec<ServerProfile>> {
+        self.db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, description, command, args, environment, timeout, is_default, transport, disabled, always_allowed, disabled_tools, created_at, last_used
+                 FROM servers WHERE disabled = 0 ORDER BY name"
+            )?;
+
+            let profiles = stmt.query_map(params![], |row| {
+                let args_json: String = row.get(4)?;
+                let args: Vec<String> = serde_json::from_str(&args_json)
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        4, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let env_json: Option<String> = row.get(5)?;
+                let environment = env_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        5, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let always_allowed_json: Option<String> = row.get(10)?;
+                let always_allowed = always_allowed_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        10, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let disabled_tools_json: Option<String> = row.get(11)?;
+                let disabled_tools = disabled_tools_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        11, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                Ok(ServerProfile {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    command: row.get(3)?,
+                    args,
+                    environment,
+                    timeout: row.get(6)?,
+                    is_default: row.get::<_, i32>(7)? != 0,
+                    transport: row.get(8)?,
+                    disabled: row.get::<_, i32>(9)? != 0,
+                    always_allowed,
+                    disabled_tools,
+                    created_at: DateTime::from_timestamp(row.get(12)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(13)?
+                        .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+            Ok(profiles)
+        }).await
     }
 
     /// Get the default server profile
@@ -300,7 +428,7 @@ impl ConfigManager {
     pub async fn get_default_server(&self) -> Result<Option<ServerProfile>> {
         self.db.with_connection(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, command, args, environment, timeout, description, is_default, created_at, last_used
+                "SELECT id, name, command, args, environment, timeout, description, is_default, transport, disabled, always_allowed, disabled_tools, created_at, last_used
                  FROM servers WHERE is_default = 1 LIMIT 1"
             )?;
 
@@ -319,6 +447,22 @@ impl ConfigManager {
                         4, rusqlite::types::Type::Text, Box::new(e)
                     ))?;
 
+                let always_allowed_json: Option<String> = row.get(10)?;
+                let always_allowed = always_allowed_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        10, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
+                let disabled_tools_json: Option<String> = row.get(11)?;
+                let disabled_tools = disabled_tools_json.as_ref()
+                    .map(|json| serde_json::from_str(json))
+                    .transpose()
+                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                        11, rusqlite::types::Type::Text, Box::new(e)
+                    ))?;
+
                 Ok(ServerProfile {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -328,8 +472,12 @@ impl ConfigManager {
                     timeout: row.get(5)?,
                     description: row.get(6)?,
                     is_default: row.get::<_, i32>(7)? != 0,
-                    created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
-                    last_used: row.get::<_, Option<i64>>(9)?
+                    transport: row.get(8)?,
+                    disabled: row.get::<_, i32>(9)? != 0,
+                    always_allowed,
+                    disabled_tools,
+                    created_at: DateTime::from_timestamp(row.get(12)?, 0).unwrap_or_else(Utc::now),
+                    last_used: row.get::<_, Option<i64>>(13)?
                         .and_then(|ts| DateTime::from_timestamp(ts, 0)),
                 })
             }).optional()?;
@@ -553,9 +701,23 @@ impl ConfigManager {
                             0, rusqlite::types::Type::Text, Box::new(e)
                         ))?;
 
+                    let always_allowed_json = new_server.always_allowed.as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                            0, rusqlite::types::Type::Text, Box::new(e)
+                        ))?;
+
+                    let disabled_tools_json = new_server.disabled_tools.as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                            0, rusqlite::types::Type::Text, Box::new(e)
+                        ))?;
+
                     tx.execute(
-                        "INSERT OR REPLACE INTO servers (id, name, command, args, environment, timeout, description, is_default, created_at, last_used)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                        "INSERT OR REPLACE INTO servers (id, name, command, args, environment, timeout, description, is_default, transport, disabled, always_allowed, disabled_tools, created_at, last_used)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                         params![
                             new_server.id,
                             new_server.name,
@@ -565,6 +727,10 @@ impl ConfigManager {
                             new_server.timeout,
                             new_server.description,
                             new_server.is_default as i32,
+                            new_server.transport.as_deref().unwrap_or("stdio"),
+                            new_server.disabled as i32,
+                            always_allowed_json,
+                            disabled_tools_json,
                             new_server.created_at.timestamp(),
                             new_server.last_used.map(|dt| dt.timestamp())
                         ]
@@ -585,6 +751,120 @@ impl ConfigManager {
             }
 
             tx.commit()?;
+
+            Ok(())
+        }).await
+    }
+    
+    /// Update the always_allowed list for a server profile
+    ///
+    /// Adds a tool to the always_allowed list for the specified server profile
+    /// and persists the change to the database.
+    pub async fn add_tool_to_always_allowed(&self, server_id: &str, tool_name: &str) -> Result<()> {
+        let server_id_clone = server_id.to_string();
+        let tool_name_clone = tool_name.to_string();
+
+        self.db.with_connection(move |conn| {
+            // Get current always_allowed list
+            let always_allowed_json: Option<String> = conn.query_row(
+                "SELECT always_allowed FROM servers WHERE id = ?1",
+                params![server_id_clone],
+                |row| row.get(0)
+            ).optional()?
+            .flatten();
+
+            // Parse current list or create empty one
+            let mut always_allowed: Vec<String> = always_allowed_json
+                .as_ref()
+                .map(|json| serde_json::from_str(json))
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to parse always_allowed JSON: {}", e))
+                ))?
+                .unwrap_or_default();
+
+            // Add tool if not already present
+            if !always_allowed.contains(&tool_name_clone) {
+                always_allowed.push(tool_name_clone);
+                
+                // Serialize back to JSON
+                let updated_json = serde_json::to_string(&always_allowed)
+                    .map_err(|e| rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                        Some(format!("Failed to serialize always_allowed: {}", e))
+                    ))?;
+
+                // Update the database
+                conn.execute(
+                    "UPDATE servers SET always_allowed = ?1 WHERE id = ?2",
+                    params![updated_json, server_id_clone]
+                )?;
+            }
+
+            Ok(())
+        }).await
+    }
+    
+    /// Update an entire server profile
+    ///
+    /// Updates all fields of a server profile in the database.
+    /// This is a more general update method for full profile modifications.
+    pub async fn update_server_profile(&self, profile: &ServerProfile) -> Result<()> {
+        let profile_clone = profile.clone();
+
+        self.db.with_connection(move |conn| {
+            let args_json = serde_json::to_string(&profile_clone.args)
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize args: {}", e))
+                ))?;
+
+            let env_json = profile_clone.environment.as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize environment: {}", e))
+                ))?;
+
+            let always_allowed_json = profile_clone.always_allowed.as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize always_allowed: {}", e))
+                ))?;
+
+            let disabled_tools_json = profile_clone.disabled_tools.as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|e| rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISUSE),
+                    Some(format!("Failed to serialize disabled_tools: {}", e))
+                ))?;
+
+            conn.execute(
+                "UPDATE servers SET name = ?2, command = ?3, args = ?4, environment = ?5, 
+                 timeout = ?6, description = ?7, is_default = ?8, transport = ?9, 
+                 disabled = ?10, always_allowed = ?11, disabled_tools = ?12, last_used = ?13 
+                 WHERE id = ?1",
+                params![
+                    profile_clone.id,
+                    profile_clone.name,
+                    profile_clone.command,
+                    args_json,
+                    env_json,
+                    profile_clone.timeout,
+                    profile_clone.description,
+                    profile_clone.is_default as i32,
+                    profile_clone.transport.as_deref().unwrap_or("stdio"),
+                    profile_clone.disabled as i32,
+                    always_allowed_json,
+                    disabled_tools_json,
+                    profile_clone.last_used.map(|dt| dt.timestamp())
+                ]
+            )?;
 
             Ok(())
         }).await

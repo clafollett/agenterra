@@ -1,0 +1,14 @@
+//! Core domain logic for {{ project_name }}
+//!
+//! This module contains the core business logic and domain models
+//! following Domain-Driven Design principles.
+
+pub mod capabilities;
+pub mod client;
+pub mod connection;
+pub mod operations;
+
+// Re-export main domain types
+pub use capabilities::DiscoveredCapabilities;
+pub use client::McpClient;
+pub use connection::{ConnectionConfig, ConnectionConfigBuilder, ConnectionState};

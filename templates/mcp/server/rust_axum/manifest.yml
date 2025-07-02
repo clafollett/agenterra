@@ -21,6 +21,8 @@ files:
     destination: src/server.rs
   - source: signal.rs.tera
     destination: src/signal.rs
+  - source: transport.rs.tera
+    destination: src/transport.rs
   - source: main.rs.tera
     destination: src/main.rs
   - source: LICENSE
@@ -53,4 +55,6 @@ required_directories:
 # Hooks that run before/after generation (optional)
 hooks:
   # pre_generate: "echo 'Running pre-generation tasks...'"
-  # post_generate: "cargo fmt --all"
+  post_generate:
+    - "cargo fmt"
+    - "cargo check"

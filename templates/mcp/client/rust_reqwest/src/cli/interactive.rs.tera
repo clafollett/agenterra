@@ -1,0 +1,222 @@
+//! Interactive mode handler for {{ project_name }}
+
+use crate::cli::args::Cli;
+use crate::domain::client::McpClient;
+use crate::application::config::ConfigManager;
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
+use crate::ui::repl::McpRepl;
+use crate::infrastructure::transport::TransportProtocol;
+use std::sync::Arc;
+use tracing::info;
+
+/// Handle interactive mode
+pub async fn handle_interactive_mode(cli: &Cli) -> Result<()> {
+    info!("Starting {{ project_name }} v{}", "{{ version }}");
+    
+    // Determine server to connect to
+    let (server_command, server_args, timeout, server_profile) = if let Some(profile_name) = &cli.profile {
+        // Use saved profile
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        let profile = config_manager
+            .get_server(profile_name)
+            .await?
+            .ok_or_else(|| {
+                ClientError::ConfigError(format!("Profile '{}' not found", profile_name))
+            })?;
+        
+        // Check if server is disabled
+        if profile.disabled {
+            return Err(ClientError::ConfigError(
+                format!("Server profile '{}' is disabled", profile_name)
+            ));
+        }
+        
+        config_manager.update_server_last_used(profile_name).await?;
+        info!("Using server profile: {}", profile_name);
+        let profile_clone = profile.clone();
+        (
+            profile.command,
+            profile.args,
+            profile.timeout.unwrap_or(cli.timeout),
+            Some(profile_clone),
+        )
+    } else if let Some(server) = &cli.server {
+        // Use direct server path
+        info!("Connecting to server: {}", server);
+        (server.clone(), cli.args.clone(), cli.timeout, None)
+    } else {
+        // Try default profile or prompt user
+        let db = Arc::new(DatabaseManager::new().await?);
+        let config_manager = ConfigManager::new(db).await?;
+        if let Some(default) = config_manager.get_default_server().await? {
+            // Check if default server is disabled
+            if default.disabled {
+                return Err(ClientError::ConfigError(
+                    format!("Default server profile '{}' is disabled", default.name)
+                ));
+            }
+            config_manager.update_server_last_used(&default.name).await?;
+            info!("Using default server profile: {}", default.name);
+            let default_clone = default.clone();
+            (default.command, default.args, default.timeout.unwrap_or(cli.timeout), Some(default_clone))
+        } else {
+            // Prompt user to configure a server
+            println!("No server specified and no default configured.");
+            println!();
+            println!("You can:");
+            println!("  1. Specify a server directly: {{ cli_binary_name }} --server /path/to/server");
+            println!("  2. Add a server profile: {{ cli_binary_name }} config add my-server --command /path/to/server");
+            println!("  3. Use an existing profile: {{ cli_binary_name }} --profile my-server");
+            
+            return Err(ClientError::ConfigError("No server configured".to_string()));
+        }
+    };
+    
+    // Create and connect MCP client
+    let mut client = McpClient::new_with_timeout(timeout).await?;
+    
+    // Set server profile if available
+    if let Some(profile) = server_profile {
+        client.set_server_profile(profile);
+    }
+    
+    // Connect based on transport type
+    match cli.transport {
+        TransportProtocol::Sse => {
+            // For SSE, we need a URL
+            if let Some(sse_url) = &cli.sse_url {
+                info!("Connecting to MCP server via SSE: {}", sse_url);
+                client.connect_sse(sse_url).await?;
+            } else {
+                return Err(ClientError::ConfigError(
+                    "SSE transport requires --sse-url to be specified".to_string()
+                ));
+            }
+        }
+        TransportProtocol::Stdio => {
+            info!("Starting MCP server: {} {:?}", server_command, server_args);
+            let mut command = tokio::process::Command::new(&server_command);
+            for arg in &server_args {
+                command.arg(arg);
+            }
+            
+            client.connect_stdio(command).await?;
+        }
+    }
+    info!("Connected to MCP server successfully");
+    
+    // Get the actual server name from the MCP server
+    let server_name = client.server_name().unwrap_or_else(|| {
+        // Fallback to deriving from command if server doesn't provide name
+        derive_server_name(&server_command)
+    });
+    
+    // Start session tracking if we have a profile
+    let db = Arc::new(DatabaseManager::new().await?);
+    let config_manager = ConfigManager::new(db).await?;
+    let session_id = if let Some(profile) = &cli.profile {
+        if let Some(server) = config_manager.get_server(profile).await? {
+            Some(config_manager.start_session(&server.id).await?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // Start REPL interface
+    let mut repl = McpRepl::new(client, server_name);
+    
+    // Set session ID for tracking
+    if let Some(id) = &session_id {
+        repl.set_session_id(id.clone());
+    }
+    
+    let result = repl.run().await;
+    
+    // End session tracking if we have a session
+    if let Some(id) = session_id {
+        if let Ok(db) = DatabaseManager::new().await {
+            let config_manager = ConfigManager::new(Arc::new(db)).await;
+            if let Ok(manager) = config_manager {
+                let _ = manager.end_session(&id).await;
+            }
+        }
+    }
+    
+    // Convert anyhow::Result to our Result type
+    result.map_err(|e| ClientError::Connection(e.to_string()))
+}
+
+/// Derive a server name from the command path
+fn derive_server_name(server_path: &str) -> String {
+    use std::path::Path;
+    
+    // Handle URLs (e.g., "https://api.example.com/mcp-server")
+    if server_path.starts_with("http://") || server_path.starts_with("https://") {
+        // Extract the last path segment or host
+        if let Ok(url) = url::Url::parse(server_path) {
+            if let Some(mut segments) = url.path_segments() {
+                if let Some(last) = segments.next_back() {
+                    if !last.is_empty() {
+                        return to_snake_case(last);
+                    }
+                }
+            }
+            // Fallback to host
+            if let Some(host) = url.host_str() {
+                return to_snake_case(host);
+            }
+        }
+    }
+    
+    // Handle file paths
+    let path = Path::new(server_path);
+    let name = path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown_server");
+    
+    to_snake_case(name)
+}
+
+/// Convert a string to snake_case
+fn to_snake_case(input: &str) -> String {
+    let mut result = String::new();
+    let mut prev_was_upper = false;
+    
+    for (i, ch) in input.chars().enumerate() {
+        if ch == '-' || ch == '_' || ch == '.' {
+            result.push('_');
+            prev_was_upper = false;
+        } else if ch.is_uppercase() {
+            if i > 0 && !prev_was_upper {
+                result.push('_');
+            }
+            result.push(ch.to_lowercase().next().unwrap());
+            prev_was_upper = true;
+        } else {
+            result.push(ch);
+            prev_was_upper = false;
+        }
+    }
+    
+    // Clean up multiple underscores
+    let mut cleaned = String::new();
+    let mut prev_was_underscore = false;
+    for ch in result.chars() {
+        if ch == '_' {
+            if !prev_was_underscore {
+                cleaned.push(ch);
+            }
+            prev_was_underscore = true;
+        } else {
+            cleaned.push(ch);
+            prev_was_underscore = false;
+        }
+    }
+    
+    // Remove leading/trailing underscores
+    cleaned.trim_matches('_').to_string()
+}

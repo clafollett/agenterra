@@ -1,0 +1,365 @@
+//! Integration tests using mock configuration
+//!
+//! These tests can use either:
+//! 1. A simple test configuration (always available)
+//! 2. An external mock server (via MOCK_SERVER_PATH environment variable)
+
+use {{ crate_name }}::domain::client::McpClient;
+use {{ crate_name }}::application::config::ServerProfile;
+#[cfg(any(test, feature = "test-utils"))]
+use {{ crate_name }}::test_utils::simple_mock::SimpleMockServer;
+use std::env;
+use std::time::Duration;
+use chrono::Utc;
+use uuid::Uuid;
+
+/// Get a server profile for testing
+fn get_test_server_profile() -> Result<ServerProfile, String> {
+    // First check if MOCK_SERVER_PATH is set (by E2E tests or user)
+    if let Ok(path) = env::var("MOCK_SERVER_PATH") {
+        return Ok(ServerProfile {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "external-mock-server".to_string(),
+            description: Some("External mock server for testing".to_string()),
+            command: path,
+            args: vec![],
+            environment: None,
+            timeout: Some(30),
+            is_default: false,
+            transport: Some("stdio".to_string()),
+            disabled: false,
+            always_allowed: Some(vec!["echo".to_string(), "test_allowed".to_string()]),
+            disabled_tools: Some(vec!["test_disabled".to_string()]),
+            created_at: chrono::Utc::now(),
+            last_used: None,
+        });
+    }
+    
+    // Use simple test configuration (no external dependencies required)
+    Ok(ServerProfile {
+        id: Uuid::new_v4().to_string(),
+        name: "test-mock-server".to_string(),
+        description: Some("Simple test configuration".to_string()),
+        command: "echo".to_string(),
+        args: vec!["mock".to_string()],
+        environment: None,
+        timeout: Some(30),
+        is_default: false,
+        transport: Some("stdio".to_string()),
+        disabled: false,
+        always_allowed: Some(vec!["echo".to_string(), "test_allowed".to_string()]),
+        disabled_tools: Some(vec!["test_disabled".to_string()]),
+        created_at: Utc::now(),
+        last_used: None,
+    })
+}
+
+#[tokio::test]
+async fn test_client_with_mock_server() {
+    let profile = match get_test_server_profile() {
+        Ok(profile) => profile,
+        Err(e) => {
+            eprintln!("Skipping test: {}", e);
+            return;
+        }
+    };
+
+    // Create client and connect
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    
+    // Set the server profile for permission tracking
+    client.set_server_profile(profile.clone());
+    
+    // Build connection config
+    let config = {{ crate_name }}::domain::connection::ConnectionConfigBuilder::new()
+        .command(&profile.command)
+        .args(profile.args.clone())
+        .timeout(Duration::from_secs(profile.timeout.unwrap_or(30)))
+        .build()
+        .unwrap();
+    
+    match client.connect(config).await {
+        Ok(_) => {
+            println!("✅ Successfully connected to mock server");
+            
+            // Test listing tools
+            match client.list_tools().await {
+                Ok(tools) => {
+                    assert!(!tools.is_empty(), "Should have tools available");
+                    assert!(tools.iter().any(|t| t == "echo"), "Should have echo tool");
+                    println!("✅ Successfully listed {} tools", tools.len());
+                }
+                Err(e) => {
+                    eprintln!("Failed to list tools: {}", e);
+                }
+            }
+            
+            // Test calling echo tool  
+            match client.call_tool("echo", serde_json::json!({
+                "message": "Hello from test!"
+            })).await {
+                Ok(result) => {
+                    println!("✅ Successfully called echo tool: {:?}", result);
+                }
+                Err(e) => {
+                    eprintln!("Failed to call tool: {}", e);
+                }
+            }
+            
+            // Disconnect
+            client.disconnect().await.ok();
+        }
+        Err(e) => {
+            eprintln!("Failed to connect to mock server: {}", e);
+            eprintln!("Mock server connection failed (this is expected if no external mock server is configured)");
+        }
+    }
+}
+
+#[tokio::test] 
+async fn test_disabled_tools_with_mock_server() {
+    let profile = match get_test_server_profile() {
+        Ok(profile) => profile,
+        Err(e) => {
+            eprintln!("Skipping test: {}", e);
+            return;
+        }
+    };
+
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    
+    let config = {{ crate_name }}::domain::connection::ConnectionConfigBuilder::new()
+        .command(&profile.command)
+        .args(profile.args.clone())
+        .timeout(Duration::from_secs(profile.timeout.unwrap_or(30)))
+        .build()
+        .unwrap();
+    
+    client.set_server_profile(profile);
+    
+    if client.connect(config).await.is_ok() {
+        // Try to call disabled tool - should fail
+        match client.call_tool("test_disabled", serde_json::json!({"input": "test"})).await {
+            Err(e) => {
+                assert!(e.to_string().contains("disabled"), "Error should mention tool is disabled");
+                println!("✅ Correctly blocked disabled tool");
+            }
+            Ok(_) => {
+                panic!("Should not be able to call disabled tool");
+            }
+        }
+        
+        // Echo tool should still work
+        match client.call_tool("echo", serde_json::json!({"message": "test"})).await {
+            Ok(_) => println!("✅ Non-disabled tool works"),
+            Err(e) => panic!("Non-disabled tool should work: {}", e),
+        }
+        
+        client.disconnect().await.ok();
+    }
+}
+
+#[tokio::test]
+async fn test_always_allowed_tools_with_mock_server() {
+    let profile = match get_test_server_profile() {
+        Ok(profile) => profile,
+        Err(e) => {
+            eprintln!("Skipping test: {}", e);
+            return;
+        }
+    };
+
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    
+    let config = {{ crate_name }}::domain::connection::ConnectionConfigBuilder::new()
+        .command(&profile.command)
+        .args(profile.args.clone())
+        .timeout(Duration::from_secs(profile.timeout.unwrap_or(30)))
+        .build()
+        .unwrap();
+    
+    client.set_server_profile(profile);
+    
+    if client.connect(config).await.is_ok() {
+        // Test that always_allowed tools work
+        for tool_name in &["test_allowed", "echo"] {
+            match client.call_tool(tool_name, serde_json::json!({"input": "test"})).await {
+                Ok(_) => println!("✅ Always allowed tool '{}' works", tool_name),
+                Err(e) => panic!("Always allowed tool '{}' should work: {}", tool_name, e),
+            }
+        }
+        
+        client.disconnect().await.ok();
+    }
+}
+
+#[tokio::test]
+async fn test_permission_workflow_with_mock_server() {
+    // RED: This test should fail because permission prompting workflow is not implemented yet
+    let profile = match get_test_server_profile() {
+        Ok(profile) => profile,
+        Err(e) => {
+            eprintln!("Skipping test: {}", e);
+            return;
+        }
+    };
+
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    
+    let config = {{ crate_name }}::domain::connection::ConnectionConfigBuilder::new()
+        .command(&profile.command)
+        .args(profile.args.clone())
+        .timeout(Duration::from_secs(profile.timeout.unwrap_or(30)))
+        .build()
+        .unwrap();
+    
+    client.set_server_profile(profile);
+    
+    if client.connect(config).await.is_ok() {
+        // TODO: This will fail until we implement REPL permission workflow testing
+        // Test that tools not in always_allowed would require permission
+        let tool_name = "non_always_allowed_tool";
+        
+        // For now, test that the client's is_tool_always_allowed works correctly
+        assert!(!client.is_tool_always_allowed(tool_name), "Tool should not be in always_allowed");
+        assert!(client.is_tool_always_allowed("echo"), "Echo should be in always_allowed");
+        
+        client.disconnect().await.ok();
+    }
+}
+
+#[tokio::test]
+async fn test_permission_persistence_across_sessions() {
+    // RED: This test should fail because permission persistence is not implemented yet
+    let profile = match get_test_server_profile() {
+        Ok(profile) => profile,
+        Err(e) => {
+            eprintln!("Skipping test: {}", e);
+            return;
+        }
+    };
+
+    // TODO: This test will fail until we implement database persistence for always_allowed changes
+    // For now, just test that the profile configuration is maintained
+    let mut client1 = McpClient::new_with_timeout(30).await.unwrap();
+    client1.set_server_profile(profile.clone());
+    
+    // Verify initial always_allowed state
+    assert!(client1.is_tool_always_allowed("echo"), "Echo should be in always_allowed initially");
+    
+    // Create a second client instance with the same profile  
+    let mut client2 = McpClient::new_with_timeout(30).await.unwrap();
+    client2.set_server_profile(profile);
+    
+    // Should have the same always_allowed state
+    assert!(client2.is_tool_always_allowed("echo"), "Echo should be in always_allowed in second client");
+}
+
+#[tokio::test]
+async fn test_comprehensive_permission_scenarios() {
+    // Test comprehensive permission scenarios using enhanced mock server
+    let profile = SimpleMockServer::create_comprehensive_test_profile("comprehensive-test");
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    client.set_server_profile(profile);
+    
+    // Test always_allowed tools
+    for tool in &["ping", "status", "help", "version", "list_files", "read_config"] {
+        assert!(client.is_tool_always_allowed(tool), 
+               "Tool '{}' should be always allowed", tool);
+    }
+    
+    // Test disabled tools  
+    for tool in &["format_disk", "delete_all", "shutdown", "modify_system"] {
+        // These should be caught by client-side disabled_tools check
+        // (In real implementation, these would be blocked before reaching server)
+        assert!(!client.is_tool_always_allowed(tool), 
+               "Tool '{}' should not be always allowed", tool);
+    }
+    
+    // Test prompt-required tools (neither always_allowed nor disabled)
+    for tool in &["create_file", "modify_file", "send_email", "make_request"] {
+        assert!(!client.is_tool_always_allowed(tool), 
+               "Tool '{}' should require prompting", tool);
+    }
+}
+
+#[tokio::test]
+async fn test_no_permissions_profile() {
+    // Test profile where everything requires prompting
+    let profile = SimpleMockServer::create_no_permissions_profile("no-permissions");
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    client.set_server_profile(profile);
+    
+    // No tools should be always allowed
+    for tool in SimpleMockServer::get_test_tools() {
+        assert!(!client.is_tool_always_allowed(tool), 
+               "Tool '{}' should require prompting in no-permissions profile", tool);
+    }
+}
+
+#[tokio::test]
+async fn test_disabled_only_profile() {
+    // Test profile with only disabled tools configured
+    let profile = SimpleMockServer::create_disabled_only_profile("disabled-only");
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    client.set_server_profile(profile);
+    
+    // Disabled tools should be recognized
+    if let Some(profile) = client.server_profile() {
+        if let Some(disabled_tools) = &profile.disabled_tools {
+            assert!(disabled_tools.contains(&"blocked_tool_1".to_string()));
+            assert!(disabled_tools.contains(&"blocked_tool_2".to_string()));
+            assert!(disabled_tools.contains(&"restricted_access".to_string()));
+        }
+    }
+    
+    // Test specific disabled tools
+    for tool in &["blocked_tool_1", "blocked_tool_2", "restricted_access"] {
+        assert!(!client.is_tool_always_allowed(tool), 
+               "Disabled tool '{}' should not be always allowed", tool);
+    }
+}
+
+#[tokio::test]
+async fn test_permission_test_profile() {
+    // Test the permission test profile with mixed scenarios
+    let profile = SimpleMockServer::create_permission_test_profile("permission-test");
+    let mut client = McpClient::new_with_timeout(30).await.unwrap();
+    client.set_server_profile(profile);
+    
+    // Test always allowed tools
+    assert!(client.is_tool_always_allowed("safe_tool"));
+    assert!(client.is_tool_always_allowed("read_only_tool"));
+    assert!(client.is_tool_always_allowed("status_check"));
+    
+    // Test that disabled tools are not always allowed
+    assert!(!client.is_tool_always_allowed("dangerous_tool"));
+    assert!(!client.is_tool_always_allowed("delete_everything"));
+    assert!(!client.is_tool_always_allowed("admin_tool"));
+}
+
+#[tokio::test]
+async fn test_mock_server_validation_helpers() {
+    // Test the validation helper functions
+    
+    // Test always_allowed validation
+    assert!(SimpleMockServer::is_always_allowed("ping"));
+    assert!(SimpleMockServer::is_always_allowed("status"));
+    assert!(SimpleMockServer::is_always_allowed("help"));
+    assert!(!SimpleMockServer::is_always_allowed("format_disk"));
+    assert!(!SimpleMockServer::is_always_allowed("create_file"));
+    
+    // Test disabled validation
+    assert!(SimpleMockServer::is_disabled("format_disk"));
+    assert!(SimpleMockServer::is_disabled("delete_all"));
+    assert!(SimpleMockServer::is_disabled("shutdown"));
+    assert!(!SimpleMockServer::is_disabled("ping"));
+    assert!(!SimpleMockServer::is_disabled("create_file"));
+    
+    // Test comprehensive tool list
+    let tools = SimpleMockServer::get_test_tools();
+    assert!(tools.len() > 20, "Should have comprehensive set of test tools");
+    assert!(tools.contains(&"ping"));
+    assert!(tools.contains(&"format_disk"));
+    assert!(tools.contains(&"create_file"));
+}

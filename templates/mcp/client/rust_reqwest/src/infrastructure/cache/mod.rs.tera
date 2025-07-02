@@ -1,0 +1,8 @@
+//! Cache infrastructure
+//!
+//! Provides resource caching implementations.
+
+pub mod resource_cache;
+
+// Re-export main types
+pub use resource_cache::{ResourceCache, CacheConfig, CachedResource, CacheAnalytics};

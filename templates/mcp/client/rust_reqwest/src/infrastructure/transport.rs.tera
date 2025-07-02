@@ -1,0 +1,209 @@
+//! Transport abstraction layer for MCP communication in {{ project_name }}
+//!
+//! {{ description }}
+//! Version: {{ version }}
+//! Protocol: 2025-06-18
+
+use crate::infrastructure::error::Result;
+use async_trait::async_trait;
+use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
+
+/// Transport protocol selection for MCP connection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransportProtocol {
+    /// Standard I/O (process communication)
+    #[value(name = "stdio")]
+    Stdio,
+    
+    /// Server-Sent Events (HTTP-based)
+    #[value(name = "sse")]
+    Sse,
+}
+
+impl Default for TransportProtocol {
+    fn default() -> Self {
+        Self::Stdio
+    }
+}
+
+impl From<&str> for TransportProtocol {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "sse" => Self::Sse,
+            "stdio" => Self::Stdio,
+            _ => Self::Stdio,
+        }
+    }
+}
+
+impl From<String> for TransportProtocol {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
+    }
+}
+
+impl From<Option<&str>> for TransportProtocol {
+    fn from(s: Option<&str>) -> Self {
+        s.map(Self::from).unwrap_or_default()
+    }
+}
+
+impl From<Option<String>> for TransportProtocol {
+    fn from(s: Option<String>) -> Self {
+        s.as_deref().into()
+    }
+}
+
+impl std::fmt::Display for TransportProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stdio => write!(f, "stdio"),
+            Self::Sse => write!(f, "sse"),
+        }
+    }
+}
+
+/// Abstraction over different MCP transport mechanisms for {{ project_name }}
+#[async_trait]
+pub trait Transport: Send + Sync {
+    /// Send a message and receive a response
+    async fn send(&mut self, message: serde_json::Value) -> Result<serde_json::Value>;
+
+    /// Close the transport gracefully
+    async fn close(&mut self) -> Result<()>;
+}
+
+/// Mock transport for testing {{ project_name }}
+#[cfg(test)]
+pub struct MockTransport {
+    responses: Vec<serde_json::Value>,
+    call_count: usize,
+    max_responses: usize,
+}
+
+#[cfg(test)]
+impl MockTransport {
+    pub fn new(responses: Vec<serde_json::Value>) -> Self {
+        let max_responses = responses.len();
+        Self {
+            responses,
+            call_count: 0,
+            max_responses,
+        }
+    }
+
+    /// Create mock transport with configurable limit
+    pub fn with_limit(responses: Vec<serde_json::Value>, limit: usize) -> Self {
+        let max_responses = limit.min(responses.len()).min(1000);
+        Self {
+            responses,
+            call_count: 0,
+            max_responses,
+        }
+    }
+}
+
+#[cfg(test)]
+#[async_trait]
+impl Transport for MockTransport {
+    async fn send(&mut self, _message: serde_json::Value) -> Result<serde_json::Value> {
+        use crate::infrastructure::error::ClientError;
+
+        // Check if we've exceeded the maximum allowed responses
+        if self.call_count >= self.max_responses {
+            return Err(ClientError::Transport(
+                "Maximum response limit reached".to_string(),
+            ));
+        }
+
+        if self.call_count >= self.responses.len() {
+            return Err(ClientError::Transport("No more mock responses".to_string()));
+        }
+
+        let response = self.responses[self.call_count].clone();
+        self.call_count += 1;
+        Ok(response)
+    }
+
+    async fn close(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transport_protocol_default() {
+        assert_eq!(TransportProtocol::default(), TransportProtocol::Stdio);
+    }
+
+    #[test]
+    fn test_transport_protocol_from_str() {
+        assert_eq!(TransportProtocol::from("stdio"), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from("STDIO"), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from("sse"), TransportProtocol::Sse);
+        assert_eq!(TransportProtocol::from("SSE"), TransportProtocol::Sse);
+        assert_eq!(TransportProtocol::from("unknown"), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from(""), TransportProtocol::Stdio);
+    }
+
+    #[test]
+    fn test_transport_protocol_from_option() {
+        assert_eq!(TransportProtocol::from(Some("sse")), TransportProtocol::Sse);
+        assert_eq!(TransportProtocol::from(None::<&str>), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from(Some("stdio".to_string())), TransportProtocol::Stdio);
+        assert_eq!(TransportProtocol::from(None::<String>), TransportProtocol::Stdio);
+    }
+
+    #[test]
+    fn test_transport_protocol_display() {
+        assert_eq!(TransportProtocol::Stdio.to_string(), "stdio");
+        assert_eq!(TransportProtocol::Sse.to_string(), "sse");
+    }
+
+    #[tokio::test]
+    async fn test_mock_transport() {
+        let responses = vec![
+            serde_json::json!({"result": "success"}),
+            serde_json::json!({"result": "another"}),
+        ];
+        
+        let mut transport = MockTransport::new(responses);
+        
+        // First call should return first response
+        let result = transport.send(serde_json::json!({"test": 1})).await.unwrap();
+        assert_eq!(result, serde_json::json!({"result": "success"}));
+        
+        // Second call should return second response
+        let result = transport.send(serde_json::json!({"test": 2})).await.unwrap();
+        assert_eq!(result, serde_json::json!({"result": "another"}));
+        
+        // Third call should error (no more responses)
+        let result = transport.send(serde_json::json!({"test": 3})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mock_transport_with_limit() {
+        let responses = vec![
+            serde_json::json!({"result": "1"}),
+            serde_json::json!({"result": "2"}),
+            serde_json::json!({"result": "3"}),
+        ];
+        
+        let mut transport = MockTransport::with_limit(responses, 2);
+        
+        // First two calls should succeed
+        assert!(transport.send(serde_json::json!({})).await.is_ok());
+        assert!(transport.send(serde_json::json!({})).await.is_ok());
+        
+        // Third call should fail due to limit
+        let result = transport.send(serde_json::json!({})).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Maximum response limit reached"));
+    }
+}

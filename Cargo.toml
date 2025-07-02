@@ -60,6 +60,7 @@ uuid = { version = "1.17", features = ["v4"] }
 
 [dev-dependencies]
 lazy_static = "1.5.0"
+reqwest = { version = "0.12", features = ["json", "stream"] }
 rusqlite = { version = "0.36", features = ["bundled", "serde_json"] }
 tracing-test = "0.2"
 tokio-test = "0.4"

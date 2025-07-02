@@ -1,0 +1,61 @@
+//! Main CLI execution logic for {{ project_name }}
+
+use crate::cli::{
+    args::Commands,
+    auth::handle_auth_command,
+    config::handle_server_command,
+    headless::handle_run_command,
+    interactive::handle_interactive_mode,
+};
+use crate::infrastructure::error::{ClientError, Result};
+use crate::infrastructure::transport::TransportProtocol;
+use tracing::info;
+
+/// Main CLI entry point
+pub async fn execute() -> Result<()> {
+    // Initialize logging
+    let cli = crate::cli::args::parse_args();
+    
+    // Configure logging
+    let log_level = if cli.debug {
+        "debug"
+    } else {
+        cli.log_level.as_str()
+    };
+    
+    tracing_subscriber::fmt()
+        .with_env_filter(log_level)
+        .with_target(false)
+        .init();
+    
+    info!("Starting {{ project_name }} v{}", "{{ version }}");
+    
+    // Validate SSE URL if SSE transport is selected
+    if matches!(cli.transport, TransportProtocol::Sse) && cli.sse_url.is_none() && cli.command.is_none() {
+        return Err(ClientError::ConfigError(
+            "SSE transport requires --sse-url parameter. Example: --transport sse --sse-url http://localhost:8080".to_string()
+        ));
+    }
+    
+    // Handle commands
+    match &cli.command {
+        Some(Commands::Server { action }) => {
+            handle_server_command(action).await
+        }
+        Some(Commands::Auth { action }) => {
+            if !cli.unstable_auth {
+                return Err(ClientError::ConfigError(
+                    "Auth commands are currently unstable. Use --unstable-auth flag to enable them.".to_string()
+                ));
+            }
+            handle_auth_command(action).await
+        }
+        Some(Commands::Run { call, args, server, profile, timeout }) => {
+            handle_run_command(&cli, call, args, server, profile, timeout).await
+        }
+        None => {
+            // Interactive mode
+            handle_interactive_mode(&cli).await
+        }
+    }
+}

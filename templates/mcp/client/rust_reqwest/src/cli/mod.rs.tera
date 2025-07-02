@@ -1,0 +1,25 @@
+//! CLI module for {{ project_name }}
+//!
+//! {{ description }}
+//! - Interactive REPL mode (default)
+//! - Headless automation mode
+//! - Configuration management
+//! - Authentication management
+//!
+//! Version: {{ version }}
+
+// Module declarations
+pub mod args;
+pub mod auth;
+pub mod config;
+pub mod headless;
+pub mod interactive;
+pub mod runner;
+
+// Re-export commonly used types
+pub use args::{Cli, Commands};
+pub use auth::handle_auth_command;
+pub use config::handle_server_command;
+pub use headless::handle_run_command;
+pub use interactive::handle_interactive_mode;
+pub use runner::execute;

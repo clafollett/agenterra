@@ -1,0 +1,13 @@
+//! Infrastructure layer for {{ project_name }}
+//!
+//! Contains implementations for external integrations like
+//! transport, database, and caching.
+
+pub mod cache;
+pub mod database;
+pub mod error;
+pub mod transport;
+
+// Re-export main infrastructure types
+pub use error::{ClientError, Result};
+pub use transport::{Transport, TransportProtocol};

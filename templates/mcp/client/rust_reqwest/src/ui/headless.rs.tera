@@ -9,8 +9,8 @@
 //! Version: {{ version }}
 //! Max batch size: 100
 
-use crate::client::McpClient;
-use crate::error::{ClientError, Result};
+use crate::domain::client::McpClient;
+use crate::infrastructure::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tracing::{info, debug};
@@ -85,7 +85,7 @@ impl HeadlessRunner {
         }
         
         // Get capabilities
-        let capabilities = self.client.capabilities()
+        let capabilities = self.client.discovered_inventory()
             .map(|caps| {
                 let mut capabilities = Vec::new();
                 if !caps.tools().is_empty() {
@@ -145,60 +145,19 @@ impl HeadlessRunner {
         }
         
         // Call the tool
-        let result = self.client.call_tool_typed(tool_name, args).await?;
+        let result = self.client.call_tool(tool_name, args).await?;
         
         // Convert result to JSON
-        let json_result = if result.is_error {
+        let json_result = if result.is_error.unwrap_or(false) {
             serde_json::json!({
                 "type": "error",
-                "error": result.error_code.unwrap_or_else(|| "Unknown error".to_string()),
-                "raw_response": result.raw_response,
+                "error": "Tool execution failed",
+                "content": result.content,
             })
         } else {
-            // Process the content items
-            let mut content_items = Vec::new();
-            for content in &result.content {
-                match content {
-                    crate::result::ContentType::Text { text } => {
-                        content_items.push(serde_json::json!({
-                            "type": "text",
-                            "content": text,
-                        }));
-                    }
-                    crate::result::ContentType::Json { json } => {
-                        content_items.push(serde_json::json!({
-                            "type": "json",
-                            "content": json,
-                        }));
-                    }
-                    crate::result::ContentType::Binary { data, mime_type } => {
-                        content_items.push(serde_json::json!({
-                            "type": "binary",
-                            "mime_type": mime_type,
-                            "size": data.len(),
-                            "content_base64": data,
-                        }));
-                    }
-                    crate::result::ContentType::Image { data, mime_type } => {
-                        content_items.push(serde_json::json!({
-                            "type": "image",
-                            "mime_type": mime_type,
-                            "content_base64": data,
-                        }));
-                    }
-                    crate::result::ContentType::Resource { uri, text } => {
-                        content_items.push(serde_json::json!({
-                            "type": "resource",
-                            "uri": uri,
-                            "text": text,
-                        }));
-                    }
-                }
-            }
-            
             serde_json::json!({
                 "type": "success",
-                "content": content_items,
+                "content": result.content,
             })
         };
         

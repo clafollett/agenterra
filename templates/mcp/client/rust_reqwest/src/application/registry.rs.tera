@@ -4,7 +4,7 @@
 //! Version: {{ version }}
 //! Max tools: 1000
 
-use crate::error::{ClientError, Result};
+use crate::infrastructure::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -113,7 +113,7 @@ impl ToolRegistry {
         }
 
         // If parameters are null or empty, check for required fields
-        let is_empty_object = params.as_object().map_or(false, |obj| obj.is_empty());
+        let is_empty_object = params.as_object().map(|obj| obj.is_empty()).unwrap_or(false);
         if params.is_null() || is_empty_object {
             if let Some(required) = schema.get("required") {
                 if let Some(required_array) = required.as_array() {
@@ -146,8 +146,7 @@ impl ToolRegistry {
                     if let Some(field_name) = required_field.as_str() {
                         if !params_obj.contains_key(field_name) {
                             return Err(ClientError::Validation(format!(
-                                "required parameter '{}' is missing",
-                                field_name
+                                "required parameter '{field_name}' is missing"
                             )));
                         }
                     }
@@ -169,8 +168,7 @@ impl ToolRegistry {
                     // Get parameter schema
                     let param_schema = properties_obj.get(param_name)
                         .ok_or_else(|| ClientError::Validation(format!(
-                            "unknown parameter '{}'",
-                            param_name
+                            "unknown parameter '{param_name}'"
                         )))?;
 
                     // Validate parameter type
@@ -238,7 +236,7 @@ impl ToolRegistry {
     }
 
     /// Update the registry with tools from list_tools response
-    pub fn update_from_rmcp_tools(&mut self, rmcp_tools: Vec<rmcp::model::Tool>) -> Result<()> {
+    pub fn update_from_rmcp_tools(&mut self, rmcp_tools: Vec<agenterra_rmcp::model::Tool>) -> Result<()> {
         self.tools.clear();
 
         for rmcp_tool in rmcp_tools {

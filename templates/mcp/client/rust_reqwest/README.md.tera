@@ -7,10 +7,22 @@
 - 🎯 **Interactive REPL** - Explore and test MCP servers interactively
 - 🤖 **Headless Mode** - Automate MCP operations for CI/CD and scripting
 - 💾 **Configuration Management** - SQLite-based server profiles and preferences
-- 🔐 **Authentication** - Secure credential storage (coming soon)
 - 📊 **Resource Caching** - SQLite-powered caching with analytics
 - 📈 **Session History** - Track tool usage and performance metrics
 - 🔄 **Multi-Server Support** - Save and switch between server profiles
+- 🚫 **Server Control** - Enable/disable servers and manage tool permissions
+- 🔒 **Enterprise Security** - Built-in protection against modern attacks
+
+## Security Features
+
+This client includes enterprise-grade security features:
+
+- **Input Validation**: All user inputs are validated against SQL injection, command injection, and path traversal
+- **Emoji Jailbreak Protection**: Detects and blocks emoji-based prompt injection attempts
+- **Unicode Security**: Prevents zero-width character attacks and homograph attacks
+- **JSON Validation**: Protects against JSON bombs with depth and size limits
+- **Secure Database**: All queries use parameterized statements
+- **URL Validation**: SSE URLs are validated to prevent dangerous schemes
 
 ## Installation
 
@@ -37,73 +49,138 @@ Use the default server:
 {{ cli_binary_name }}
 ```
 
-### Configuration Management
+### Server Management
+
+Server profiles support fine-grained control over MCP server behavior:
+- **disabled**: Prevents all connections to the server until re-enabled
+- **always_allowed**: Tools that bypass approval prompts for faster workflows
+- **disabled_tools**: Tools that are blocked from being called on this server
 
 Add a server profile:
 ```bash
-{{ cli_binary_name }} config add my-server \
-  --command /path/to/server \
-  --args "arg1 arg2" \
+# Basic usage with positional arguments
+{{ cli_binary_name }} server add my-server /path/to/server arg1 arg2 \
   --description "My MCP server" \
   --set-default
+
+# With SSE transport
+{{ cli_binary_name }} server add web-server https://api.example.com/mcp \
+  --transport sse \
+  --description "Web-based MCP server"
+
+# With environment variables and disabled tools
+{{ cli_binary_name }} server add custom-server /path/to/server \
+  --env '{"API_KEY": "secret"}' \
+  --disabled-tools "dangerous-tool,debug-tool" \
+  --timeout 30
+
+# Add a disabled server (won't be used until re-enabled)
+{{ cli_binary_name }} server add backup-server /path/to/server \
+  --disabled \
+  --description "Backup server - currently disabled"
+
+# Add server with always-allowed tools (bypass approval prompts)
+{{ cli_binary_name }} server add github-server /path/to/server \
+  --always-allowed "list_issues,get_issue,list_pull_requests" \
+  --disabled-tools "merge_pull_request,delete_repository" \
+  --description "GitHub MCP server with restricted permissions"
 ```
 
 List server profiles:
 ```bash
-{{ cli_binary_name }} config list
+{{ cli_binary_name }} server list
+```
+
+Get server details:
+```bash
+{{ cli_binary_name }} server get my-server
 ```
 
 Set default server:
 ```bash
-{{ cli_binary_name }} config set-default my-server
+{{ cli_binary_name }} server set-default my-server
 ```
 
 Remove a server:
 ```bash
-{{ cli_binary_name }} config remove my-server
+{{ cli_binary_name }} server remove my-server
+```
+
+Add server from JSON:
+```bash
+{{ cli_binary_name }} server add-json my-server '{
+  "command": "/path/to/server",
+  "args": ["arg1", "arg2"],
+  "transport": "sse",
+  "timeout": 30,
+  "disabled": false,
+  "always_allowed": ["safe_tool_1", "safe_tool_2"],
+  "disabled_tools": ["dangerous_tool"],
+  "environment": {"API_KEY": "secret"}
+}'
 ```
 
 Export configuration:
 ```bash
-{{ cli_binary_name }} config export > config.json
+{{ cli_binary_name }} server export > servers.json
 ```
 
 Import configuration:
 ```bash
-{{ cli_binary_name }} config import config.json
+{{ cli_binary_name }} server import servers.json
 ```
 
 ### Headless Mode (Automation)
 
-List available tools:
+Run a tool with the `run` command:
 ```bash
-{{ cli_binary_name }} --server /path/to/server list-tools
+# Using a direct server path
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}' --server /path/to/server
+
+# Using a saved profile
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}' --profile my-server
+
+# Using the default server
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}'
+
+# Without arguments
+{{ cli_binary_name }} run tool-name --server /path/to/server
 ```
 
-Call a tool:
+The run command will:
+- Connect to the specified MCP server
+- Call the specified tool with the provided arguments
+- Print the result as JSON to stdout
+- Exit with appropriate status codes (0 for success, non-zero for errors)
+
+
+### Server-Sent Events (SSE) Transport
+
+The client supports connecting to MCP servers via SSE transport for web-based servers:
+
 ```bash
-{{ cli_binary_name }} --server /path/to/server call tool-name '{"arg": "value"}'
+# Connect to an SSE server in interactive mode
+{{ cli_binary_name }} --transport sse --sse-url https://api.example.com/mcp
+
+# Use SSE transport in headless mode
+{{ cli_binary_name }} run tool-name --args '{"param": "value"}' \
+  --transport sse \
+  --sse-url https://api.example.com/mcp
+
+# Configure SSE transport in server profiles
+{{ cli_binary_name }} server add web-server https://api.example.com/mcp \
+  --transport sse \
+  --description "Web-based MCP server"
 ```
 
-Get server status:
-```bash
-{{ cli_binary_name }} --server /path/to/server status
-```
+The SSE transport automatically handles:
+- Connection to `/sse` endpoint for event stream
+- POST requests to `/message` endpoint for client messages
+- Automatic reconnection with exponential backoff
+- Full MCP protocol support over HTTP
+- Support for both interactive and headless modes
 
-List resources:
-```bash
-{{ cli_binary_name }} --server /path/to/server list-resources
-```
-
-Get a resource:
-```bash
-{{ cli_binary_name }} --server /path/to/server get-resource "resource://uri"
-```
-
-Using profiles in headless mode:
-```bash
-{{ cli_binary_name }} --profile my-server list-tools
-```
+When using SSE transport with profiles, the command field should contain the base URL (without `/sse` or `/message` suffixes).
 
 ### REPL Commands
 
@@ -124,9 +201,8 @@ When in interactive mode, these commands are available:
 Configuration is stored in SQLite databases:
 
 - **Config Database**: `~/.config/agenterra/{{ project_name }}_config.db`
-  - Server profiles
-  - User preferences
-  - Authentication credentials (encrypted)
+  - Server profiles (with transport, environment, disabled tools)
+  - User preferences  
   - Session history
 
 - **Cache Database**: `~/.cache/agenterra/{{ project_name }}_cache.db`
@@ -139,6 +215,7 @@ Configuration is stored in SQLite databases:
 - `AGENTERRA_OUTPUT_DIR` - Override default output directory
 - `AGENTERRA_TEMPLATE_DIR` - Override template directory
 - `RUST_LOG` - Set logging level (e.g., `debug`, `info`, `warn`)
+- `MOCK_SERVER_PATH` - Path to mock MCP server for testing
 
 ## Exit Codes
 
@@ -157,11 +234,11 @@ For scripting and automation:
 
 ```bash
 #!/bin/bash
-# List all tools and save to file
-{{ cli_binary_name }} --profile my-server list-tools > tools.json
+# Get server details
+{{ cli_binary_name }} server get my-server
 
-# Call a tool and check result
-if {{ cli_binary_name }} --profile my-server call process-data '{"file": "data.csv"}'; then
+# Run a tool and check result
+if {{ cli_binary_name }} run process-data --args '{"file": "data.csv"}' --profile my-server; then
     echo "Processing succeeded"
 else
     echo "Processing failed with code $?"
@@ -174,12 +251,12 @@ fi
 # GitHub Actions example
 - name: Run MCP Tools
   run: |
-    {{ cli_binary_name }} config add ci-server \
-      --command {% raw %}${{ secrets.MCP_SERVER_PATH }}{% endraw %} \
+    {{ cli_binary_name }} server add ci-server {% raw %}${{ secrets.MCP_SERVER_PATH }}{% endraw %} \
+      --transport stdio \
       --set-default
     
-    {{ cli_binary_name }} list-tools
-    {{ cli_binary_name }} call deploy '{"version": "{% raw %}${{ github.sha }}{% endraw %}"}'
+    {{ cli_binary_name }} run list-tools --profile ci-server
+    {{ cli_binary_name }} run deploy --args '{"version": "{% raw %}${{ github.sha }}{% endraw %}"}' --profile ci-server
 ```
 
 ## Advanced Features
@@ -204,10 +281,55 @@ All client sessions are tracked in the configuration database:
 
 ## Development
 
+### Testing
+
 Run tests:
 ```bash
 cargo test
 ```
+
+#### Testing
+
+This client includes comprehensive tests that can run without external dependencies.
+
+**Unit Tests**
+
+Run the core functionality tests:
+
+```bash
+cargo test --lib
+```
+
+**Integration Tests**
+
+The integration tests verify client behavior with mock configurations:
+
+```bash
+cargo test test_client_with_mock_server --features test-utils -- --nocapture
+```
+
+**Custom Mock Server**
+
+You can point to your own MCP server for testing:
+
+```bash
+MOCK_SERVER_PATH=/path/to/your/mcp/server cargo test test_client_with_mock_server --features test-utils -- --nocapture
+```
+
+**Test Coverage**
+
+The tests verify:
+- Connection management and configuration
+- Tool permission handling (disabled/allowed tools)  
+- Configuration validation
+- Error handling scenarios
+- Database operations
+
+**Zero External Dependencies**
+
+All tests use mock configurations and don't require external servers or Python.
+
+### Building
 
 Build with all features:
 ```bash
@@ -228,6 +350,61 @@ Lint code:
 ```bash
 cargo clippy
 ```
+
+## Project Structure
+
+```
+{{ project_name }}/
+├── Cargo.toml              # Rust project manifest
+├── src/
+│   ├── api/                 # MCP protocol API types
+│   │   ├── mod.rs           # API module exports
+│   │   └── resource.rs      # Resource content types
+│   ├── application/         # Application logic layer
+│   │   ├── auth.rs          # Authentication configuration
+│   │   ├── config.rs        # Configuration management
+│   │   ├── registry.rs      # Tool registry for tracking
+│   │   ├── session_manager.rs # Session management
+│   │   ├── validation.rs    # Enterprise-grade input validation
+│   │   └── validation_config.rs # Validation configuration
+│   ├── cli/                 # Command-line interface
+│   │   ├── args.rs          # CLI argument parsing
+│   │   ├── config.rs        # CLI configuration
+│   │   ├── headless.rs      # Non-interactive mode
+│   │   ├── interactive.rs   # Interactive mode
+│   │   └── runner.rs        # CLI execution logic
+│   ├── domain/              # Domain models and business logic
+│   │   ├── capabilities.rs  # MCP capability discovery
+│   │   ├── client.rs        # Core MCP client implementation
+│   │   ├── connection.rs    # Connection management
+│   │   └── operations.rs    # MCP operations
+│   ├── infrastructure/      # Infrastructure layer
+│   │   ├── cache/           # Resource caching system
+│   │   │   └── resource_cache.rs # SQLite-powered caching
+│   │   ├── database/        # Database infrastructure
+│   │   │   ├── manager.rs   # Database connection management
+│   │   │   └── migrations.rs # Database schema migrations
+│   │   ├── error.rs         # Error handling and types
+│   │   └── transport.rs     # Transport layer (STDIO/SSE)
+│   ├── ui/                  # User interface components
+│   │   ├── headless.rs      # Headless/automation interface
+│   │   └── repl.rs          # Interactive REPL interface
+│   ├── lib.rs               # Library entry point
+│   └── main.rs              # Application entry point
+├── validation.toml.example  # Example validation configuration
+└── README.md                # Project documentation
+```
+
+The structure follows clean architecture principles:
+
+- **`api/`** - MCP protocol types and resource handling
+- **`application/`** - Business logic including security validation and configuration
+- **`cli/`** - Command-line interface with interactive and headless modes
+- **`domain/`** - Core business entities and MCP client logic
+- **`infrastructure/`** - External concerns like database, caching, and transport
+- **`ui/`** - User interface implementations (REPL and headless)
+
+Key features include enterprise-grade security validation, SQLite-powered resource caching with analytics, and comprehensive configuration management.
 
 ## Dependencies
 

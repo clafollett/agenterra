@@ -8,12 +8,13 @@
 //! Cache TTL: 300 seconds
 //! Max Cache Size: 1000 MB
 
-use crate::database::DatabaseManager;
-use crate::error::{ClientError, Result};
-use crate::resource::{ResourceContent, ResourceInfo};
+use crate::infrastructure::database::manager::DatabaseManager;
+use crate::infrastructure::error::{ClientError, Result};
+use crate::api::resource::{ResourceContent, ResourceInfo};
 use chrono::{DateTime, Utc};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info, warn};
@@ -255,10 +256,18 @@ impl ResourceCache {
     /// - Thread-safe via connection pooling
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,no_run
+    /// # use {{ crate_name }}::infrastructure::cache::resource_cache::{ResourceCache, CacheConfig};
+    /// # use {{ crate_name }}::infrastructure::database::manager::DatabaseManager;
+    /// # use std::sync::Arc;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let db = Arc::new(DatabaseManager::new().await?);
+    /// # let mut cache = ResourceCache::new(CacheConfig::default(), db).await?;
     /// if let Some(resource) = cache.get_resource("/api/users").await? {
     ///     println!("Cache hit! Data: {} bytes", resource.data.len());
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn get_resource(&mut self, uri: &str) -> Result<Option<ResourceContent>> {
         let start_time = std::time::Instant::now();
@@ -656,5 +665,3 @@ impl Default for CacheAnalytics {
         Self::new()
     }
 }
-
-use std::collections::HashMap;

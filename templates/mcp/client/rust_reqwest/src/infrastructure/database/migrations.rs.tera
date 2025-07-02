@@ -77,6 +77,20 @@ CREATE TABLE cache_analytics (
     FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
 );
 
+-- Add aggregated cache analytics table
+CREATE TABLE cache_analytics_summary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER NOT NULL,
+    hit_rate REAL,
+    miss_rate REAL,
+    total_requests INTEGER,
+    cache_size_mb REAL,
+    eviction_count INTEGER,
+    avg_response_time_ms REAL
+);
+
+CREATE INDEX idx_cache_analytics_summary_timestamp ON cache_analytics_summary(timestamp);
+
 -- Configuration table
 CREATE TABLE configuration (
     key TEXT PRIMARY KEY,
@@ -84,17 +98,28 @@ CREATE TABLE configuration (
     updated_at INTEGER NOT NULL
 );
 
--- Server management
+-- Server management with all required fields
 CREATE TABLE servers (
     id TEXT PRIMARY KEY,
-    transport TEXT NOT NULL CHECK(transport IN ('stdio', 'http')),
-    location TEXT NOT NULL,
-    name TEXT,
-    arguments TEXT,
-    environment_json TEXT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    command TEXT NOT NULL,
+    args TEXT, -- JSON array of arguments
+    environment TEXT, -- JSON object of environment variables
+    timeout INTEGER, -- Connection timeout in seconds
+    is_default INTEGER DEFAULT 0, -- SQLite doesn't have BOOLEAN, use 0/1
+    transport TEXT NOT NULL DEFAULT 'stdio' CHECK(transport IN ('stdio', 'sse', 'http')),
+    disabled INTEGER DEFAULT 0, -- Whether the server is disabled
+    always_allowed TEXT, -- JSON array of tools that bypass approval prompts
+    disabled_tools TEXT, -- JSON array of tool names to disable
     created_at INTEGER NOT NULL,
-    last_used_at INTEGER
+    last_used INTEGER
 );
+
+-- Indexes for server queries
+CREATE INDEX idx_servers_name ON servers(name);
+CREATE INDEX idx_servers_default ON servers(is_default) WHERE is_default = 1;
+CREATE INDEX idx_servers_disabled ON servers(disabled) WHERE disabled = 0;
 
 -- Server credentials
 CREATE TABLE credentials (
@@ -136,15 +161,7 @@ CREATE TABLE preferences (
     updated_at INTEGER NOT NULL
 );
 
--- Indexes for performance
-CREATE INDEX idx_sessions_server ON sessions(server_id);
-CREATE INDEX idx_tool_calls_session ON tool_calls(session_id);
-CREATE INDEX idx_tool_calls_timestamp ON tool_calls(timestamp);
-"#;
-
-/// Add retry tracking for failed operations
-const MIGRATION_002_ADD_RETRY_TRACKING: &str = r#"
--- Track failed operations for retry with exponential backoff
+-- Retry queue for failed operations
 CREATE TABLE retry_queue (
     id TEXT PRIMARY KEY,
     operation_type TEXT NOT NULL CHECK(operation_type IN ('tool_call', 'resource_fetch', 'server_connect')),
@@ -159,12 +176,14 @@ CREATE TABLE retry_queue (
     status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'failed'))
 );
 
--- Index for efficient polling of items ready to retry
+-- Indexes for performance
+CREATE INDEX idx_sessions_server ON sessions(server_id);
+CREATE INDEX idx_tool_calls_session ON tool_calls(session_id);
+CREATE INDEX idx_tool_calls_timestamp ON tool_calls(timestamp);
 CREATE INDEX idx_retry_queue_next ON retry_queue(next_retry_at) WHERE status = 'pending';
-
--- Index for cleanup of old completed/failed items
 CREATE INDEX idx_retry_queue_status ON retry_queue(status, completed_at);
 "#;
+
 
 // Example future migrations (commented out until needed):
 /*
@@ -188,9 +207,8 @@ CREATE INDEX idx_resources_tags ON resources(tags);
 /// All migrations with metadata for verification
 pub const MIGRATIONS_INFO: &[MigrationInfo] = &[
     MigrationInfo::new(1, "initial_schema", MIGRATION_001_INITIAL_SCHEMA),
-    MigrationInfo::new(2, "add_retry_tracking", MIGRATION_002_ADD_RETRY_TRACKING),
     // Future migrations would be added here:
-    // MigrationInfo::new(3, "add_resource_tags", MIGRATION_003_ADD_RESOURCE_TAGS),
+    // MigrationInfo::new(2, "add_feature", MIGRATION_002_ADD_FEATURE),
 ];
 
 /// Get all migrations in order
@@ -257,10 +275,15 @@ mod tests {
         // Verify key tables exist
         let critical_tables = [
             "resources",
+            "cache_analytics",
+            "cache_analytics_summary",
             "configuration", 
             "servers",
+            "credentials",
             "sessions",
-            "retry_queue", // From migration 2
+            "tool_calls",
+            "preferences",
+            "retry_queue",
         ];
         
         for table in &critical_tables {

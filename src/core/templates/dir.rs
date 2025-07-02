@@ -275,7 +275,7 @@ impl TemplateDir {
             error!("Failed to canonicalize template path: {}", e);
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Invalid template path: {}", e),
+                format!("Invalid template path: {e}"),
             )
         })?;
 
@@ -414,7 +414,7 @@ impl TemplateDir {
                     error!("Potentially unsafe template path rejected: {}", path_str);
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        format!("Template path not allowed: {}", path_str),
+                        format!("Template path not allowed: {path_str}"),
                     ));
                 }
             }
@@ -539,7 +539,7 @@ pub fn resolve_output_dir(
     } else {
         // Default behavior: current_directory/project_name (like cargo new)
         let current_dir = std::env::current_dir()
-            .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?;
+            .map_err(|e| io::Error::other(format!("Failed to get current directory: {e}")))?;
 
         let output_dir = current_dir.join(project_name);
 
@@ -552,7 +552,7 @@ pub fn resolve_output_dir(
         output_path
     } else {
         std::env::current_dir()
-            .map_err(|e| io::Error::other(format!("Failed to get current directory: {}", e)))?
+            .map_err(|e| io::Error::other(format!("Failed to get current directory: {e}")))?
             .join(output_path)
     };
 
@@ -723,8 +723,7 @@ mod tests {
             // The path should be rejected for security reasons
             assert!(
                 result.is_none(),
-                "Malicious path should be rejected: {}",
-                path
+                "Malicious path should be rejected: {path}"
             );
         }
     }
@@ -820,7 +819,7 @@ mod tests {
                 let result = TemplateDir::find_template_base_dir_with_config(&mock_config);
 
                 // Should succeed without panics or race conditions
-                assert!(result.is_some(), "Thread {} failed to discover template", i);
+                assert!(result.is_some(), "Thread {i} failed to discover template");
 
                 let base_dir = result.unwrap();
                 assert!(base_dir.exists());
@@ -883,18 +882,15 @@ mod tests {
         let path_str = template_dir.template_path().to_string_lossy();
         assert!(
             path_str.contains("mcp"),
-            "Path should contain protocol segment: {}",
-            path_str
+            "Path should contain protocol segment: {path_str}"
         );
         assert!(
             path_str.contains("server"),
-            "Path should contain role: {}",
-            path_str
+            "Path should contain role: {path_str}"
         );
         assert!(
             path_str.contains("rust_axum"),
-            "Path should contain template kind: {}",
-            path_str
+            "Path should contain template kind: {path_str}"
         );
     }
 

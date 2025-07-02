@@ -6,8 +6,8 @@
 //! Version: {{ version }}
 //! Max sessions: 10
 
-use crate::client::McpClient;
-use crate::error::{ClientError, Result};
+use crate::domain::client::McpClient;
+use crate::infrastructure::error::{ClientError, Result};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -76,7 +76,7 @@ impl McpSessionManager {
         let result = client_guard.call_tool(name, args).await?;
         // Convert CallToolResult to JSON
         serde_json::to_value(result).map_err(|e| {
-            crate::error::ClientError::Protocol(format!("Failed to serialize tool result: {}", e))
+            crate::infrastructure::error::ClientError::Protocol(format!("Failed to serialize tool result: {}", e))
         })
     }
 

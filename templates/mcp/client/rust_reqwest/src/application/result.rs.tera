@@ -4,7 +4,7 @@
 //! Version: {{ version }}
 //! Supported types: text, json, binary, image, resource
 
-use crate::error::{ClientError, Result};
+use crate::infrastructure::error::{ClientError, Result};
 use serde::{Deserialize, Serialize};
 
 /// Types of content that MCP tools can return
@@ -43,9 +43,9 @@ pub struct ToolResult {
 
 impl ToolResult {
     /// Create a new tool result from rmcp CallToolResult
-    pub fn from_rmcp_result(result: &rmcp::model::CallToolResult) -> Result<Self> {
+    pub fn from_rmcp_result(result: &agenterra_rmcp::model::CallToolResult) -> Result<Self> {
         let raw_response = serde_json::to_value(result)
-            .map_err(|e| ClientError::Protocol(format!("Failed to serialize tool result: {}", e)))?;
+            .map_err(|e| ClientError::Protocol(format!("Failed to serialize tool result: {e}")))?;
 
         let mut content = Vec::with_capacity(10);
         let mut is_error = false;
@@ -89,9 +89,9 @@ impl ToolResult {
                 }
                 Err(e) => {
                     is_error = true;
-                    error_code = Some(format!("Content parsing error: {}", e));
+                    error_code = Some(format!("Content parsing error: {e}"));
                     // Still add as text content for debugging
-                    let debug_text = format!("Error parsing content: {}", e);
+                    let debug_text = format!("Error parsing content: {e}");
                     content.push(ContentType::Text { text: debug_text });
                 }
             }
@@ -106,11 +106,11 @@ impl ToolResult {
     }
 
     /// Parse individual content item from rmcp
-    fn parse_content_item(item: &rmcp::model::Content) -> Result<ContentType> {
+    fn parse_content_item(item: &agenterra_rmcp::model::Content) -> Result<ContentType> {
         // Extract the content based on rmcp Content enum variants
         // This is a simplified parser - we'll expand based on actual rmcp types
         let item_json = serde_json::to_value(item).map_err(|e| {
-            ClientError::Protocol(format!("Failed to serialize content item: {}", e))
+            ClientError::Protocol(format!("Failed to serialize content item: {e}"))
         })?;
 
         // Try to detect content type from the structure
@@ -213,7 +213,7 @@ impl ToolResult {
                 .error_code
                 .as_deref()
                 .unwrap_or("Tool execution failed");
-            Err(ClientError::Protocol(format!("Tool error: {}", error_msg)))
+            Err(ClientError::Protocol(format!("Tool error: {error_msg}")))
         } else {
             Ok(T::from(self))
         }

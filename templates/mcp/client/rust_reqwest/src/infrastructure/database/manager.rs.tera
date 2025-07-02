@@ -5,8 +5,8 @@
 //!
 //! Version: {{ version }}
 
-use crate::database_migrations;
-use crate::error::{ClientError, Result};
+use crate::infrastructure::database::migrations;
+use crate::infrastructure::error::{ClientError, Result};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::Connection;
@@ -112,7 +112,8 @@ impl Default for DatabaseConfig {
 pub struct DatabaseManager {
     /// Connection pool for database operations
     pool: Pool<SqliteConnectionManager>,
-    /// Configuration
+    /// Configuration - preserved for future extensibility (e.g., pool tuning, migration options)
+    #[allow(dead_code)]
     config: DatabaseConfig,
 }
 
@@ -133,8 +134,11 @@ impl DatabaseManager {
                 )))?;
         }
 
-        // Create connection pool
-        let manager = SqliteConnectionManager::file(&config.database_path);
+        // Normalize the database path to prevent issues with different representations
+        let normalized_path = normalize_db_path(&config.database_path);
+        
+        // Create connection pool with normalized path
+        let manager = SqliteConnectionManager::file(&normalized_path);
         let mut pool_builder = Pool::builder()
             .max_size(config.pool_max_connections);
 
@@ -150,7 +154,7 @@ impl DatabaseManager {
             ClientError::Pool(format!("Failed to create connection pool: {}", e))
         })?;
 
-        let db_path_display = config.database_path.display().to_string();
+        let db_path_display = normalized_path.clone();
         let manager = Self { pool, config };
 
         // Initialize database schema
@@ -199,7 +203,7 @@ impl DatabaseManager {
             conn.busy_timeout(Duration::from_secs(5))?;
 
             // Create migrations instance from our defined migrations
-            let migrations = Migrations::new(database_migrations::get_migrations());
+            let migrations = Migrations::new(migrations::get_migrations());
             
             // Get current version before applying migrations
             let current_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))

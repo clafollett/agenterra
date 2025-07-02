@@ -3,8 +3,8 @@
 //! {{ description }}
 //! Version: {{ version }}
 
-use anyhow::Result;
 use {{ crate_name }}::cli;
+use {{ crate_name }}::infrastructure::error::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {

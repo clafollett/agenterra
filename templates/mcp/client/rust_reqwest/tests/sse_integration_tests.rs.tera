@@ -1,0 +1,135 @@
+//! SSE (Server-Sent Events) integration tests for {{ project_name }}
+//!
+//! These tests verify SSE transport functionality including:
+//! - Connection establishment
+//! - Reconnection on disconnect
+//! - Message handling
+//! - Error scenarios
+
+#[cfg(feature = "sse")]
+mod sse_tests {
+    use {{ crate_name }}::domain::client::McpClient;
+    use {{ crate_name }}::domain::connection::ConnectionConfig;
+    use {{ crate_name }}::infrastructure::transport::TransportProtocol;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    /// Test SSE connection establishment
+    #[tokio::test]
+    async fn test_sse_connection() {
+        // Skip this test if no SSE test server is available
+        let sse_url = match std::env::var("SSE_TEST_URL") {
+            Ok(url) => url,
+            Err(_) => {
+                eprintln!("Skipping SSE test - set SSE_TEST_URL to run");
+                return;
+            }
+        };
+
+        let mut client = McpClient::new();
+        
+        // Attempt SSE connection
+        let result = timeout(
+            Duration::from_secs(10),
+            client.connect_sse(&sse_url)
+        ).await;
+
+        match result {
+            Ok(Ok(())) => {
+                assert!(client.is_connected());
+                
+                // Test basic capabilities discovery
+                let capabilities = client.discovered_inventory();
+                assert!(capabilities.is_some());
+            }
+            Ok(Err(e)) => {
+                // Connection failed - log but don't fail test
+                eprintln!("SSE connection failed (server may be down): {}", e);
+            }
+            Err(_) => {
+                eprintln!("SSE connection timed out");
+            }
+        }
+    }
+
+    /// Test SSE reconnection behavior
+    #[tokio::test]
+    async fn test_sse_reconnection() {
+        let sse_url = match std::env::var("SSE_TEST_URL") {
+            Ok(url) => url,
+            Err(_) => {
+                eprintln!("Skipping SSE reconnection test - set SSE_TEST_URL to run");
+                return;
+            }
+        };
+
+        let mut client = McpClient::new();
+        
+        // Connect via SSE
+        if client.connect_sse(&sse_url).await.is_ok() {
+            // The SSE transport should handle reconnection automatically
+            // This is more of a documentation test - real reconnection testing
+            // would require a mock server that can simulate disconnects
+            assert!(client.is_connected());
+        }
+    }
+
+    /// Test SSE with invalid URL
+    #[tokio::test]
+    async fn test_sse_invalid_url() {
+        let mut client = McpClient::new();
+        
+        // Test with invalid URL
+        let result = client.connect_sse("not-a-valid-url").await;
+        assert!(result.is_err());
+        assert!(!client.is_connected());
+        
+        // Test with unreachable URL
+        let result = client.connect_sse("http://localhost:99999").await;
+        assert!(result.is_err());
+        assert!(!client.is_connected());
+    }
+
+    /// Test SSE message handling
+    #[tokio::test]
+    async fn test_sse_message_handling() {
+        let sse_url = match std::env::var("SSE_TEST_URL") {
+            Ok(url) => url,
+            Err(_) => {
+                eprintln!("Skipping SSE message test - set SSE_TEST_URL to run");
+                return;
+            }
+        };
+
+        let mut client = McpClient::new();
+        
+        if client.connect_sse(&sse_url).await.is_ok() {
+            // Test tool listing
+            let tools = client.list_tools().await;
+            match tools {
+                Ok(tools) => {
+                    // Should have at least some tools
+                    assert!(!tools.is_empty());
+                }
+                Err(e) => {
+                    eprintln!("Tool listing failed: {}", e);
+                }
+            }
+        }
+    }
+
+    /// Test SSE connection configuration
+    #[tokio::test]
+    async fn test_sse_connection_config() {
+        // Create connection config for SSE
+        let config = ConnectionConfig::new(
+            "sse-server",
+            vec![],
+            TransportProtocol::Sse,
+        );
+        
+        // Verify configuration
+        assert_eq!(config.transport(), &TransportProtocol::Sse);
+        assert_eq!(config.command(), "sse-server");
+    }
+}

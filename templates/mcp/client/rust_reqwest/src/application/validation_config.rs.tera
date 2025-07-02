@@ -1,0 +1,493 @@
+//! Validation configuration for {{ project_name }}
+//!
+//! This module provides configuration structures and loading logic for
+//! the multi-layer validation system. Configuration can be loaded from
+//! TOML files and customized per-server or per-field.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::fs;
+use toml;
+use dirs;
+use crate::infrastructure::error::{ClientError, Result};
+
+/// Main validation configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ValidationConfig {
+    /// Top-level validation settings
+    #[serde(default)]
+    pub validation: ValidationSettings,
+    
+    /// Unicode-specific settings
+    #[serde(default)]
+    pub unicode: UnicodeSettings,
+    
+    /// Pattern detection settings
+    #[serde(default)]
+    pub patterns: PatternSettings,
+    
+    /// Content validation settings
+    #[serde(default)]
+    pub content: ContentSettings,
+    
+    /// Per-server overrides
+    #[serde(default)]
+    pub server_overrides: HashMap<String, ValidationSettings>,
+    
+    /// Field-specific settings
+    #[serde(default)]
+    pub field_specific: HashMap<String, FieldSettings>,
+    
+    /// Performance settings
+    #[serde(default)]
+    pub performance: PerformanceSettings,
+}
+
+/// Top-level validation settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationSettings {
+    /// Security level: "permissive", "balanced", "strict", "custom"
+    #[serde(default = "default_security_level")]
+    pub security_level: String,
+    
+    /// Action to take on validation failure
+    #[serde(default = "default_validation_action")]
+    pub validation_action: ValidationAction,
+    
+    /// Whether to log validation events
+    #[serde(default)]
+    pub audit_logging: bool,
+    
+    /// Path to audit log file
+    #[serde(default = "default_audit_log_path")]
+    pub audit_log_path: String,
+}
+
+/// Unicode validation settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnicodeSettings {
+    /// Whether to allow emoji
+    #[serde(default = "default_true")]
+    pub allow_emoji: bool,
+    
+    /// Whether to normalize Unicode (NFKC)
+    #[serde(default = "default_true")]
+    pub normalize_unicode: bool,
+    
+    /// Whether to use strict Unicode category filtering
+    #[serde(default)]
+    pub strict_category_filtering: bool,
+    
+    /// Maximum tokens per grapheme cluster
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens_per_cluster: u32,
+    
+    /// Replacement string for sanitized content
+    #[serde(default)]
+    pub replacement_string: String,
+    
+    /// Additional blocked Unicode characters
+    #[serde(default)]
+    pub custom_blocked_chars: Vec<String>,
+    
+    /// Additional dangerous Unicode categories
+    #[serde(default)]
+    pub custom_dangerous_categories: Vec<String>,
+}
+
+/// Pattern detection settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatternSettings {
+    /// Whether to enable jailbreak detection
+    #[serde(default = "default_true")]
+    pub jailbreak_detection: bool,
+    
+    /// Detection threshold (0.0 - 1.0)
+    #[serde(default = "default_detection_threshold")]
+    pub detection_threshold: f32,
+    
+    /// Whether to detect context switches
+    #[serde(default = "default_true")]
+    pub detect_context_switches: bool,
+    
+    /// Whether to detect meta-instructions
+    #[serde(default = "default_true")]
+    pub detect_meta_instructions: bool,
+    
+    /// Whether to detect encoded content
+    #[serde(default = "default_true")]
+    pub detect_encoded_content: bool,
+    
+    /// Additional patterns to check (regex)
+    #[serde(default)]
+    pub custom_patterns: Vec<String>,
+    
+    /// Patterns to explicitly allow (regex)
+    #[serde(default)]
+    pub allowed_patterns: Vec<String>,
+}
+
+/// Content validation settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentSettings {
+    /// Maximum input size (alias for max_input_length)
+    #[serde(default = "default_max_input_length")]
+    pub max_input_size: usize,
+    
+    /// Maximum input length
+    #[serde(default = "default_max_input_length")]
+    pub max_input_length: usize,
+    
+    /// Maximum JSON nesting depth
+    #[serde(default = "default_max_json_depth")]
+    pub max_json_depth: usize,
+    
+    /// Maximum JSON keys
+    #[serde(default = "default_max_json_keys")]
+    pub max_json_keys: usize,
+    
+    /// Whether to check for SQL injection
+    #[serde(default = "default_true")]
+    pub check_sql_injection: bool,
+    
+    /// Whether to check for command injection
+    #[serde(default = "default_true")]
+    pub check_command_injection: bool,
+    
+    /// Whether to check for path traversal
+    #[serde(default = "default_true")]
+    pub check_path_traversal: bool,
+}
+
+/// Field-specific settings
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FieldSettings {
+    /// Maximum length for this field
+    pub max_length: Option<usize>,
+    
+    /// Whether to allow emoji
+    pub allow_emoji: Option<bool>,
+    
+    /// Whether to use strict Unicode filtering
+    pub strict_unicode_filtering: Option<bool>,
+    
+    /// Regex pattern for validation
+    pub pattern: Option<String>,
+    
+    /// Whether to check path traversal
+    pub check_path_traversal: Option<bool>,
+    
+    /// Allowed path prefixes
+    pub allowed_prefixes: Option<Vec<String>>,
+    
+    /// Blocked path prefixes
+    pub blocked_prefixes: Option<Vec<String>>,
+}
+
+/// Performance settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceSettings {
+    /// Whether to cache validation results
+    #[serde(default = "default_true")]
+    pub cache_validation_results: bool,
+    
+    /// Cache size
+    #[serde(default = "default_cache_size")]
+    pub validation_cache_size: usize,
+    
+    /// Cache TTL in seconds
+    #[serde(default = "default_cache_ttl")]
+    pub validation_cache_ttl: u64,
+    
+    /// Whether to run validation in parallel
+    #[serde(default = "default_true")]
+    pub parallel_validation: bool,
+    
+    /// Maximum concurrent validations
+    #[serde(default = "default_max_concurrent")]
+    pub max_concurrent_validations: usize,
+}
+
+// Default value functions for serde
+fn default_security_level() -> String { "balanced".to_string() }
+fn default_validation_action() -> ValidationAction { ValidationAction::Sanitize }
+fn default_audit_log_path() -> String { 
+    "~/.{{ project_name }}/validation-audit.log".to_string()
+}
+fn default_true() -> bool { true }
+fn default_max_tokens() -> u32 { 3 }
+fn default_detection_threshold() -> f32 { 0.3 }
+fn default_max_input_length() -> usize { 1_048_576 } // 1MB
+fn default_max_json_depth() -> usize { 10 }
+fn default_max_json_keys() -> usize { 1000 }
+fn default_cache_size() -> usize { 1000 }
+fn default_cache_ttl() -> u64 { 300 }
+fn default_max_concurrent() -> usize { 10 }
+
+
+impl Default for ValidationSettings {
+    fn default() -> Self {
+        Self {
+            security_level: default_security_level(),
+            validation_action: default_validation_action(),
+            audit_logging: false,
+            audit_log_path: default_audit_log_path(),
+        }
+    }
+}
+
+impl Default for UnicodeSettings {
+    fn default() -> Self {
+        Self {
+            allow_emoji: true,
+            normalize_unicode: true,
+            strict_category_filtering: false,
+            max_tokens_per_cluster: default_max_tokens(),
+            replacement_string: "�".to_string(),
+            custom_blocked_chars: Vec::new(),
+            custom_dangerous_categories: Vec::new(),
+        }
+    }
+}
+
+impl Default for PatternSettings {
+    fn default() -> Self {
+        Self {
+            jailbreak_detection: true,
+            detection_threshold: default_detection_threshold(),
+            detect_context_switches: true,
+            detect_meta_instructions: true,
+            detect_encoded_content: true,
+            custom_patterns: Vec::new(),
+            allowed_patterns: Vec::new(),
+        }
+    }
+}
+
+impl Default for ContentSettings {
+    fn default() -> Self {
+        Self {
+            max_input_size: default_max_input_length(),
+            max_input_length: default_max_input_length(),
+            max_json_depth: default_max_json_depth(),
+            max_json_keys: default_max_json_keys(),
+            check_sql_injection: true,
+            check_command_injection: true,
+            check_path_traversal: true,
+        }
+    }
+}
+
+impl Default for PerformanceSettings {
+    fn default() -> Self {
+        Self {
+            cache_validation_results: true,
+            validation_cache_size: default_cache_size(),
+            validation_cache_ttl: default_cache_ttl(),
+            parallel_validation: true,
+            max_concurrent_validations: default_max_concurrent(),
+        }
+    }
+}
+
+impl ValidationConfig {
+    /// Load configuration from default locations
+    pub fn load() -> Result<Self> {
+        // Try loading from standard config directories
+        let config_paths = Self::get_config_paths();
+        
+        for path in &config_paths {
+            if path.exists() {
+                return Self::load_from_file(path);
+            }
+        }
+        
+        // No config file found, use defaults
+        Ok(Self::default())
+    }
+    
+    /// Load configuration from a specific file
+    pub fn load_from_file(path: &Path) -> Result<Self> {
+        let contents = fs::read_to_string(path)
+            .map_err(|e| ClientError::Io(format!("Failed to read config file: {}", e)))?;
+            
+        toml::from_str(&contents)
+            .map_err(|e| ClientError::Config(format!("Failed to parse config: {}", e)))
+    }
+    
+    /// Get standard config file paths to check
+    fn get_config_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        
+        // Platform-specific config directories
+        if let Some(config_dir) = dirs::config_dir() {
+            paths.push(config_dir.join("{{ project_name }}").join("validation.toml"));
+        }
+        
+        // Home directory fallback
+        if let Some(home_dir) = dirs::home_dir() {
+            paths.push(home_dir.join(".{{ project_name }}").join("validation.toml"));
+        }
+        
+        // Current directory fallback
+        paths.push(PathBuf::from("validation.toml"));
+        
+        paths
+    }
+    
+    /// Get the platform-specific audit log path
+    pub fn get_audit_log_path(&self) -> PathBuf {
+        let path_str = &self.validation.audit_log_path;
+        
+        // Handle tilde expansion
+        if let Some(stripped) = path_str.strip_prefix("~/") {
+            if let Some(home_dir) = dirs::home_dir() {
+                return home_dir.join(stripped);
+            }
+        }
+        
+        // Use platform-specific data directory
+        if let Some(data_dir) = dirs::data_dir() {
+            return data_dir.join("{{ project_name }}").join("validation-audit.log");
+        }
+        
+        // Fallback to current directory
+        PathBuf::from("./{{ project_name }}-validation-audit.log")
+    }
+    
+    
+    /// Get effective settings for a specific server
+    pub fn get_server_settings(&self, server_name: &str) -> ValidationSettings {
+        self.server_overrides
+            .get(server_name)
+            .cloned()
+            .unwrap_or_else(|| self.validation.clone())
+    }
+    
+    /// Get effective settings for a specific field
+    pub fn get_field_settings(&self, field_name: &str) -> Option<&FieldSettings> {
+        self.field_specific.get(field_name)
+    }
+}
+
+/// Validation action enum
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ValidationAction {
+    Reject,
+    Sanitize,
+    Warn,
+}
+
+impl std::str::FromStr for ValidationAction {
+    type Err = String;
+    
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "reject" => Ok(ValidationAction::Reject),
+            "sanitize" => Ok(ValidationAction::Sanitize),
+            "warn" => Ok(ValidationAction::Warn),
+            _ => Err(format!("Unknown validation action: {}", s)),
+        }
+    }
+}
+
+/// Security level enum
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SecurityLevel {
+    Permissive,
+    Balanced,
+    High,
+    Custom,
+}
+
+impl std::str::FromStr for SecurityLevel {
+    type Err = String;
+    
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "permissive" => Ok(SecurityLevel::Permissive),
+            "balanced" => Ok(SecurityLevel::Balanced),
+            "high" | "strict" => Ok(SecurityLevel::High),
+            "custom" => Ok(SecurityLevel::Custom),
+            _ => Err(format!("Unknown security level: {}", s)),
+        }
+    }
+}
+
+impl ValidationConfig {
+    /// Apply security level presets using enum
+    pub fn apply_security_level(&mut self, level: SecurityLevel) {
+        match level {
+            SecurityLevel::Permissive => {
+                self.validation.validation_action = ValidationAction::Warn;
+                self.unicode.allow_emoji = true;
+                self.unicode.strict_category_filtering = false;
+                self.patterns.jailbreak_detection = false;
+                self.patterns.detection_threshold = 0.9;
+            }
+            SecurityLevel::Balanced => {
+                // Use defaults
+                *self = Self::default();
+            }
+            SecurityLevel::High => {
+                self.validation.validation_action = ValidationAction::Reject;
+                self.unicode.allow_emoji = false;
+                self.unicode.strict_category_filtering = true;
+                self.patterns.jailbreak_detection = true;
+                self.patterns.detection_threshold = 0.5;
+                self.unicode.max_tokens_per_cluster = 2;
+            }
+            SecurityLevel::Custom => {
+                // Keep current settings
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_default_config() {
+        let config = ValidationConfig::default();
+        assert_eq!(config.validation.security_level, "balanced");
+        assert_eq!(config.validation.validation_action, ValidationAction::Sanitize);
+        assert!(config.unicode.allow_emoji);
+        assert_eq!(config.patterns.detection_threshold, 0.3);
+    }
+    
+    #[test]
+    fn test_security_levels() {
+        let mut config = ValidationConfig::default();
+        
+        config.apply_security_level(SecurityLevel::High);
+        assert_eq!(config.validation.validation_action, ValidationAction::Reject);
+        assert!(!config.unicode.allow_emoji);
+        assert_eq!(config.patterns.detection_threshold, 0.5);
+        
+        config.apply_security_level(SecurityLevel::Permissive);
+        assert_eq!(config.validation.validation_action, ValidationAction::Warn);
+        assert!(config.unicode.allow_emoji);
+        assert!(!config.patterns.jailbreak_detection);
+    }
+    
+    #[test]
+    fn test_server_overrides() {
+        let mut config = ValidationConfig::default();
+        
+        let mut strict_settings = ValidationSettings::default();
+        strict_settings.security_level = "strict".to_string();
+        strict_settings.validation_action = ValidationAction::Reject;
+        
+        config.server_overrides.insert("public-api".to_string(), strict_settings);
+        
+        let settings = config.get_server_settings("public-api");
+        assert_eq!(settings.validation_action, ValidationAction::Reject);
+        
+        let default_settings = config.get_server_settings("unknown-server");
+        assert_eq!(default_settings.validation_action, ValidationAction::Sanitize);
+    }
+}
