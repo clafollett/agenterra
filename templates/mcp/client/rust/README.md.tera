@@ -11,11 +11,11 @@
 - 📈 **Session History** - Track tool usage and performance metrics
 - 🔄 **Multi-Server Support** - Save and switch between server profiles
 - 🚫 **Server Control** - Enable/disable servers and manage tool permissions
-- 🔒 **Enterprise Security** - Built-in protection against modern attacks
+- 🔒 **Security** - Built-in protection against modern attacks
 
 ## Security Features
 
-This client includes enterprise-grade security features:
+This client includes security features:
 
 - **Input Validation**: All user inputs are validated against SQL injection, command injection, and path traversal
 - **Emoji Jailbreak Protection**: Detects and blocks emoji-based prompt injection attempts
@@ -365,7 +365,7 @@ cargo clippy
 │   │   ├── config.rs        # Configuration management
 │   │   ├── registry.rs      # Tool registry for tracking
 │   │   ├── session_manager.rs # Session management
-│   │   ├── validation.rs    # Enterprise-grade input validation
+│   │   ├── validation.rs    # Input validation
 │   │   └── validation_config.rs # Validation configuration
 │   ├── cli/                 # Command-line interface
 │   │   ├── args.rs          # CLI argument parsing
@@ -404,7 +404,7 @@ The structure follows clean architecture principles:
 - **`infrastructure/`** - External concerns like database, caching, and transport
 - **`ui/`** - User interface implementations (REPL and headless)
 
-Key features include enterprise-grade security validation, SQLite-powered resource caching with analytics, and comprehensive configuration management.
+Key features include security validation, SQLite-powered resource caching with analytics, and comprehensive configuration management.
 
 ## Dependencies
 

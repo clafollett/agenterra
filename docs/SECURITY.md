@@ -1,4 +1,4 @@
-# 🔒 Enterprise Security Features
+# 🔒 Security Features
 
 Agenterra generates MCP servers and clients with security features designed to protect against common vulnerabilities while maintaining developer productivity. This document details the security measures implemented in generated code.
 

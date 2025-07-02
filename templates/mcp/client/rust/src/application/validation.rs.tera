@@ -1,4 +1,4 @@
-//! Enterprise-grade input validation for {{ project_name }}
+//! Input validation for {{ project_name }}
 //!
 //! This module provides comprehensive validation to protect against:
 //! - SQL injection

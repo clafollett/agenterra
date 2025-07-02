@@ -61,7 +61,7 @@ Agenterra is building the foundational infrastructure for AI agents to discover,
   - [ ] Entity Framework integration
   - [ ] C# type mapping from OpenAPI schemas
   - [ ] NuGet package management
-  - [ ] Enterprise security patterns
+  - [ ] Security patterns
 
 - [ ] **Python MCP Server Templates**
   - [ ] FastAPI/Flask template options

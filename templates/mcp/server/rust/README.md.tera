@@ -11,11 +11,11 @@ MCP (Model Context Protocol) server implementation using Rust and Axum.
 - **Prompt Templates**: Support for dynamic prompt templates
 - **Real-time Communication**: SSE for real-time bidirectional communication
 - **Signal Handling**: Graceful shutdown with proper signal handling
-- **Enterprise Security**: Built-in security features for production deployments
+- **Security**: Built-in security features for production deployments
 
 ## Security Features
 
-This server includes enterprise-grade security features:
+This server includes security features:
 
 - **Transport Security**: Secure SSE mode for web deployments with configurable bind address
 - **Input Sanitization**: All inputs are properly validated and sanitized
