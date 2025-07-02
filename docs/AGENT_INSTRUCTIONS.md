@@ -215,6 +215,28 @@ use serde::{Deserialize, Serialize};
 - `CamelCase` - types, structs, enums
 - `SCREAMING_SNAKE_CASE` - constants
 
+### Logging Standards
+- **ALWAYS use the `tracing` crate** for all logging
+- **NEVER use `println!`, `eprintln!`, or `dbg!`** in production code
+- **Log levels:**
+  - `error!` - Errors that need immediate attention
+  - `warn!` - Important warnings that don't stop execution
+  - `info!` - High-level operational information
+  - `debug!` - Detailed information for debugging
+  - `trace!` - Very detailed trace information
+- **Include context** in log messages with structured fields:
+  ```rust
+  use tracing::{debug, error, info, warn};
+  
+  // Good - structured logging with context
+  info!(template_path = %path.display(), "Loading template");
+  error!(error = %e, file = ?file_path, "Failed to read template");
+  
+  // Bad - no context, uses println
+  println!("Loading template");
+  eprintln!("Error: {}", e);
+  ```
+
 ### Method Organization
 **Public methods:** 
 - Place immediately after struct/impl declaration
