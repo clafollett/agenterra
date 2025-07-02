@@ -9,8 +9,10 @@
 //! - Template directory discovery and resolution
 //! - Template rendering with language-specific contexts
 //! - Customizable generation options and parameters
+//! - Embedded templates for binary distribution
 
 pub mod dir;
+pub mod embedded;
 pub mod kind;
 pub mod manager;
 pub mod manifest;
@@ -18,6 +20,7 @@ pub mod options;
 pub mod types;
 
 pub use dir::*;
+pub use embedded::{EmbeddedTemplate, EmbeddedTemplateFile, EmbeddedTemplateRepository, TemplateExporter, TemplateType};
 pub use kind::{ClientTemplateKind, ServerTemplateKind};
 pub use manager::*;
 pub use manifest::*;
