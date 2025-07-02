@@ -26,7 +26,7 @@ pub struct TemplateManifest {
     pub language: String,
 
     /// List of files to generate
-    pub files: Vec<TemplateFile>,
+    pub files: Vec<ManifestTemplateFile>,
 
     /// Optional hooks that run before/after generation
     #[serde(default)]
@@ -35,7 +35,7 @@ pub struct TemplateManifest {
 
 /// Describes a single file to be generated from a template.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TemplateFile {
+pub struct ManifestTemplateFile {
     /// Path to the template file, relative to the template directory
     pub source: String,
 
@@ -76,7 +76,7 @@ impl Default for TemplateManifest {
     }
 }
 
-impl Default for TemplateFile {
+impl Default for ManifestTemplateFile {
     fn default() -> Self {
         Self {
             source: String::new(),
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_template_file_default() {
-        let file = TemplateFile::default();
+        let file = ManifestTemplateFile::default();
         assert!(file.source.is_empty());
         assert!(file.destination.is_empty());
         assert!(file.for_each.is_none());
@@ -322,7 +322,7 @@ post_generate:
             description: "Test template".to_string(),
             version: "1.0.0".to_string(),
             language: "rust".to_string(),
-            files: vec![TemplateFile {
+            files: vec![ManifestTemplateFile {
                 source: "main.rs.tera".to_string(),
                 destination: "src/main.rs".to_string(),
                 for_each: None,
@@ -348,7 +348,7 @@ post_generate:
             description: "Original template".to_string(),
             version: "1.0.0".to_string(),
             language: "rust".to_string(),
-            files: vec![TemplateFile::default()],
+            files: vec![ManifestTemplateFile::default()],
             hooks: TemplateHooks::default(),
         };
 

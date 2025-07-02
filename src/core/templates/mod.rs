@@ -20,7 +20,11 @@ pub mod options;
 pub mod types;
 
 pub use dir::*;
-pub use embedded::{EmbeddedTemplate, EmbeddedTemplateFile, EmbeddedTemplateRepository, TemplateExporter, TemplateType};
+#[allow(unused_imports)]
+pub use embedded::{
+    EmbeddedTemplate, EmbeddedTemplateFile, EmbeddedTemplateRepository, RustEmbedTemplateExporter,
+    RustEmbedTemplateRepository, TemplateExporter, TemplateType,
+};
 pub use kind::{ClientTemplateKind, ServerTemplateKind};
 pub use manager::*;
 pub use manifest::*;

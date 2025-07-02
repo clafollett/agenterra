@@ -17,7 +17,7 @@ use crate::core::{
 use crate::mcp::builders::EndpointContext;
 
 use super::{
-    ClientTemplateKind, ServerTemplateKind, TemplateDir, TemplateFile, TemplateManifest,
+    ClientTemplateKind, ManifestTemplateFile, ServerTemplateKind, TemplateDir, TemplateManifest,
     TemplateOptions,
 };
 
@@ -588,7 +588,7 @@ impl TemplateManager {
     /// Process a single template file
     async fn process_single_file(
         &self,
-        file: &TemplateFile,
+        file: &ManifestTemplateFile,
         base_context: &serde_json::Value,
         output_path: &Path,
     ) -> Result<()> {
@@ -702,7 +702,7 @@ impl TemplateManager {
     /// Process a template file for each operation
     async fn process_operation_file(
         &self,
-        file: &TemplateFile,
+        file: &ManifestTemplateFile,
         base_context: &Context,
         output_path: &Path,
         operations: &[OpenApiOperation],
@@ -1061,7 +1061,7 @@ impl TemplateManager {
     pub fn create_file_context(
         &self,
         base_context: &serde_json::Value,
-        file: &TemplateFile,
+        file: &ManifestTemplateFile,
     ) -> crate::core::error::Result<serde_json::Value> {
         let mut context = if let serde_json::Value::Object(file_ctx) = &file.context {
             file_ctx.clone()
