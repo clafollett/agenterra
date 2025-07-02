@@ -39,7 +39,7 @@ pub enum TemplateSource {
     ///
     /// The path points to the root directory of the template.
     Filesystem(PathBuf),
-    
+
     /// Templates embedded in the binary at compile time.
     ///
     /// These templates are always available and version-consistent with the CLI.
@@ -218,14 +218,14 @@ mod tests {
         let provider = TemplateProvider::new();
 
         let result =
-            provider.discover_server_template(Protocol::Mcp, ServerTemplateKind::RustAxum, None);
+            provider.discover_server_template(Protocol::Mcp, ServerTemplateKind::Rust, None);
 
         assert!(result.is_ok());
         let (source, path) = result.unwrap();
 
         // Should find embedded template
         assert!(matches!(source, TemplateSource::Embedded));
-        assert_eq!(path.to_str().unwrap(), "mcp/server/rust_axum");
+        assert_eq!(path.to_str().unwrap(), "mcp/server/rust");
     }
 
     #[test]
@@ -233,14 +233,14 @@ mod tests {
         let provider = TemplateProvider::new();
 
         let result =
-            provider.discover_client_template(Protocol::Mcp, ClientTemplateKind::RustReqwest, None);
+            provider.discover_client_template(Protocol::Mcp, ClientTemplateKind::Rust, None);
 
         assert!(result.is_ok());
         let (source, path) = result.unwrap();
 
         // Should find embedded template
         assert!(matches!(source, TemplateSource::Embedded));
-        assert_eq!(path.to_str().unwrap(), "mcp/client/rust_reqwest");
+        assert_eq!(path.to_str().unwrap(), "mcp/client/rust");
     }
 
     #[test]
@@ -250,7 +250,7 @@ mod tests {
 
         let result = provider.discover_server_template(
             Protocol::Mcp,
-            ServerTemplateKind::RustAxum,
+            ServerTemplateKind::Rust,
             Some(temp_dir.path()),
         );
 

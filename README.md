@@ -396,10 +396,10 @@ agenterra scaffold mcp server --schema-path api.json --project-name my_server --
 Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation.
 
 **Built-in Server Templates:**
-- `rust_axum` - Rust MCP server using Axum web framework
+- `rust` - Rust MCP server using Axum web framework
 
 **Built-in Client Templates:**
-- `rust_reqwest` - Rust MCP client with REPL interface and SQLite resource caching
+- `rust` - Rust MCP client with REPL interface and SQLite resource caching
 
 **Custom Templates:**
 - Create templates under `templates/mcp/server/` or `templates/mcp/client/`

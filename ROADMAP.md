@@ -87,8 +87,8 @@ Agenterra is building the foundational infrastructure for AI agents to discover,
 **Goal:** Expand MCP client and server generation to multiple programming languages, building on the established template architecture.
 
 - [x] **Rust Templates (Completed)**
-  - [x] Rust MCP server template (`rust_axum`)
-  - [x] Rust MCP client template (`rust_reqwest`)
+  - [x] Rust MCP server template (`rust`)
+  - [x] Rust MCP client template (`rust`)
   - [x] REPL interface and tool discovery
   - [x] Production-ready code generation
 

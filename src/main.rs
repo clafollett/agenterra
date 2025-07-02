@@ -9,7 +9,8 @@ use core::{
     openapi::OpenApiContext,
     protocol::Protocol,
     templates::{
-        ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
+        ClientTemplateKind, EmbeddedTemplateExporter, EmbeddedTemplateRepository,
+        ServerTemplateKind, TemplateExporter, TemplateManager, TemplateOptions, TemplateRepository,
         dir::resolve_output_dir,
     },
 };
@@ -37,6 +38,11 @@ pub enum Commands {
         #[command(subcommand)]
         target: TargetCommands,
     },
+    /// Manage embedded templates
+    Templates {
+        #[command(subcommand)]
+        action: TemplateCommands,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -59,7 +65,7 @@ pub enum McpCommands {
         #[arg(long)]
         schema_path: String,
         /// Template to use for code generation
-        #[arg(long, default_value = "rust_axum")]
+        #[arg(long, default_value = "rust")]
         template: String,
         /// Custom template directory
         #[arg(long)]
@@ -83,7 +89,7 @@ pub enum McpCommands {
         #[arg(long, default_value = "agenterra_mcp_client")]
         project_name: String,
         /// Template to use for client generation
-        #[arg(long, default_value = "rust_reqwest")]
+        #[arg(long, default_value = "rust")]
         template: String,
         /// Custom template directory
         #[arg(long)]
@@ -91,6 +97,25 @@ pub enum McpCommands {
         /// Output directory for generated code
         #[arg(long)]
         output_dir: Option<PathBuf>,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum TemplateCommands {
+    /// List all available embedded templates
+    List,
+    /// Export templates to a directory
+    Export {
+        /// Directory to export templates to
+        path: PathBuf,
+        /// Optional: Export only a specific template (e.g., "mcp/server/rust")
+        #[arg(long)]
+        template: Option<String>,
+    },
+    /// Show information about a specific template
+    Info {
+        /// Template path (e.g., "mcp/server/rust")
+        template: String,
     },
 }
 
@@ -135,6 +160,17 @@ async fn main() -> anyhow::Result<()> {
                     output_dir,
                 } => generate_mcp_client(project_name, template, template_dir, output_dir).await?,
             },
+        },
+        Commands::Templates { action } => match action {
+            TemplateCommands::List => {
+                list_templates().await?;
+            }
+            TemplateCommands::Export { path, template } => {
+                export_templates(path, template).await?;
+            }
+            TemplateCommands::Info { template } => {
+                show_template_info(template).await?;
+            }
         },
     }
     Ok(())
@@ -284,5 +320,148 @@ async fn generate_mcp_client(
         output_path = %output_path.display(),
         "Successfully generated MCP client"
     );
+    Ok(())
+}
+
+/// List all available embedded templates
+async fn list_templates() -> anyhow::Result<()> {
+    let repo = EmbeddedTemplateRepository::new();
+    let templates = repo.list_templates();
+
+    if templates.is_empty() {
+        info!("No embedded templates found.");
+        return Ok(());
+    }
+
+    // For user-facing output in a CLI tool, we'll use println! for the actual listing
+    // but use tracing for operational messages
+    println!("Available templates:\n");
+
+    // Group by template type
+    let mut server_templates = Vec::new();
+    let mut client_templates = Vec::new();
+
+    for template in templates {
+        match template.template_type {
+            core::templates::TemplateType::Server => server_templates.push(template),
+            core::templates::TemplateType::Client => client_templates.push(template),
+        }
+    }
+
+    // Print server templates
+    if !server_templates.is_empty() {
+        println!("Server Templates:");
+        for template in server_templates {
+            println!(
+                "  {} - {}",
+                template.path,
+                template.description.as_deref().unwrap_or("No description")
+            );
+        }
+        println!();
+    }
+
+    // Print client templates
+    if !client_templates.is_empty() {
+        println!("Client Templates:");
+        for template in client_templates {
+            println!(
+                "  {} - {}",
+                template.path,
+                template.description.as_deref().unwrap_or("No description")
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Export templates to a directory (all or a specific one)
+async fn export_templates(path: &PathBuf, template: &Option<String>) -> anyhow::Result<()> {
+    info!("Exporting templates to: {}", path.display());
+
+    let exporter = EmbeddedTemplateExporter::new();
+    let repository = EmbeddedTemplateRepository::new();
+    
+    match template {
+        Some(template_path) => {
+            // Export single template
+            info!("Exporting single template: {}", template_path);
+            
+            // Get the template metadata
+            let template_meta = repository
+                .get_template(template_path)
+                .with_context(|| format!("Template not found: {}", template_path))?;
+            
+            // Export the template
+            exporter
+                .export_template(&template_meta, path)
+                .context("Failed to export template")?;
+            
+            info!(
+                "Successfully exported template {} to {}",
+                template_path,
+                path.display()
+            );
+            // User-facing output
+            println!("Exported template {} to {}", template_path, path.display());
+        }
+        None => {
+            // Export all templates
+            let count = exporter
+                .export_all_templates(path)
+                .context("Failed to export templates")?;
+
+            info!(
+                "Successfully exported {} templates to {}",
+                count,
+                path.display()
+            );
+            // User-facing output
+            println!("Exported {} templates to {}", count, path.display());
+        }
+    }
+
+    Ok(())
+}
+
+/// Show detailed information about a specific template
+async fn show_template_info(template_path: &str) -> anyhow::Result<()> {
+    let repo = EmbeddedTemplateRepository::new();
+
+    match repo.get_template(template_path) {
+        Some(template) => {
+            println!("Template: {}", template.path);
+            println!("Type: {:?}", template.template_type);
+            println!("Kind: {}", template.kind);
+            println!("Protocol: {}", template.protocol);
+            println!(
+                "Description: {}",
+                template.description.as_deref().unwrap_or("No description")
+            );
+
+            // Show file count
+            let files = repo.get_template_files(template_path);
+            println!("Files: {} files", files.len());
+
+            // List some key files
+            println!("\nKey files:");
+            for file in &files {
+                if file.relative_path == "manifest.yml"
+                    || file.relative_path == "Cargo.toml.tera"
+                    || file.relative_path == "README.md.tera"
+                    || file.relative_path.ends_with("main.rs.tera")
+                {
+                    println!("  - {}", file.relative_path);
+                }
+            }
+        }
+        None => {
+            eprintln!("Template not found: {}", template_path);
+            eprintln!("\nRun 'agenterra templates list' to see available templates.");
+            std::process::exit(1);
+        }
+    }
+
     Ok(())
 }

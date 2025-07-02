@@ -112,7 +112,7 @@ impl EndpointContext {
     /// Panics if the template kind is not supported (via `unimplemented!` macro)
     pub fn get_builder(template: ServerTemplateKind) -> Box<dyn EndpointContextBuilder> {
         match template {
-            ServerTemplateKind::RustAxum => Box::new(rust::RustEndpointContextBuilder),
+            ServerTemplateKind::Rust => Box::new(rust::RustEndpointContextBuilder),
             _ => unimplemented!("Builder not implemented for template: {:?}", template),
         }
     }
@@ -129,7 +129,7 @@ impl EndpointContext {
     /// Panics if the template kind is not supported (via `unimplemented!` macro)
     pub fn get_client_builder(template: ClientTemplateKind) -> Box<dyn LanguageContextBuilder> {
         match template {
-            ClientTemplateKind::RustReqwest => Box::new(rust::RustMcpClientContextBuilder),
+            ClientTemplateKind::Rust => Box::new(rust::RustMcpClientContextBuilder),
             _ => unimplemented!(
                 "Client builder not implemented for template: {:?}",
                 template

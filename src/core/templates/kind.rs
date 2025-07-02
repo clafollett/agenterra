@@ -11,12 +11,12 @@
 //! use std::str::FromStr;
 //!
 //! // Parse a template from a string
-//! let template = ServerTemplateKind::from_str("rust_axum").unwrap();
+//! let template = ServerTemplateKind::from_str("rust").unwrap();
 //! assert_eq!(template, ServerTemplateKind::RustAxum);
-//! assert_eq!(template.as_str(), "rust_axum");
+//! assert_eq!(template.as_str(), "rust");
 //!
 //! // You can also use the Display trait
-//! assert_eq!(template.to_string(), "rust_axum");
+//! assert_eq!(template.to_string(), "rust");
 //!
 //! // The default template is RustAxum
 //! assert_eq!(ServerTemplateKind::default(), ServerTemplateKind::RustAxum);
@@ -69,11 +69,11 @@ impl fmt::Display for TemplateRole {
 pub enum ServerTemplateKind {
     /// Rust with Axum web framework
     #[default]
-    RustAxum,
+    Rust,
     /// Python with FastAPI
-    PythonFastAPI,
+    Python,
     /// TypeScript with Express
-    TypeScriptExpress,
+    TypeScript,
     /// Custom template path
     Custom,
 }
@@ -83,11 +83,11 @@ pub enum ServerTemplateKind {
 pub enum ClientTemplateKind {
     /// Rust with reqwest HTTP client
     #[default]
-    RustReqwest,
+    Rust,
     /// Python with requests library
-    PythonRequests,
+    Python,
     /// TypeScript with axios library
-    TypeScriptAxios,
+    TypeScript,
     /// Custom template path
     Custom,
 }
@@ -97,9 +97,9 @@ impl FromStr for ServerTemplateKind {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "rust_axum" => Ok(ServerTemplateKind::RustAxum),
-            "python_fastapi" => Ok(ServerTemplateKind::PythonFastAPI),
-            "typescript_express" => Ok(ServerTemplateKind::TypeScriptExpress),
+            "rust" => Ok(ServerTemplateKind::Rust),
+            "python" => Ok(ServerTemplateKind::Python),
+            "typescript" => Ok(ServerTemplateKind::TypeScript),
             "custom" => Ok(ServerTemplateKind::Custom),
             _ => Err(format!("Unknown server template kind: {s}")),
         }
@@ -111,9 +111,9 @@ impl FromStr for ClientTemplateKind {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "rust_reqwest" => Ok(ClientTemplateKind::RustReqwest),
-            "python_requests" => Ok(ClientTemplateKind::PythonRequests),
-            "typescript_axios" => Ok(ClientTemplateKind::TypeScriptAxios),
+            "rust" => Ok(ClientTemplateKind::Rust),
+            "python" => Ok(ClientTemplateKind::Python),
+            "typescript" => Ok(ClientTemplateKind::TypeScript),
             "custom" => Ok(ClientTemplateKind::Custom),
             _ => Err(format!("Unknown client template kind: {s}")),
         }
@@ -124,9 +124,9 @@ impl ServerTemplateKind {
     /// Returns the template identifier as a string slice
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::RustAxum => "rust_axum",
-            Self::PythonFastAPI => "python_fastapi",
-            Self::TypeScriptExpress => "typescript_express",
+            Self::Rust => "rust",
+            Self::Python => "python",
+            Self::TypeScript => "typescript",
             Self::Custom => "custom",
         }
     }
@@ -140,9 +140,9 @@ impl ServerTemplateKind {
     #[allow(dead_code)]
     pub fn framework(&self) -> &'static str {
         match self {
-            Self::RustAxum => "rust",
-            Self::PythonFastAPI => "python",
-            Self::TypeScriptExpress => "typescript",
+            Self::Rust => "rust",
+            Self::Python => "python",
+            Self::TypeScript => "typescript",
             Self::Custom => "custom",
         }
     }
@@ -151,9 +151,7 @@ impl ServerTemplateKind {
     #[allow(dead_code)]
     pub fn all() -> impl Iterator<Item = Self> {
         use ServerTemplateKind::*;
-        [RustAxum, PythonFastAPI, TypeScriptExpress, Custom]
-            .iter()
-            .copied()
+        [Rust, Python, TypeScript, Custom].iter().copied()
     }
 }
 
@@ -161,9 +159,9 @@ impl ClientTemplateKind {
     /// Returns the template identifier as a string slice
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::RustReqwest => "rust_reqwest",
-            Self::PythonRequests => "python_requests",
-            Self::TypeScriptAxios => "typescript_axios",
+            Self::Rust => "rust",
+            Self::Python => "python",
+            Self::TypeScript => "typescript",
             Self::Custom => "custom",
         }
     }
@@ -178,9 +176,9 @@ impl ClientTemplateKind {
     #[allow(dead_code)]
     pub fn framework(&self) -> &'static str {
         match self {
-            Self::RustReqwest => "rust",
-            Self::PythonRequests => "python",
-            Self::TypeScriptAxios => "typescript",
+            Self::Rust => "rust",
+            Self::Python => "python",
+            Self::TypeScript => "typescript",
             Self::Custom => "custom",
         }
     }
@@ -189,9 +187,7 @@ impl ClientTemplateKind {
     #[allow(dead_code)]
     pub fn all() -> impl Iterator<Item = Self> {
         use ClientTemplateKind::*;
-        [RustReqwest, PythonRequests, TypeScriptAxios, Custom]
-            .iter()
-            .copied()
+        [Rust, Python, TypeScript, Custom].iter().copied()
     }
 }
 
@@ -215,42 +211,33 @@ mod tests {
     // ServerTemplateKind tests
     #[test]
     fn test_server_as_str() {
-        assert_eq!(ServerTemplateKind::RustAxum.as_str(), "rust_axum");
-        assert_eq!(ServerTemplateKind::PythonFastAPI.as_str(), "python_fastapi");
-        assert_eq!(
-            ServerTemplateKind::TypeScriptExpress.as_str(),
-            "typescript_express"
-        );
+        assert_eq!(ServerTemplateKind::Rust.as_str(), "rust");
+        assert_eq!(ServerTemplateKind::Python.as_str(), "python");
+        assert_eq!(ServerTemplateKind::TypeScript.as_str(), "typescript");
         assert_eq!(ServerTemplateKind::Custom.as_str(), "custom");
     }
 
     #[test]
     fn test_server_display() {
-        assert_eq!(format!("{}", ServerTemplateKind::RustAxum), "rust_axum");
-        assert_eq!(
-            format!("{}", ServerTemplateKind::PythonFastAPI),
-            "python_fastapi"
-        );
-        assert_eq!(
-            format!("{}", ServerTemplateKind::TypeScriptExpress),
-            "typescript_express"
-        );
+        assert_eq!(format!("{}", ServerTemplateKind::Rust), "rust");
+        assert_eq!(format!("{}", ServerTemplateKind::Python), "python");
+        assert_eq!(format!("{}", ServerTemplateKind::TypeScript), "typescript");
         assert_eq!(format!("{}", ServerTemplateKind::Custom), "custom");
     }
 
     #[test]
     fn test_server_from_str() {
         assert_eq!(
-            "rust_axum".parse::<ServerTemplateKind>().unwrap(),
-            ServerTemplateKind::RustAxum
+            "rust".parse::<ServerTemplateKind>().unwrap(),
+            ServerTemplateKind::Rust
         );
         assert_eq!(
-            "python_fastapi".parse::<ServerTemplateKind>().unwrap(),
-            ServerTemplateKind::PythonFastAPI
+            "python".parse::<ServerTemplateKind>().unwrap(),
+            ServerTemplateKind::Python
         );
         assert_eq!(
-            "typescript_express".parse::<ServerTemplateKind>().unwrap(),
-            ServerTemplateKind::TypeScriptExpress
+            "typescript".parse::<ServerTemplateKind>().unwrap(),
+            ServerTemplateKind::TypeScript
         );
         assert_eq!(
             "custom".parse::<ServerTemplateKind>().unwrap(),
@@ -259,18 +246,18 @@ mod tests {
 
         // Test case insensitivity
         assert_eq!(
-            "RUST_AXUM".parse::<ServerTemplateKind>().unwrap(),
-            ServerTemplateKind::RustAxum
+            "RUST".parse::<ServerTemplateKind>().unwrap(),
+            ServerTemplateKind::Rust
         );
 
         // Test invalid variants
         assert!("invalid".parse::<ServerTemplateKind>().is_err());
-        assert!("rust_reqwest".parse::<ServerTemplateKind>().is_err()); // Client template
+        assert!("RustLike".parse::<ServerTemplateKind>().is_err());
     }
 
     #[test]
     fn test_server_default() {
-        assert_eq!(ServerTemplateKind::default(), ServerTemplateKind::RustAxum);
+        assert_eq!(ServerTemplateKind::default(), ServerTemplateKind::Rust);
     }
 
     #[test]
@@ -281,82 +268,58 @@ mod tests {
         let unique_kinds: HashSet<_> = ServerTemplateKind::all().collect();
         assert_eq!(unique_kinds.len(), 4);
 
-        assert!(unique_kinds.contains(&ServerTemplateKind::RustAxum));
-        assert!(unique_kinds.contains(&ServerTemplateKind::PythonFastAPI));
-        assert!(unique_kinds.contains(&ServerTemplateKind::TypeScriptExpress));
+        assert!(unique_kinds.contains(&ServerTemplateKind::Rust));
+        assert!(unique_kinds.contains(&ServerTemplateKind::Python));
+        assert!(unique_kinds.contains(&ServerTemplateKind::TypeScript));
         assert!(unique_kinds.contains(&ServerTemplateKind::Custom));
     }
 
     #[test]
     fn test_server_role() {
-        assert_eq!(ServerTemplateKind::RustAxum.role(), TemplateRole::Server);
-        assert_eq!(
-            ServerTemplateKind::PythonFastAPI.role(),
-            TemplateRole::Server
-        );
-        assert_eq!(
-            ServerTemplateKind::TypeScriptExpress.role(),
-            TemplateRole::Server
-        );
+        assert_eq!(ServerTemplateKind::Rust.role(), TemplateRole::Server);
+        assert_eq!(ServerTemplateKind::Python.role(), TemplateRole::Server);
+        assert_eq!(ServerTemplateKind::TypeScript.role(), TemplateRole::Server);
         assert_eq!(ServerTemplateKind::Custom.role(), TemplateRole::Server);
     }
 
     #[test]
     fn test_server_framework() {
-        assert_eq!(ServerTemplateKind::RustAxum.framework(), "rust");
-        assert_eq!(ServerTemplateKind::PythonFastAPI.framework(), "python");
-        assert_eq!(
-            ServerTemplateKind::TypeScriptExpress.framework(),
-            "typescript"
-        );
+        assert_eq!(ServerTemplateKind::Rust.framework(), "rust");
+        assert_eq!(ServerTemplateKind::Python.framework(), "python");
+        assert_eq!(ServerTemplateKind::TypeScript.framework(), "typescript");
         assert_eq!(ServerTemplateKind::Custom.framework(), "custom");
     }
 
     // ClientTemplateKind tests
     #[test]
     fn test_client_as_str() {
-        assert_eq!(ClientTemplateKind::RustReqwest.as_str(), "rust_reqwest");
-        assert_eq!(
-            ClientTemplateKind::PythonRequests.as_str(),
-            "python_requests"
-        );
-        assert_eq!(
-            ClientTemplateKind::TypeScriptAxios.as_str(),
-            "typescript_axios"
-        );
+        assert_eq!(ClientTemplateKind::Rust.as_str(), "rust");
+        assert_eq!(ClientTemplateKind::Python.as_str(), "python");
+        assert_eq!(ClientTemplateKind::TypeScript.as_str(), "typescript");
         assert_eq!(ClientTemplateKind::Custom.as_str(), "custom");
     }
 
     #[test]
     fn test_client_display() {
-        assert_eq!(
-            format!("{}", ClientTemplateKind::RustReqwest),
-            "rust_reqwest"
-        );
-        assert_eq!(
-            format!("{}", ClientTemplateKind::PythonRequests),
-            "python_requests"
-        );
-        assert_eq!(
-            format!("{}", ClientTemplateKind::TypeScriptAxios),
-            "typescript_axios"
-        );
+        assert_eq!(format!("{}", ClientTemplateKind::Rust), "rust");
+        assert_eq!(format!("{}", ClientTemplateKind::Python), "python");
+        assert_eq!(format!("{}", ClientTemplateKind::TypeScript), "typescript");
         assert_eq!(format!("{}", ClientTemplateKind::Custom), "custom");
     }
 
     #[test]
     fn test_client_from_str() {
         assert_eq!(
-            "rust_reqwest".parse::<ClientTemplateKind>().unwrap(),
-            ClientTemplateKind::RustReqwest
+            "rust".parse::<ClientTemplateKind>().unwrap(),
+            ClientTemplateKind::Rust
         );
         assert_eq!(
-            "python_requests".parse::<ClientTemplateKind>().unwrap(),
-            ClientTemplateKind::PythonRequests
+            "python".parse::<ClientTemplateKind>().unwrap(),
+            ClientTemplateKind::Python
         );
         assert_eq!(
-            "typescript_axios".parse::<ClientTemplateKind>().unwrap(),
-            ClientTemplateKind::TypeScriptAxios
+            "typescript".parse::<ClientTemplateKind>().unwrap(),
+            ClientTemplateKind::TypeScript
         );
         assert_eq!(
             "custom".parse::<ClientTemplateKind>().unwrap(),
@@ -365,21 +328,18 @@ mod tests {
 
         // Test case insensitivity
         assert_eq!(
-            "RUST_REQWEST".parse::<ClientTemplateKind>().unwrap(),
-            ClientTemplateKind::RustReqwest
+            "RUST".parse::<ClientTemplateKind>().unwrap(),
+            ClientTemplateKind::Rust
         );
 
         // Test invalid variants
         assert!("invalid".parse::<ClientTemplateKind>().is_err());
-        assert!("rust_axum".parse::<ClientTemplateKind>().is_err()); // Server template
+        assert!("RustLike".parse::<ClientTemplateKind>().is_err());
     }
 
     #[test]
     fn test_client_default() {
-        assert_eq!(
-            ClientTemplateKind::default(),
-            ClientTemplateKind::RustReqwest
-        );
+        assert_eq!(ClientTemplateKind::default(), ClientTemplateKind::Rust);
     }
 
     #[test]
@@ -390,34 +350,25 @@ mod tests {
         let unique_kinds: HashSet<_> = ClientTemplateKind::all().collect();
         assert_eq!(unique_kinds.len(), 4);
 
-        assert!(unique_kinds.contains(&ClientTemplateKind::RustReqwest));
-        assert!(unique_kinds.contains(&ClientTemplateKind::PythonRequests));
-        assert!(unique_kinds.contains(&ClientTemplateKind::TypeScriptAxios));
+        assert!(unique_kinds.contains(&ClientTemplateKind::Rust));
+        assert!(unique_kinds.contains(&ClientTemplateKind::Python));
+        assert!(unique_kinds.contains(&ClientTemplateKind::TypeScript));
         assert!(unique_kinds.contains(&ClientTemplateKind::Custom));
     }
 
     #[test]
     fn test_client_role() {
-        assert_eq!(ClientTemplateKind::RustReqwest.role(), TemplateRole::Client);
-        assert_eq!(
-            ClientTemplateKind::PythonRequests.role(),
-            TemplateRole::Client
-        );
-        assert_eq!(
-            ClientTemplateKind::TypeScriptAxios.role(),
-            TemplateRole::Client
-        );
+        assert_eq!(ClientTemplateKind::Rust.role(), TemplateRole::Client);
+        assert_eq!(ClientTemplateKind::Python.role(), TemplateRole::Client);
+        assert_eq!(ClientTemplateKind::TypeScript.role(), TemplateRole::Client);
         assert_eq!(ClientTemplateKind::Custom.role(), TemplateRole::Client);
     }
 
     #[test]
     fn test_client_framework() {
-        assert_eq!(ClientTemplateKind::RustReqwest.framework(), "rust");
-        assert_eq!(ClientTemplateKind::PythonRequests.framework(), "python");
-        assert_eq!(
-            ClientTemplateKind::TypeScriptAxios.framework(),
-            "typescript"
-        );
+        assert_eq!(ClientTemplateKind::Rust.framework(), "rust");
+        assert_eq!(ClientTemplateKind::Python.framework(), "python");
+        assert_eq!(ClientTemplateKind::TypeScript.framework(), "typescript");
         assert_eq!(ClientTemplateKind::Custom.framework(), "custom");
     }
 
@@ -440,10 +391,10 @@ mod tests {
         use crate::core::protocol::Protocol;
 
         // Test that template kinds can be combined with protocols
-        let server_kind = ServerTemplateKind::RustAxum;
+        let server_kind = ServerTemplateKind::Rust;
         let protocol = Protocol::Mcp;
 
-        // This should construct a path like: templates/mcp/server/rust_axum
+        // This should construct a path like: templates/mcp/server/rust
         let expected_path = format!(
             "templates/{}/{}/{}",
             protocol.path_segment(),
@@ -451,10 +402,10 @@ mod tests {
             server_kind.as_str()
         );
 
-        assert_eq!(expected_path, "templates/mcp/server/rust_axum");
+        assert_eq!(expected_path, "templates/mcp/server/rust");
 
         // Test client templates too
-        let client_kind = ClientTemplateKind::RustReqwest;
+        let client_kind = ClientTemplateKind::Rust;
         let expected_client_path = format!(
             "templates/{}/{}/{}",
             protocol.path_segment(),
@@ -462,7 +413,7 @@ mod tests {
             client_kind.as_str()
         );
 
-        assert_eq!(expected_client_path, "templates/mcp/client/rust_reqwest");
+        assert_eq!(expected_client_path, "templates/mcp/client/rust");
     }
 
     #[test]
@@ -473,13 +424,13 @@ mod tests {
         let test_cases = vec![
             (
                 Protocol::Mcp,
-                ServerTemplateKind::RustAxum,
-                "templates/mcp/server/rust_axum",
+                ServerTemplateKind::Rust,
+                "templates/mcp/server/rust",
             ),
             (
                 Protocol::Mcp,
-                ServerTemplateKind::PythonFastAPI,
-                "templates/mcp/server/python_fastapi",
+                ServerTemplateKind::Python,
+                "templates/mcp/server/python",
             ),
             (
                 Protocol::Mcp,

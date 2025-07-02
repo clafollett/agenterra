@@ -1,6 +1,6 @@
-# Template manifest for rust_axum server
-name: rust_axum
-description: A Rust server using the Axum web framework
+# Template manifest for rust server
+name: rust
+description: "A Model Context Protocol (MCP) Rust server supporting: stdio, SSE, and HTTP streaming"
 version: "0.1.0"
 language: rust
 

@@ -52,7 +52,7 @@ agenterra scaffold mcp server --schema-path <SCHEMA_PATH> [OPTIONS]
 |--------|-------------|---------|
 | `--schema-path <SCHEMA_PATH>` | Path or URL to OpenAPI schema (YAML or JSON). Can be a local file path or an HTTP/HTTPS URL. | *required* |
 | `--project-name <PROJECT_NAME>` | Project name | `agenterra_mcp_server` |
-| `--template <TEMPLATE>` | Template to use for code generation | `rust_axum` |
+| `--template <TEMPLATE>` | Template to use for code generation | `rust` |
 | `--template-dir <TEMPLATE_DIR>` | Custom template directory (only used with --template=custom) | |
 | `--output-dir <OUTPUT_DIR>` | Output directory for generated code | |
 | `--log-file <LOG_FILE>` | Log file name without extension | `mcp-server` |
@@ -60,7 +60,7 @@ agenterra scaffold mcp server --schema-path <SCHEMA_PATH> [OPTIONS]
 | `--base-url <BASE_URL>` | Base URL of the OpenAPI specification (Optional) | |
 
 **Available Server Templates:**
-- `rust_axum` - Rust MCP server using Axum web framework (default)
+- `rust` - Rust MCP server using Axum web framework (default)
 
 ##### scaffold mcp client
 
@@ -75,13 +75,13 @@ agenterra scaffold mcp client --project-name <PROJECT_NAME> [OPTIONS]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--project-name <PROJECT_NAME>` | Project name | `agenterra_mcp_client` |
-| `--template <TEMPLATE>` | Template to use for code generation | `rust_reqwest` |
+| `--template <TEMPLATE>` | Template to use for code generation | `rust` |
 | `--template-dir <TEMPLATE_DIR>` | Custom template directory (only used with --template=custom) | |
 | `--output-dir <OUTPUT_DIR>` | Output directory for generated code | |
 | `--timeout <TIMEOUT>` | Connection timeout in seconds | `10` |
 
 **Available Client Templates:**
-- `rust_reqwest` - Rust MCP client with REPL interface (default)
+- `rust` - Rust MCP client with REPL interface (default)
 
 ## Examples
 
@@ -95,7 +95,7 @@ agenterra scaffold mcp server --schema-path api.yaml --output-dir generated-serv
 agenterra scaffold mcp server --schema-path https://petstore3.swagger.io/api/v3/openapi.json --output-dir petstore-server --base-url https://petstore3.swagger.io
 
 # Custom project name and template
-agenterra scaffold mcp server --schema-path api.yaml --output-dir my-server --project-name my-api-server --template rust_axum
+agenterra scaffold mcp server --schema-path api.yaml --output-dir my-server --project-name my-api-server --template rust
 
 # Configure server port and log file
 agenterra scaffold mcp server --schema-path api.yaml --output-dir my-server --port 8080 --log-file my-server
@@ -111,7 +111,7 @@ agenterra scaffold mcp client --project-name my-client --output-dir generated-cl
 agenterra scaffold mcp client --project-name my-client --output-dir my-client --timeout 30
 
 # Client with specific template
-agenterra scaffold mcp client --project-name my-client --output-dir my-client --template rust_reqwest
+agenterra scaffold mcp client --project-name my-client --output-dir my-client --template rust
 ```
 
 ### Advanced Examples
@@ -153,13 +153,13 @@ If you're upgrading from a previous version of Agenterra, note the breaking CLI 
 
 **Old syntax (deprecated):**
 ```bash
-agenterra scaffold --template-kind rust_axum --schema-path api.yaml --output-dir server
+agenterra scaffold --template-kind rust --schema-path api.yaml --output-dir server
 ```
 
 **New syntax:**
 ```bash
 # For server generation
-agenterra scaffold mcp server --template rust_axum --schema-path api.yaml --output-dir server
+agenterra scaffold mcp server --template rust --schema-path api.yaml --output-dir server
 
 # For client generation (new feature)
 agenterra scaffold mcp client --project-name my-client --output-dir client

@@ -137,9 +137,9 @@ agenterra/
 ├── templates/               # Code generation templates
 │   └── mcp/                 # MCP protocol templates
 │       ├── server/          # MCP server templates
-│       │   └── rust_axum/   # Rust Axum server template
+│       │   └── rust/   # Rust Axum server template
 │       └── client/          # MCP client templates
-│           └── rust_reqwest/ # Rust reqwest client template with SQLite caching
+│           └── rust/ # Rust reqwest client template with SQLite caching
 ├── tests/fixtures/          # Test OpenAPI specs
 └── .github/workflows/       # CI/CD automation
 ```

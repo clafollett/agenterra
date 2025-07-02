@@ -22,7 +22,7 @@
                 "--template-dir",
                 "${workspaceFolder}/templates",
                 "--template",
-                "rust_axum",
+                "rust",
                 "--base-url",
                 "https://petstore3.swagger.io"
             ],

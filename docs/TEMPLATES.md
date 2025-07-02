@@ -20,7 +20,7 @@ Templates are organized hierarchically by protocol and role:
 templates/
 ├── mcp/                    # Model Context Protocol templates
 │   ├── server/             # MCP server templates
-│   │   └── rust_axum/      # Rust Axum server template
+│   │   └── rust/      # Rust Axum server template
 │   │       ├── manifest.yml
 │   │       ├── Cargo.toml.tera
 │   │       ├── src/
@@ -30,7 +30,7 @@ templates/
 │   │       │       └── mod.rs.tera
 │   │       └── README.md.tera
 │   └── client/             # MCP client templates
-│       └── rust_reqwest/   # Rust reqwest client template
+│       └── rust/   # Rust reqwest client template
 │           ├── manifest.yml
 │           ├── Cargo.toml.tera
 │           ├── src/
@@ -57,7 +57,7 @@ Server templates generate MCP servers from OpenAPI specifications. They require:
 - Server-specific options (port, logging)
 
 **Available Server Templates:**
-- `rust_axum` - Rust MCP server using Axum web framework with rmcp protocol support
+- `rust` - Rust MCP server using Axum web framework with rmcp protocol support
 
 ### Client Templates
 Client templates generate MCP clients that can connect to MCP servers. They:
@@ -66,14 +66,14 @@ Client templates generate MCP clients that can connect to MCP servers. They:
 - Often include REPL or CLI interfaces
 
 **Available Client Templates:**
-- `rust_reqwest` - Rust MCP client with REPL interface using rmcp protocol
+- `rust` - Rust MCP client with REPL interface using rmcp protocol
 
 ## Manifest Format
 
 The `manifest.yml` file defines the template's metadata and configuration:
 
 ```yaml
-name: "rust_reqwest"     # Required: Template name
+name: "rust"     # Required: Template name
 version: "0.1.0"         # Required: Template version  
 description: >           # Optional: Template description
   Rust MCP client using reqwest HTTP client and rmcp protocol

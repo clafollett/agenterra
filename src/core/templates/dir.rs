@@ -596,14 +596,14 @@ mod tests {
         let temp_dir = create_test_workspace("test_template_dir_validation");
 
         // Create new server structure
-        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // Test server template discovery
         // With new logic, custom paths are used directly, so pass the full template path
         let server_template = TemplateDir::discover_with_protocol(
             Protocol::Mcp,
-            ServerTemplateKind::RustAxum,
+            ServerTemplateKind::Rust,
             Some(&server_template_dir),
         );
         assert!(server_template.is_ok());
@@ -615,7 +615,7 @@ mod tests {
         // Test with non-existent directory
         let result = TemplateDir::discover_with_protocol(
             Protocol::Mcp,
-            ServerTemplateKind::RustAxum,
+            ServerTemplateKind::Rust,
             Some(Path::new("/nonexistent")),
         );
         assert!(result.is_err());
@@ -625,13 +625,13 @@ mod tests {
     #[traced_test]
     fn test_debug_logging_output() {
         let temp_dir = create_test_workspace("test_debug_logging_output");
-        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // This should generate debug logs
         let _result = TemplateDir::discover_with_protocol(
             Protocol::Mcp,
-            ServerTemplateKind::RustAxum,
+            ServerTemplateKind::Rust,
             Some(&temp_dir),
         );
 
@@ -732,7 +732,7 @@ mod tests {
     fn test_output_directory_traversal_protection() {
         // Test protection against output directory traversal
         let temp_dir = create_test_workspace("test_output_directory_traversal_protection");
-        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // Attempt to create template dir with malicious output path
@@ -796,8 +796,8 @@ mod tests {
 
         // Setup shared test directory
         let temp_dir = create_test_workspace("test_concurrent_template_discovery");
-        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
-        let client_template_dir = temp_dir.join("templates/mcp/client/rust_reqwest");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust");
+        let client_template_dir = temp_dir.join("templates/mcp/client/rust");
         fs::create_dir_all(&server_template_dir).unwrap();
         fs::create_dir_all(&client_template_dir).unwrap();
 
@@ -841,14 +841,14 @@ mod tests {
         use crate::core::protocol::Protocol;
 
         let temp_dir = create_test_workspace("test_discover_with_protocol");
-        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // Test server template discovery with protocol parameter (custom path)
         // With new logic, custom paths are used directly, so pass the full template path
         let result = TemplateDir::discover_with_protocol(
             Protocol::Mcp,
-            ServerTemplateKind::RustAxum,
+            ServerTemplateKind::Rust,
             Some(&server_template_dir), // Pass the actual template directory
         );
         assert!(result.is_ok());
@@ -865,14 +865,14 @@ mod tests {
         let temp_dir = create_test_workspace("test_path_construction_with_different_protocols");
 
         // Create template directories for different protocols
-        let mcp_server_dir = temp_dir.join("templates/mcp/server/rust_axum");
+        let mcp_server_dir = temp_dir.join("templates/mcp/server/rust");
         fs::create_dir_all(&mcp_server_dir).unwrap();
 
         // Test MCP protocol
         // With new logic, custom paths are used directly, so pass the full template path
         let result = TemplateDir::discover_with_protocol(
             Protocol::Mcp,
-            ServerTemplateKind::RustAxum,
+            ServerTemplateKind::Rust,
             Some(&mcp_server_dir),
         );
         assert!(result.is_ok());
@@ -889,7 +889,7 @@ mod tests {
             "Path should contain role: {path_str}"
         );
         assert!(
-            path_str.contains("rust_axum"),
+            path_str.contains("rust"),
             "Path should contain template kind: {path_str}"
         );
     }
@@ -898,14 +898,14 @@ mod tests {
     fn test_backward_compatibility_with_discover() {
         // Test that the old discover method still works
         let temp_dir = create_test_workspace("test_backward_compatibility_with_discover");
-        let server_template_dir = temp_dir.join("templates/mcp/server/rust_axum");
+        let server_template_dir = temp_dir.join("templates/mcp/server/rust");
         fs::create_dir_all(&server_template_dir).unwrap();
 
         // Test discover_with_protocol method (uses MCP protocol)
         // With new logic, custom paths are used directly, so pass the full template path
         let result = TemplateDir::discover_with_protocol(
             Protocol::Mcp,
-            ServerTemplateKind::RustAxum,
+            ServerTemplateKind::Rust,
             Some(&server_template_dir),
         );
         assert!(result.is_ok());

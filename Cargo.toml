@@ -60,7 +60,9 @@ url = { version = "2.5", features = ["serde"] }
 uuid = { version = "1.17", features = ["v4"] }
 
 [dev-dependencies]
+assert_cmd = "2.0"
 lazy_static = "1.5.0"
+predicates = "3.1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 rusqlite = { version = "0.36", features = ["bundled", "serde_json"] }
 tracing-test = "0.2"

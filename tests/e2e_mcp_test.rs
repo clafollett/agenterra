@@ -83,8 +83,8 @@ async fn test_mcp_server_client_generation() -> Result<()> {
         .into_owned();
 
     // With the new "take users at their word" logic, we pass the specific template paths directly
-    let server_template_dir = project_dir.join("templates/mcp/server/rust_axum");
-    let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
+    let server_template_dir = project_dir.join("templates/mcp/server/rust");
+    let client_template_dir = project_dir.join("templates/mcp/client/rust");
 
     // Use target/tmp/e2e-tests directory for generated artifacts
     // Clean any previous run directories to avoid duplicate headers or build conflicts
@@ -127,7 +127,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
             "--template-dir",
             server_template_dir.to_str().unwrap(),
             "--template",
-            "rust_axum",
+            "rust",
             "--base-url",
             "https://petstore3.swagger.io",
         ])
@@ -175,7 +175,7 @@ async fn test_mcp_server_client_generation() -> Result<()> {
             "--template-dir",
             client_template_dir.to_str().unwrap(),
             "--template",
-            "rust_reqwest",
+            "rust",
         ])
         .output()?;
 
@@ -916,7 +916,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     );
 
     // Test 2: Client command should succeed with default project-name
-    let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
+    let client_template_dir = project_dir.join("templates/mcp/client/rust");
     let output_dir = sandbox_dir.join("test_default_project_name");
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
@@ -925,7 +925,7 @@ fn test_cli_flag_combinations() -> Result<()> {
             "mcp",
             "client",
             "--template",
-            "rust_reqwest",
+            "rust",
             "--template-dir",
             client_template_dir.to_str().unwrap(),
             "--output-dir",
@@ -975,7 +975,7 @@ fn test_cli_flag_combinations() -> Result<()> {
 
     // Test 4: Valid server command combination
     // Note: This will fail because file doesn't exist, but argument parsing should work
-    let server_template_dir = project_dir.join("templates/mcp/server/rust_axum");
+    let server_template_dir = project_dir.join("templates/mcp/server/rust");
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
         .args([
@@ -987,7 +987,7 @@ fn test_cli_flag_combinations() -> Result<()> {
             "--project-name",
             "test_schema_path_nonexistent",
             "--template",
-            "rust_axum",
+            "rust",
             "--template-dir",
             server_template_dir.to_str().unwrap(),
         ])
@@ -1016,7 +1016,7 @@ fn test_cli_flag_combinations() -> Result<()> {
     );
 
     // Test 5: Valid client command combination
-    let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
+    let client_template_dir = project_dir.join("templates/mcp/client/rust");
     let result = Command::new(agenterra)
         .current_dir(&sandbox_dir)
         .args([
@@ -1026,7 +1026,7 @@ fn test_cli_flag_combinations() -> Result<()> {
             "--project-name",
             "test-client",
             "--template",
-            "rust_reqwest",
+            "rust",
             "--template-dir",
             client_template_dir.to_str().unwrap(),
             "--output-dir",
@@ -1282,7 +1282,7 @@ async fn test_mcp_sse_transport() -> Result<()> {
         .to_string_lossy()
         .into_owned();
 
-    let client_template_dir = project_dir.join("templates/mcp/client/rust_reqwest");
+    let client_template_dir = project_dir.join("templates/mcp/client/rust");
     let scaffold_path = project_dir.join("target/tmp/e2e-sse-tests");
 
     // Clean previous runs
@@ -1303,7 +1303,7 @@ async fn test_mcp_sse_transport() -> Result<()> {
             "--project-name",
             client_name,
             "--template",
-            "rust_reqwest",
+            "rust",
             "--template-dir",
             client_template_dir.to_str().unwrap(),
             "--output-dir",

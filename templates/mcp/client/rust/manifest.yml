@@ -1,5 +1,5 @@
-name: "rust_reqwest"
-description: "Rust MCP client using reqwest HTTP client and rmcp protocol"
+name: "rust"
+description: "A Model Context Protocol (MCP) Rust REPL CLI client supporting: stdio, SSE, and HTTP streaming"
 version: "0.1.0"
 language: "rust"
 

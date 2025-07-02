@@ -55,8 +55,8 @@ pub trait TemplateExporter {
     /// # Directory Structure
     ///
     /// The template will be exported to `{output_dir}/{template.path}/`.
-    /// For example, a template with path "mcp/server/rust_axum" exported to
-    /// "/tmp" would create files under "/tmp/mcp/server/rust_axum/".
+    /// For example, a template with path "mcp/server/rust" exported to
+    /// "/tmp" would create files under "/tmp/mcp/server/rust/".
     fn export_template(
         &self,
         template: &TemplateMetadata,
@@ -122,7 +122,7 @@ pub trait TemplateRepository {
     ///
     /// # Arguments
     ///
-    /// * `path` - The template path (e.g., "mcp/server/rust_axum")
+    /// * `path` - The template path (e.g., "mcp/server/rust")
     ///
     /// # Returns
     ///
@@ -182,16 +182,16 @@ pub enum TemplateType {
 /// use agenterra::core::templates::{TemplateMetadata, TemplateType};
 ///
 /// let template = TemplateMetadata {
-///     path: "mcp/server/rust_axum".to_string(),
+///     path: "mcp/server/rust".to_string(),
 ///     template_type: TemplateType::Server,
-///     kind: "rust_axum".to_string(),
+///     kind: "rust".to_string(),
 ///     protocol: "mcp".to_string(),
 ///     description: Some("Rust MCP server using Axum framework".to_string()),
 /// };
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct TemplateMetadata {
-    /// Path relative to templates/ directory (e.g., "mcp/server/rust_axum").
+    /// Path relative to templates/ directory (e.g., "mcp/server/rust").
     ///
     /// This path follows the convention: `{protocol}/{role}/{kind}`
     pub path: String,
@@ -199,7 +199,7 @@ pub struct TemplateMetadata {
     /// The role this template serves (Server or Client).
     pub template_type: TemplateType,
 
-    /// The specific template variant (e.g., "rust_axum", "python_fastapi").
+    /// The specific template variant (e.g., "rust", "python_fastapi").
     ///
     /// This typically indicates the language and framework combination.
     pub kind: String,

@@ -71,7 +71,7 @@ impl EmbeddedTemplateRepository {
     ///
     /// # Arguments
     ///
-    /// * `path` - A template path like "mcp/server/rust_axum"
+    /// * `path` - A template path like "mcp/server/rust"
     ///
     /// # Returns
     ///
@@ -83,7 +83,7 @@ impl EmbeddedTemplateRepository {
     /// Expected format: `{protocol}/{role}/{kind}/...`
     /// - `protocol`: Communication protocol (e.g., "mcp", "rest", "grpc")
     /// - `role`: Either "server" or "client"
-    /// - `kind`: Template variant (e.g., "rust_axum", "python_fastapi")
+    /// - `kind`: Template variant (e.g., "rust", "python_fastapi")
     fn parse_template_path(path: &str) -> Option<(String, TemplateType, String)> {
         let parts: Vec<&str> = path.split('/').collect();
 
@@ -357,16 +357,16 @@ mod tests {
             Self {
                 templates: vec![
                     TemplateMetadata {
-                        path: "mcp/server/rust_axum".to_string(),
+                        path: "mcp/server/rust".to_string(),
                         template_type: TemplateType::Server,
-                        kind: "rust_axum".to_string(),
+                        kind: "rust".to_string(),
                         protocol: "mcp".to_string(),
                         description: Some("Rust MCP server using Axum framework".to_string()),
                     },
                     TemplateMetadata {
-                        path: "mcp/client/rust_reqwest".to_string(),
+                        path: "mcp/client/rust".to_string(),
                         template_type: TemplateType::Client,
-                        kind: "rust_reqwest".to_string(),
+                        kind: "rust".to_string(),
                         protocol: "mcp".to_string(),
                         description: Some("Rust MCP client with REPL interface".to_string()),
                     },
@@ -399,19 +399,19 @@ mod tests {
         let templates = repo.list_templates();
 
         assert_eq!(templates.len(), 2);
-        assert!(templates.iter().any(|t| t.kind == "rust_axum"));
-        assert!(templates.iter().any(|t| t.kind == "rust_reqwest"));
+        assert!(templates.iter().any(|t| t.kind == "rust"));
+        assert!(templates.iter().any(|t| t.kind == "rust"));
     }
 
     #[test]
     fn test_get_template_by_path() {
         let repo = MockEmbeddedTemplateRepository::new();
 
-        let template = repo.get_template("mcp/server/rust_axum");
+        let template = repo.get_template("mcp/server/rust");
         assert!(template.is_some());
 
         let template = template.unwrap();
-        assert_eq!(template.kind, "rust_axum");
+        assert_eq!(template.kind, "rust");
         assert_eq!(template.template_type, TemplateType::Server);
     }
 
@@ -419,8 +419,8 @@ mod tests {
     fn test_has_template() {
         let repo = MockEmbeddedTemplateRepository::new();
 
-        assert!(repo.has_template("mcp/server/rust_axum"));
-        assert!(repo.has_template("mcp/client/rust_reqwest"));
+        assert!(repo.has_template("mcp/server/rust"));
+        assert!(repo.has_template("mcp/client/rust"));
         assert!(!repo.has_template("nonexistent/template"));
     }
 
@@ -439,28 +439,28 @@ mod tests {
 
         // We should have at least the Rust templates
         assert!(!templates.is_empty());
-        assert!(templates.iter().any(|t| t.kind == "rust_axum"));
-        assert!(templates.iter().any(|t| t.kind == "rust_reqwest"));
+        assert!(templates.iter().any(|t| t.kind == "rust"));
+        assert!(templates.iter().any(|t| t.kind == "rust"));
     }
 
     #[test]
     fn test_get_specific_template() {
         let repo = EmbeddedTemplateRepository::new();
 
-        let template = repo.get_template("mcp/server/rust_axum");
+        let template = repo.get_template("mcp/server/rust");
         assert!(template.is_some());
 
         let template = template.unwrap();
         assert_eq!(template.protocol, "mcp");
         assert_eq!(template.template_type, TemplateType::Server);
-        assert_eq!(template.kind, "rust_axum");
+        assert_eq!(template.kind, "rust");
     }
 
     #[test]
     fn test_get_template_files() {
         let repo = EmbeddedTemplateRepository::new();
 
-        let files = repo.get_template_files("mcp/server/rust_axum");
+        let files = repo.get_template_files("mcp/server/rust");
         assert!(!files.is_empty());
 
         // Should have at least manifest and Cargo.toml
@@ -474,12 +474,12 @@ mod tests {
         let exporter = EmbeddedTemplateExporter::new();
         let repo = EmbeddedTemplateRepository::new();
 
-        let template = repo.get_template("mcp/server/rust_axum").unwrap();
+        let template = repo.get_template("mcp/server/rust").unwrap();
         let result = exporter.export_template(&template, temp_dir.path());
         assert!(result.is_ok());
 
         // Verify files were exported
-        let exported_dir = temp_dir.path().join("mcp/server/rust_axum");
+        let exported_dir = temp_dir.path().join("mcp/server/rust");
         assert!(exported_dir.exists());
         assert!(exported_dir.join("manifest.yml").exists());
         assert!(exported_dir.join("Cargo.toml.tera").exists());
@@ -497,8 +497,8 @@ mod tests {
         assert!(count >= 2); // At least server and client
 
         // Verify both templates were exported
-        assert!(temp_dir.path().join("mcp/server/rust_axum").exists());
-        assert!(temp_dir.path().join("mcp/client/rust_reqwest").exists());
+        assert!(temp_dir.path().join("mcp/server/rust").exists());
+        assert!(temp_dir.path().join("mcp/client/rust").exists());
     }
 
     // Tests for template export functionality
@@ -542,9 +542,9 @@ mod tests {
             let exporter = MockTemplateExporter;
 
             let template = TemplateMetadata {
-                path: "mcp/server/rust_axum".to_string(),
+                path: "mcp/server/rust".to_string(),
                 template_type: TemplateType::Server,
-                kind: "rust_axum".to_string(),
+                kind: "rust".to_string(),
                 protocol: "mcp".to_string(),
                 description: Some("Test template".to_string()),
             };
@@ -553,7 +553,7 @@ mod tests {
             assert!(result.is_ok());
 
             // Verify the template was exported
-            let exported_path = temp_dir.path().join("mcp/server/rust_axum/exported.txt");
+            let exported_path = temp_dir.path().join("mcp/server/rust/exported.txt");
             assert!(exported_path.exists());
         }
 
@@ -570,13 +570,13 @@ mod tests {
             assert!(
                 temp_dir
                     .path()
-                    .join("mcp/server/rust_axum/exported.txt")
+                    .join("mcp/server/rust/exported.txt")
                     .exists()
             );
             assert!(
                 temp_dir
                     .path()
-                    .join("mcp/client/rust_reqwest/exported.txt")
+                    .join("mcp/client/rust/exported.txt")
                     .exists()
             );
         }

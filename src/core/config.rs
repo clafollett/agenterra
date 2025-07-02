@@ -11,7 +11,7 @@
 //!
 //! // Create a new config programmatically
 //! let mut config = Config::new("my-project", "openapi.yaml", "output");
-//! config.template_kind = "rust_axum".to_string();
+//! config.template_kind = "rust".to_string();
 //! config.include_all = true;
 //!
 //! // Or load from a config file
@@ -103,7 +103,7 @@ impl Config {
 }
 
 fn default_template() -> String {
-    "rust_axum".to_string()
+    "rust".to_string()
 }
 
 #[cfg(test)]
