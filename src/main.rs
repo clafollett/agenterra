@@ -9,8 +9,8 @@ use core::{
     openapi::OpenApiContext,
     protocol::Protocol,
     templates::{
-        ClientTemplateKind, EmbeddedTemplateExporter, EmbeddedTemplateRepository,
-        ServerTemplateKind, TemplateExporter, TemplateManager, TemplateOptions, TemplateRepository,
+        ClientTemplateKind, EmbeddedTemplateExporter, EmbeddedTemplates, ServerTemplateKind,
+        TemplateExporter, TemplateManager, TemplateOptions, TemplateRepository,
         dir::resolve_output_dir,
     },
 };
@@ -206,7 +206,7 @@ async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> 
         .context("Failed to resolve output directory")?;
 
     // Initialize the template manager with MCP protocol
-    let template_manager = TemplateManager::new_with_protocol(
+    let template_manager = TemplateManager::new_server(
         Protocol::Mcp,
         template_kind_enum,
         params.template_dir.clone(),
@@ -290,12 +290,9 @@ async fn generate_mcp_client(
         .context("Failed to resolve output directory")?;
 
     // Initialize template manager for the chosen client template with MCP protocol
-    let template_manager = TemplateManager::new_client_with_protocol(
-        Protocol::Mcp,
-        template_kind_enum,
-        template_dir.clone(),
-    )
-    .await?;
+    let template_manager =
+        TemplateManager::new_client(Protocol::Mcp, template_kind_enum, template_dir.clone())
+            .await?;
 
     // Build a core config (no OpenAPI schema needed for clients)
     let core_config = crate::core::config::Config {
@@ -325,7 +322,7 @@ async fn generate_mcp_client(
 
 /// List all available embedded templates
 async fn list_templates() -> anyhow::Result<()> {
-    let repo = EmbeddedTemplateRepository::new();
+    let repo = EmbeddedTemplates::new();
     let templates = repo.list_templates();
 
     if templates.is_empty() {
@@ -381,7 +378,7 @@ async fn export_templates(path: &Path, template: &Option<String>) -> anyhow::Res
     info!("Exporting templates to: {}", path.display());
 
     let exporter = EmbeddedTemplateExporter::new();
-    let repository = EmbeddedTemplateRepository::new();
+    let repository = EmbeddedTemplates::new();
 
     match template {
         Some(template_path) => {
@@ -427,9 +424,9 @@ async fn export_templates(path: &Path, template: &Option<String>) -> anyhow::Res
 
 /// Show detailed information about a specific template
 async fn show_template_info(template_path: &str) -> anyhow::Result<()> {
-    let repo = EmbeddedTemplateRepository::new();
+    let repository = EmbeddedTemplates::new();
 
-    match repo.get_template(template_path) {
+    match repository.get_template(template_path) {
         Some(template) => {
             println!("Template: {}", template.path);
             println!("Type: {:?}", template.template_type);
@@ -441,7 +438,7 @@ async fn show_template_info(template_path: &str) -> anyhow::Result<()> {
             );
 
             // Show file count
-            let files = repo.get_template_files(template_path);
+            let files = repository.get_template_files(template_path);
             println!("Files: {} files", files.len());
 
             // List some key files

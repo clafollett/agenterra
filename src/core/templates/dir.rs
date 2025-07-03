@@ -137,6 +137,54 @@ impl TemplateDir {
         })
     }
 
+    /// Create a TemplateDir from an embedded template path
+    /// This is used when templates are loaded from embedded resources
+    pub fn from_embedded_path(path: PathBuf) -> io::Result<Self> {
+        // Parse the path to extract protocol and kind
+        let path_str = path.to_str().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Template path contains invalid UTF-8",
+            )
+        })?;
+
+        let parts: Vec<&str> = path_str.split('/').collect();
+        if parts.len() < 3 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid embedded template path format: {}", path_str),
+            ));
+        }
+
+        let protocol = parts[0].parse::<Protocol>().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid protocol in template path: {}", e),
+            )
+        })?;
+
+        let role = parts[1];
+        let kind_str = parts[2];
+
+        let kind = if role == "server" {
+            kind_str.parse::<ServerTemplateKind>().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid server template kind: {}", e),
+                )
+            })?
+        } else {
+            // For client templates, we use a default kind
+            ServerTemplateKind::Custom
+        };
+
+        Ok(Self {
+            template_path: path,
+            kind,
+            protocol,
+        })
+    }
+
     /// Get the template kind
     pub fn kind(&self) -> ServerTemplateKind {
         self.kind

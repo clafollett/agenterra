@@ -21,9 +21,9 @@
 //! # Usage
 //!
 //! ```no_run
-//! use agenterra::core::templates::{EmbeddedTemplateRepository, TemplateRepository};
+//! use agenterra::core::templates::{EmbeddedTemplates, TemplateRepository};
 //!
-//! let repo = EmbeddedTemplateRepository::new();
+//! let repo = EmbeddedTemplates::new();
 //! let templates = repo.list_templates();
 //! for template in templates {
 //!     println!("Found template: {}", template.path);
@@ -36,6 +36,17 @@ use std::io;
 use std::path::Path;
 use tracing::{debug, info};
 
+/// Error type for template path parsing
+#[derive(Debug, thiserror::Error)]
+pub enum TemplatePathError {
+    #[error(
+        "Invalid template path format: expected at least 3 components (protocol/role/kind), got {0}"
+    )]
+    InsufficientComponents(usize),
+    #[error("Invalid template role '{0}': expected 'server' or 'client'")]
+    InvalidRole(String),
+}
+
 /// Container for all templates embedded at compile time.
 ///
 /// This struct uses the `rust-embed` derive macro to include all files
@@ -43,7 +54,7 @@ use tracing::{debug, info};
 /// structure is preserved, allowing templates to include any type of file.
 #[derive(RustEmbed)]
 #[folder = "templates/"]
-pub struct EmbeddedTemplates;
+pub struct RustEmbedTemplates;
 
 /// Implementation of `TemplateRepository` that reads from embedded resources.
 ///
@@ -56,9 +67,9 @@ pub struct EmbeddedTemplates;
 /// - Template discovery scans all embedded files once
 /// - File contents are decompressed on demand
 /// - No filesystem I/O required
-pub struct EmbeddedTemplateRepository;
+pub struct EmbeddedTemplates;
 
-impl EmbeddedTemplateRepository {
+impl EmbeddedTemplates {
     /// Create a new embedded template repository.
     ///
     /// This creates a repository that accesses templates embedded in the binary.
@@ -84,12 +95,14 @@ impl EmbeddedTemplateRepository {
     /// - `protocol`: Communication protocol (e.g., "mcp", "rest", "grpc")
     /// - `role`: Either "server" or "client"
     /// - `kind`: Template variant (e.g., "rust", "python_fastapi")
-    fn parse_template_path(path: &str) -> Option<(String, TemplateType, String)> {
+    fn parse_template_path(
+        path: &str,
+    ) -> Result<(String, TemplateType, String), TemplatePathError> {
         let parts: Vec<&str> = path.split('/').collect();
 
         // Expected format: protocol/role/kind/...
         if parts.len() < 3 {
-            return None;
+            return Err(TemplatePathError::InsufficientComponents(parts.len()));
         }
 
         let protocol = parts[0].to_string();
@@ -99,26 +112,26 @@ impl EmbeddedTemplateRepository {
         let template_type = match role {
             "server" => TemplateType::Server,
             "client" => TemplateType::Client,
-            _ => return None,
+            _ => return Err(TemplatePathError::InvalidRole(role.to_string())),
         };
 
-        Some((protocol, template_type, kind))
+        Ok((protocol, template_type, kind))
     }
 }
 
-impl Default for EmbeddedTemplateRepository {
+impl Default for EmbeddedTemplates {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TemplateRepository for EmbeddedTemplateRepository {
+impl TemplateRepository for EmbeddedTemplates {
     fn list_templates(&self) -> Vec<TemplateMetadata> {
         let mut templates = Vec::new();
         let mut seen_templates = std::collections::HashSet::new();
 
         // Iterate through all embedded files
-        for file_path in EmbeddedTemplates::iter() {
+        for file_path in RustEmbedTemplates::iter() {
             let path_str = file_path.as_ref();
 
             // Extract template directory (protocol/role/kind)
@@ -131,29 +144,37 @@ impl TemplateRepository for EmbeddedTemplateRepository {
                     continue;
                 }
 
-                if let Some((protocol, template_type, kind)) =
-                    Self::parse_template_path(&template_path)
-                {
-                    // Try to load manifest for description
-                    let manifest_path = format!("{template_path}/manifest.yml");
-                    let description = EmbeddedTemplates::get(&manifest_path).and_then(|data| {
-                        let content = std::str::from_utf8(data.data.as_ref()).ok()?;
-                        let manifest: serde_yaml::Value = serde_yaml::from_str(content).ok()?;
-                        manifest
-                            .get("description")
-                            .and_then(|d| d.as_str())
-                            .map(|s| s.to_string())
-                    });
+                match Self::parse_template_path(&template_path) {
+                    Ok((protocol, template_type, kind)) => {
+                        // Try to load manifest for description
+                        let manifest_path = format!("{template_path}/manifest.yml");
+                        let description =
+                            RustEmbedTemplates::get(&manifest_path).and_then(|data| {
+                                let content = std::str::from_utf8(data.data.as_ref()).ok()?;
+                                let manifest: serde_yaml::Value =
+                                    serde_yaml::from_str(content).ok()?;
+                                manifest
+                                    .get("description")
+                                    .and_then(|d| d.as_str())
+                                    .map(|s| s.to_string())
+                            });
 
-                    templates.push(TemplateMetadata {
-                        path: template_path.clone(),
-                        template_type,
-                        kind,
-                        protocol,
-                        description,
-                    });
+                        templates.push(TemplateMetadata {
+                            path: template_path.clone(),
+                            template_type,
+                            kind,
+                            protocol,
+                            description,
+                        });
 
-                    seen_templates.insert(template_path);
+                        seen_templates.insert(template_path);
+                    }
+                    Err(err) => {
+                        debug!(
+                            "Skipping invalid template path '{}': {}",
+                            template_path, err
+                        );
+                    }
                 }
             }
         }
@@ -172,19 +193,25 @@ impl TemplateRepository for EmbeddedTemplateRepository {
 
         let manifest_exists = manifest_paths
             .iter()
-            .any(|p| EmbeddedTemplates::get(p).is_some());
+            .any(|p| RustEmbedTemplates::get(p).is_some());
 
         if !manifest_exists {
             return None;
         }
 
-        let (protocol, template_type, kind) = Self::parse_template_path(path)?;
+        let (protocol, template_type, kind) = match Self::parse_template_path(path) {
+            Ok(result) => result,
+            Err(err) => {
+                debug!("Invalid template path '{}': {}", path, err);
+                return None;
+            }
+        };
 
         // Load description from manifest
         let description = manifest_paths
             .iter()
             .find_map(|manifest_path| {
-                EmbeddedTemplates::get(manifest_path).map(|data| (manifest_path, data))
+                RustEmbedTemplates::get(manifest_path).map(|data| (manifest_path, data))
             })
             .and_then(|(manifest_path, data)| {
                 let content = std::str::from_utf8(data.data.as_ref()).ok()?;
@@ -220,11 +247,11 @@ impl TemplateRepository for EmbeddedTemplateRepository {
         let mut files = Vec::new();
         let prefix = format!("{template_path}/");
 
-        for file_path in EmbeddedTemplates::iter() {
+        for file_path in RustEmbedTemplates::iter() {
             let path_str = file_path.as_ref();
 
             if path_str.starts_with(&prefix) {
-                if let Some(embedded_file) = EmbeddedTemplates::get(path_str) {
+                if let Some(embedded_file) = RustEmbedTemplates::get(path_str) {
                     // Get relative path within the template
                     let relative_path = path_str[prefix.len()..].to_string();
 
@@ -260,7 +287,7 @@ impl TemplateRepository for EmbeddedTemplateRepository {
 /// # Ok::<(), std::io::Error>(())
 /// ```
 pub struct EmbeddedTemplateExporter {
-    repository: EmbeddedTemplateRepository,
+    repository: EmbeddedTemplates,
 }
 
 impl EmbeddedTemplateExporter {
@@ -270,7 +297,7 @@ impl EmbeddedTemplateExporter {
     /// that were compiled into the binary.
     pub fn new() -> Self {
         Self {
-            repository: EmbeddedTemplateRepository::new(),
+            repository: EmbeddedTemplates::new(),
         }
     }
 }
@@ -434,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_real_embedded_templates_available() {
-        let repo = EmbeddedTemplateRepository::new();
+        let repo = EmbeddedTemplates::new();
         let templates = repo.list_templates();
 
         // We should have at least the Rust templates
@@ -445,7 +472,7 @@ mod tests {
 
     #[test]
     fn test_get_specific_template() {
-        let repo = EmbeddedTemplateRepository::new();
+        let repo = EmbeddedTemplates::new();
 
         let template = repo.get_template("mcp/server/rust");
         assert!(template.is_some());
@@ -458,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_get_template_files() {
-        let repo = EmbeddedTemplateRepository::new();
+        let repo = EmbeddedTemplates::new();
 
         let files = repo.get_template_files("mcp/server/rust");
         assert!(!files.is_empty());
@@ -472,7 +499,7 @@ mod tests {
     fn test_export_template() {
         let temp_dir = TempDir::new().unwrap();
         let exporter = EmbeddedTemplateExporter::new();
-        let repo = EmbeddedTemplateRepository::new();
+        let repo = EmbeddedTemplates::new();
 
         let template = repo.get_template("mcp/server/rust").unwrap();
         let result = exporter.export_template(&template, temp_dir.path());

@@ -48,8 +48,9 @@ use crate::core::{
 use crate::mcp::builders::EndpointContext;
 
 use super::{
-    ClientTemplateKind, EmbeddedTemplateRepository, ManifestTemplateFile, ServerTemplateKind,
-    TemplateDir, TemplateManifest, TemplateOptions, TemplateRepository,
+    ClientTemplateKind, ManifestTemplateFile, ServerTemplateKind, TemplateDir, TemplateManifest,
+    TemplateOptions, TemplateRepository,
+    source::{TemplateProvider, TemplateSource},
 };
 
 // External imports (alphabetized)
@@ -80,85 +81,121 @@ impl TemplateManager {
     ///
     /// # Returns
     /// A new `TemplateManager` instance or an error if the template directory cannot be found or loaded.
-    pub async fn new_with_protocol(
+    pub async fn new_server(
         protocol: Protocol,
         template_kind: ServerTemplateKind,
         template_dir: Option<PathBuf>,
     ) -> Result<Self> {
-        // Convert PathBuf to TemplateDir using protocol-aware discover method
-        let template_dir =
-            TemplateDir::discover_with_protocol(protocol, template_kind, template_dir.as_deref())?;
+        // Use TemplateProvider to discover templates (embedded first, then filesystem)
+        let provider = TemplateProvider::new();
+        let (source, discovered_path) =
+            provider.discover_server_template(protocol, template_kind, template_dir.as_deref())?;
 
-        // Get the template path for Tera
-        let template_path = template_dir.template_path();
-        let template_dir_str = template_path.to_str().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Template path contains invalid UTF-8",
-            )
-        })?;
+        // Handle the template based on its source
+        match source {
+            TemplateSource::Embedded => {
+                // For embedded templates, we need to load them into Tera from the embedded resources
+                let mut tera = Tera::default();
 
-        // Load the template manifest - try YAML first, then TOML
-        let yaml_manifest_path = template_path.join("manifest.yml");
-        let toml_manifest_path = template_path.join("manifest.toml");
+                // Get the embedded repository
+                let embedded_repo = provider.embedded_repository();
 
-        let manifest = if yaml_manifest_path.exists() {
-            let manifest_content = tokio::fs::read_to_string(&yaml_manifest_path)
-                .await
-                .map_err(|e| {
+                // Load embedded templates into Tera
+                load_embedded_templates_into_tera(
+                    &mut tera,
+                    discovered_path.to_str().unwrap(),
+                    embedded_repo,
+                )?;
+
+                // Load the manifest from embedded resources
+                let manifest =
+                    load_embedded_manifest(discovered_path.to_str().unwrap(), embedded_repo)
+                        .await?;
+
+                // Create a virtual TemplateDir for compatibility
+                let template_dir = TemplateDir::from_embedded_path(discovered_path)?;
+
+                Ok(Self {
+                    tera: Arc::new(tera),
+                    template_dir,
+                    manifest,
+                })
+            }
+            TemplateSource::Filesystem(fs_path) => {
+                // For filesystem templates, use the existing logic
+                let template_dir =
+                    TemplateDir::discover_with_protocol(protocol, template_kind, Some(&fs_path))?;
+
+                // Get the template path for Tera
+                let template_path = template_dir.template_path();
+                let template_dir_str = template_path.to_str().ok_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Failed to read template manifest: {e}"),
+                        "Template path contains invalid UTF-8",
                     )
                 })?;
-            serde_yaml::from_str(&manifest_content).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to parse template manifest: {e}"),
-                )
-            })?
-        } else if toml_manifest_path.exists() {
-            let manifest_content = tokio::fs::read_to_string(&toml_manifest_path)
-                .await
-                .map_err(|e| {
+
+                // Load the template manifest - try YAML first, then TOML
+                let yaml_manifest_path = template_path.join("manifest.yml");
+                let toml_manifest_path = template_path.join("manifest.toml");
+
+                let manifest = if yaml_manifest_path.exists() {
+                    let manifest_content = tokio::fs::read_to_string(&yaml_manifest_path)
+                        .await
+                        .map_err(|e| {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                format!("Failed to read template manifest: {e}"),
+                            )
+                        })?;
+                    serde_yaml::from_str(&manifest_content).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Failed to parse template manifest: {e}"),
+                        )
+                    })?
+                } else if toml_manifest_path.exists() {
+                    let manifest_content = tokio::fs::read_to_string(&toml_manifest_path)
+                        .await
+                        .map_err(|e| {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                format!("Failed to read template manifest: {e}"),
+                            )
+                        })?;
+                    toml::from_str(&manifest_content).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Failed to parse template manifest: {e}"),
+                        )
+                    })?
+                } else {
+                    // Default empty manifest
+                    TemplateManifest::default()
+                };
+
+                // Create Tera instance with the template directory
+                let tera_pattern = format!("{template_dir_str}/**/*");
+                debug!(
+                    "TemplateManager - Creating Tera with pattern: {}",
+                    tera_pattern
+                );
+                let tera = Tera::new(&tera_pattern).map_err(|e| {
+                    error!("Failed to create Tera instance: {}", e);
                     io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Failed to read template manifest: {e}"),
+                        format!("Failed to parse templates: {e}"),
                     )
                 })?;
-            toml::from_str(&manifest_content).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to parse template manifest: {e}"),
-                )
-            })?
-        } else {
-            // Default empty manifest
-            TemplateManifest::default()
-        };
 
-        // Create Tera instance with the template directory
-        let tera_pattern = format!("{template_dir_str}/**/*");
-        debug!(
-            "TemplateManager - Creating Tera with pattern: {}",
-            tera_pattern
-        );
-        let tera = Tera::new(&tera_pattern).map_err(|e| {
-            error!("Failed to create Tera instance: {}", e);
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Failed to parse templates: {e}"),
-            )
-        })?;
-
-        // Create the TemplateManager
-        let manager = TemplateManager {
-            tera: Arc::new(tera),
-            template_dir,
-            manifest,
-        };
-
-        Ok(manager)
+                // Return the TemplateManager for filesystem templates
+                Ok(Self {
+                    tera: Arc::new(tera),
+                    template_dir,
+                    manifest,
+                })
+            }
+        }
     }
 
     /// Create a new TemplateManager for client template generation with explicit protocol support
@@ -171,43 +208,81 @@ impl TemplateManager {
     ///
     /// # Returns
     /// A new `TemplateManager` instance or an error if the template directory cannot be found or loaded.
-    pub async fn new_client_with_protocol(
+    pub async fn new_client(
         protocol: Protocol,
         template_kind: ClientTemplateKind,
         template_dir: Option<PathBuf>,
     ) -> Result<Self> {
-        // Use the new client template discovery method
-        let template_dir = TemplateDir::discover_client_with_protocol(
-            protocol,
-            template_kind,
-            template_dir.as_deref(),
-        )?;
+        // Use TemplateProvider to discover templates (embedded first, then filesystem)
+        let provider = TemplateProvider::new();
+        let (source, discovered_path) =
+            provider.discover_client_template(protocol, template_kind, template_dir.as_deref())?;
 
-        // Get the template path for Tera
-        let template_path = template_dir.template_path();
-        let template_dir_str = template_path.to_str().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Template path contains invalid UTF-8",
-            )
-        })?;
+        // Handle the template based on its source
+        match source {
+            TemplateSource::Embedded => {
+                // For embedded templates, we need to load them into Tera from the embedded resources
+                let mut tera = Tera::default();
 
-        // Load template manifest
-        let manifest = TemplateManifest::load_from_dir(template_path).await?;
+                // Get the embedded repository
+                let embedded_repo = provider.embedded_repository();
 
-        // Create Tera instance with template files matching glob patterns
-        let tera = Tera::new(&format!("{template_dir_str}/**/*")).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Failed to parse client templates: {e}"),
-            )
-        })?;
+                // Load embedded templates into Tera
+                load_embedded_templates_into_tera(
+                    &mut tera,
+                    discovered_path.to_str().unwrap(),
+                    embedded_repo,
+                )?;
 
-        Ok(TemplateManager {
-            tera: Arc::new(tera),
-            template_dir,
-            manifest,
-        })
+                // Load the manifest from embedded resources
+                let manifest =
+                    load_embedded_manifest(discovered_path.to_str().unwrap(), embedded_repo)
+                        .await?;
+
+                // Create a virtual TemplateDir for compatibility
+                let template_dir = TemplateDir::from_embedded_path(discovered_path)?;
+
+                Ok(Self {
+                    tera: Arc::new(tera),
+                    template_dir,
+                    manifest,
+                })
+            }
+            TemplateSource::Filesystem(fs_path) => {
+                // For filesystem templates, use the existing logic
+                let template_dir = TemplateDir::discover_client_with_protocol(
+                    protocol,
+                    template_kind,
+                    Some(&fs_path),
+                )?;
+
+                // Get the template path for Tera
+                let template_path = template_dir.template_path();
+                let template_dir_str = template_path.to_str().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Template path contains invalid UTF-8",
+                    )
+                })?;
+
+                // Load template manifest
+                let manifest = TemplateManifest::load_from_dir(template_path).await?;
+
+                // Create Tera instance with template files matching glob patterns
+                let tera = Tera::new(&format!("{template_dir_str}/**/*")).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Failed to parse client templates: {e}"),
+                    )
+                })?;
+
+                Ok(TemplateManager {
+                    tera: Arc::new(tera),
+                    template_dir,
+                    manifest,
+                })
+            }
+        }
     }
 
     /// Get the template kind this template manager is configured for
@@ -1154,12 +1229,12 @@ impl TemplateManager {
 
 /// Load embedded templates into Tera
 #[allow(dead_code)]
-pub fn load_embedded_templates_into_tera(
+pub fn load_embedded_templates_into_tera<T: TemplateRepository>(
     tera: &mut Tera,
     template_path: &str,
-    repo: &EmbeddedTemplateRepository,
+    repository: &T,
 ) -> io::Result<()> {
-    let files = repo.get_template_files(template_path);
+    let files = repository.get_template_files(template_path);
 
     tracing::info!(
         "Loading {} embedded template files for {}",
@@ -1168,26 +1243,23 @@ pub fn load_embedded_templates_into_tera(
     );
 
     for file in files {
-        // Only process .tera files
-        if file.relative_path.ends_with(".tera") {
-            let content = String::from_utf8(file.contents).map_err(|e| {
+        let content = String::from_utf8(file.contents).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Template {} is not valid UTF-8: {}", file.relative_path, e),
+            )
+        })?;
+
+        // Add template to Tera with its relative path
+        tera.add_raw_template(&file.relative_path, &content)
+            .map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Template {} is not valid UTF-8: {}", file.relative_path, e),
+                    format!("Failed to add template {}: {}", file.relative_path, e),
                 )
             })?;
 
-            // Add template to Tera with its relative path
-            tera.add_raw_template(&file.relative_path, &content)
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("Failed to add template {}: {}", file.relative_path, e),
-                    )
-                })?;
-
-            debug!("Added embedded template: {}", file.relative_path);
-        }
+        debug!("Added embedded template: {}", file.relative_path);
     }
 
     Ok(())
@@ -1195,11 +1267,11 @@ pub fn load_embedded_templates_into_tera(
 
 /// Load manifest from embedded templates
 #[allow(dead_code)]
-pub async fn load_embedded_manifest(
+pub async fn load_embedded_manifest<T: TemplateRepository>(
     template_path: &str,
-    repo: &EmbeddedTemplateRepository,
+    repository: &T,
 ) -> io::Result<TemplateManifest> {
-    let files = repo.get_template_files(template_path);
+    let files = repository.get_template_files(template_path);
 
     // Look for manifest.yml or manifest.toml
     for file in files {
@@ -1312,7 +1384,7 @@ mod tests {
 
         // Test creating a new TemplateManager
         // Use the actual template directory since custom paths are used directly
-        let manager = TemplateManager::new_with_protocol(
+        let manager = TemplateManager::new_server(
             Protocol::Mcp,
             ServerTemplateKind::Custom,
             Some(template_dir.to_path_buf()),
@@ -1387,7 +1459,7 @@ mod tests {
         tokio::fs::write(&manifest_path, manifest_yaml).await?;
 
         // Test creating a new TemplateManager with protocol parameter
-        let manager = TemplateManager::new_with_protocol(
+        let manager = TemplateManager::new_server(
             Protocol::Mcp,
             ServerTemplateKind::Custom,
             Some(templates_base_dir.to_path_buf()),
@@ -1439,7 +1511,7 @@ mod tests {
 
         // Test creating a new client TemplateManager with protocol parameter
         // Use the actual template directory since custom paths are used directly
-        let manager = TemplateManager::new_client_with_protocol(
+        let manager = TemplateManager::new_client(
             Protocol::Mcp,
             ClientTemplateKind::Custom,
             Some(template_dir.to_path_buf()),

@@ -12,14 +12,14 @@
 //!
 //! // Parse a template from a string
 //! let template = ServerTemplateKind::from_str("rust").unwrap();
-//! assert_eq!(template, ServerTemplateKind::RustAxum);
+//! assert_eq!(template, ServerTemplateKind::Rust);
 //! assert_eq!(template.as_str(), "rust");
 //!
 //! // You can also use the Display trait
 //! assert_eq!(template.to_string(), "rust");
 //!
-//! // The default template is RustAxum
-//! assert_eq!(ServerTemplateKind::default(), ServerTemplateKind::RustAxum);
+//! // The default template is Rust
+//! assert_eq!(ServerTemplateKind::default(), ServerTemplateKind::Rust);
 //! ```
 //!
 //! For template directory discovery, use the `TemplateDir::discover()` method from the

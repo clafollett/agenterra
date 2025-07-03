@@ -17,15 +17,12 @@
 //! - **Development**: Can use filesystem templates for testing
 //! - **Customization**: Users can provide custom template directories
 
-#![allow(dead_code)]
-
 use std::io;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 use super::{
-    ClientTemplateKind, EmbeddedTemplateRepository, ServerTemplateKind, TemplateDir,
-    TemplateRepository,
+    ClientTemplateKind, EmbeddedTemplates, ServerTemplateKind, TemplateDir, TemplateRepository,
 };
 use crate::core::protocol::Protocol;
 
@@ -62,20 +59,20 @@ pub enum TemplateSource {
 /// let provider = TemplateProvider::new();
 /// let (source, path) = provider.discover_server_template(
 ///     Protocol::Mcp,
-///     ServerTemplateKind::RustAxum,
+///     ServerTemplateKind::Rust,
 ///     None, // No custom directory
 /// )?;
 /// # Ok::<(), std::io::Error>(())
 /// ```
 pub struct TemplateProvider {
-    embedded_repo: EmbeddedTemplateRepository,
+    embedded_repo: EmbeddedTemplates,
 }
 
 impl TemplateProvider {
     /// Create a new template provider with default embedded repository.
     pub fn new() -> Self {
         Self {
-            embedded_repo: EmbeddedTemplateRepository::new(),
+            embedded_repo: EmbeddedTemplates::new(),
         }
     }
 
@@ -84,7 +81,7 @@ impl TemplateProvider {
     /// # Arguments
     ///
     /// * `protocol` - The protocol to use (e.g., MCP, REST, gRPC)
-    /// * `kind` - The server template kind (e.g., RustAxum, PythonFastAPI)
+    /// * `kind` - The server template kind (e.g., Rust, Python, TypeScript)
     /// * `custom_dir` - Optional custom directory to use instead of discovery
     ///
     /// # Returns
@@ -143,7 +140,7 @@ impl TemplateProvider {
     /// # Arguments
     ///
     /// * `protocol` - The protocol to use (e.g., MCP, REST, gRPC)
-    /// * `kind` - The client template kind (e.g., RustReqwest, TypeScriptFetch)
+    /// * `kind` - The client template kind (e.g., Rust, Python, TypeScript)
     /// * `custom_dir` - Optional custom directory to use instead of discovery
     ///
     /// # Returns
@@ -198,7 +195,7 @@ impl TemplateProvider {
     ///
     /// This is useful when you need direct access to embedded templates
     /// without going through the discovery process.
-    pub fn embedded_repository(&self) -> &EmbeddedTemplateRepository {
+    pub fn embedded_repository(&self) -> &EmbeddedTemplates {
         &self.embedded_repo
     }
 }

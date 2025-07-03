@@ -74,7 +74,7 @@ impl EndpointContext {
     ///
     /// # fn example(operations: Vec<OpenApiOperation>) -> agenterra_core::Result<()> {
     /// let contexts = EndpointContext::transform_endpoints(
-    ///     ServerTemplateKind::RustAxum,
+    ///     ServerTemplateKind::Rust,
     ///     operations
     /// )?;
     /// # Ok(())
