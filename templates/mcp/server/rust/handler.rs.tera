@@ -38,7 +38,14 @@ impl Endpoint for {{ parameters_type }} {
         let mut params = HashMap::new();
         {% for p in parameters %}
         if let Some(val) = &self.{{ p.name }} {
+            {% if p.target_type is containing("Vec") -%}
+            // Handle array parameters by joining values with commas
+            // This creates query strings like: ?tags=tag1,tag2,tag3
+            // Server must split by comma to reconstruct the array
+            params.insert("{{ p.name }}".to_string(), val.join(","));
+            {%- else -%}
             params.insert("{{ p.name }}".to_string(), val.to_string());
+            {%- endif %}
         }
         {% endfor %}
         params
@@ -93,7 +100,7 @@ impl IntoContents for {{ response_type }} {
 /// {{ description }}
 {%- endif %}
 {%- if parameters %}
-#[doc = r#"{% for p in parameters %}{%- if p.name %} - `{{ p.name }}` ({{ p.rust_type }}, optional): {{ p.description | trim }}{% if p.example %}
+#[doc = r#"{% for p in parameters %}{%- if p.name %} - `{{ p.name }}` ({{ p.rust_type }}, optional): {% if p.description %}{{ p.description | trim }}{% else %}No description{% endif %}{% if p.example %}
 {{ p.example }}{% endif %}{% endif %}{% endfor %}"#]
 {%- endif %}
 #[doc = r#"Verb: GET
@@ -106,7 +113,7 @@ Responses:
     502: Bad Gateway
     503: Service Unavailable
     504: Gateway Timeout
-Tag: {{ tags.0 }}"#]
+Tag: {% if tags and tags | length > 0 %}{{ tags.0 }}{% else %}untagged{% endif %}"#]
 pub async fn {{ endpoint }}_handler(
     config: &Config,
     params: &{{ parameters_type }},

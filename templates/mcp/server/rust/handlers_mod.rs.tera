@@ -43,7 +43,7 @@ impl McpServer {
 
     {%- for ep in endpoints %}
     /// MCP API `/{{ ep.endpoint }}` endpoint handler
-    #[tool(description = r#"{{ ep.summary }} - {{ ep.description }} - {{ ep.tags.0 }}"#)]
+    #[tool(description = r#"{{ ep.summary }}{% if ep.description %} - {{ ep.description }}{% endif %}{% if ep.tags and ep.tags | length > 0 %} - {{ ep.tags.0 }}{% endif %}"#)]
     pub async fn {{ ep.fn_name }}(
         &self,
         Parameters(params): Parameters<{{ ep.endpoint }}::{{ ep.parameters_type }}>,

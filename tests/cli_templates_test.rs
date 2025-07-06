@@ -12,7 +12,7 @@ fn test_templates_list_command() {
         .arg("list")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Available templates"))
+        .stdout(predicate::str::contains("Available embedded templates"))
         .stdout(predicate::str::contains("Server Templates"))
         .stdout(predicate::str::contains("mcp/server/rust"))
         .stdout(predicate::str::contains("Client Templates"))

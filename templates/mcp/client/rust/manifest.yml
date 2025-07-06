@@ -1,6 +1,8 @@
-name: "rust"
+name: "mcp-rust-client"
 description: "A Model Context Protocol (MCP) Rust REPL CLI client supporting: stdio, SSE, and HTTP streaming"
 version: "0.1.0"
+protocol: mcp
+role: client
 language: "rust"
 
 files:

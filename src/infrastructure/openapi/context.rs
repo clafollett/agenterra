@@ -28,7 +28,7 @@
 // Internal imports (std, crate)
 use std::path::Path;
 
-use crate::core::Error;
+use crate::generation::GenerationError;
 
 // External imports (alphabetized)
 use serde::{Deserialize, Serialize};
@@ -111,7 +111,7 @@ pub struct OpenApiContext {
 
 impl OpenApiContext {
     /// Create a new OpenAPISpec from a file or URL (supports both YAML and JSON)
-    pub async fn from_file_or_url<P: AsRef<str>>(location: P) -> crate::core::error::Result<Self> {
+    pub async fn from_file_or_url<P: AsRef<str>>(location: P) -> Result<Self, GenerationError> {
         let location = location.as_ref();
 
         // Check if the input looks like a URL
@@ -124,11 +124,13 @@ impl OpenApiContext {
     }
 
     /// Create a new OpenAPISpec from a file (supports both YAML and JSON)
-    pub async fn from_file<P: AsRef<Path>>(path: P) -> crate::core::error::Result<Self> {
+    pub async fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, GenerationError> {
         let path = path.as_ref();
-        let content = fs::read_to_string(path).await?;
+        let content = fs::read_to_string(path)
+            .await
+            .map_err(|e| GenerationError::IoError(e))?;
         Self::parse_content(&content).map_err(|e| {
-            crate::core::Error::openapi(format!(
+            GenerationError::LoadError(format!(
                 "Failed to parse OpenAPI spec at {}: {}",
                 path.display(),
                 e
@@ -137,13 +139,13 @@ impl OpenApiContext {
     }
 
     /// Create a new OpenAPISpec from a URL (supports both YAML and JSON)
-    async fn from_url(url: &str) -> crate::core::error::Result<Self> {
+    async fn from_url(url: &str) -> Result<Self, GenerationError> {
         let response = reqwest::get(url).await.map_err(|e| {
-            crate::core::Error::openapi(format!("Failed to fetch OpenAPI spec from {url}: {e}"))
+            GenerationError::LoadError(format!("Failed to fetch OpenAPI spec from {url}: {e}"))
         })?;
 
         if !response.status().is_success() {
-            return Err(crate::core::Error::openapi(format!(
+            return Err(GenerationError::LoadError(format!(
                 "Failed to fetch OpenAPI spec from {}: HTTP {}",
                 url,
                 response.status()
@@ -151,11 +153,11 @@ impl OpenApiContext {
         }
 
         let content = response.text().await.map_err(|e| {
-            crate::core::Error::openapi(format!("Failed to read response from {url}: {e}"))
+            GenerationError::LoadError(format!("Failed to read response from {url}: {e}"))
         })?;
 
         Self::parse_content(&content).map_err(|e| {
-            crate::core::Error::openapi(format!("Failed to parse OpenAPI spec from {url}: {e}"))
+            GenerationError::LoadError(format!("Failed to parse OpenAPI spec from {url}: {e}"))
         })
     }
 
@@ -223,13 +225,13 @@ impl OpenApiContext {
     }
 
     /// Parse all endpoints into structured contexts for template rendering
-    pub async fn parse_operations(&self) -> crate::core::error::Result<Vec<OpenApiOperation>> {
+    pub async fn parse_operations(&self) -> Result<Vec<OpenApiOperation>, GenerationError> {
         // Get paths object
         let paths = self
             .json
             .get("paths")
             .and_then(JsonValue::as_object)
-            .ok_or_else(|| Error::openapi("Missing 'paths' object"))?;
+            .ok_or_else(|| GenerationError::LoadError("Missing 'paths' object".to_string()))?;
 
         // Use iterator combinators to flatten and map operations
         let operations = paths
@@ -522,7 +524,7 @@ impl OpenApiContext {
     fn extract_schema_properties(
         &self,
         schema: &JsonValue,
-    ) -> crate::core::error::Result<(JsonValue, Option<String>)> {
+    ) -> Result<(JsonValue, Option<String>), GenerationError> {
         // Handle null or non-object schemas
         let schema_obj = match schema.as_object() {
             Some(obj) => obj,
@@ -567,7 +569,9 @@ impl OpenApiContext {
         // Resolve the reference
         let key = "#/components/schemas/";
         if !ref_str.starts_with(key) {
-            return Err(Error::openapi(format!("Unexpected schema ref '{ref_str}'")));
+            return Err(GenerationError::LoadError(format!(
+                "Unexpected schema ref '{ref_str}'"
+            )));
         }
 
         let schema_name = &ref_str[key.len()..];
@@ -577,11 +581,13 @@ impl OpenApiContext {
             .and_then(JsonValue::as_object)
             .and_then(|m| m.get("schemas"))
             .and_then(JsonValue::as_object)
-            .ok_or_else(|| Error::openapi("No components.schemas section"))?;
+            .ok_or_else(|| {
+                GenerationError::LoadError("No components.schemas section".to_string())
+            })?;
 
-        let def = schemas
-            .get(schema_name)
-            .ok_or_else(|| Error::openapi(format!("Schema '{schema_name}' not found")))?;
+        let def = schemas.get(schema_name).ok_or_else(|| {
+            GenerationError::LoadError(format!("Schema '{schema_name}' not found"))
+        })?;
 
         let props = def.get("properties").cloned().unwrap_or(JsonValue::Null);
         Ok((props, Some(schema_name.to_string())))
@@ -595,7 +601,7 @@ impl OpenApiContext {
     pub fn extract_request_body_properties(
         &self,
         operation: &OpenApiOperation,
-    ) -> crate::core::error::Result<(JsonValue, Option<String>)> {
+    ) -> Result<(JsonValue, Option<String>), GenerationError> {
         // If there's no request body, return empty properties
         let Some(request_body) = &operation.request_body else {
             return Ok((serde_json::json!({}), None));
@@ -605,18 +611,22 @@ impl OpenApiContext {
         let content = request_body
             .get("content")
             .and_then(JsonValue::as_object)
-            .ok_or_else(|| Error::openapi("Request body has no content"))?;
+            .ok_or_else(|| GenerationError::LoadError("Request body has no content".to_string()))?;
 
         // Look for application/json content
         let json_content = content
             .get("application/json")
             .and_then(JsonValue::as_object)
-            .ok_or_else(|| Error::openapi("Request body has no application/json content"))?;
+            .ok_or_else(|| {
+                GenerationError::LoadError(
+                    "Request body has no application/json content".to_string(),
+                )
+            })?;
 
         // Extract schema
-        let schema = json_content
-            .get("schema")
-            .ok_or_else(|| Error::openapi("Request body content has no schema"))?;
+        let schema = json_content.get("schema").ok_or_else(|| {
+            GenerationError::LoadError("Request body content has no schema".to_string())
+        })?;
 
         // Use the generic schema extraction method
         self.extract_schema_properties(schema)
@@ -811,7 +821,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_from_file() -> crate::core::error::Result<()> {
+    async fn test_from_file() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let file_path = dir.path().join("openapi_async.json");
         let json_content = r#"

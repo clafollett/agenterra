@@ -1,7 +1,9 @@
 # Template manifest for rust server
-name: rust
+name: mcp-rust-server
 description: "A Model Context Protocol (MCP) Rust server supporting: stdio, SSE, and HTTP streaming"
 version: "0.1.0"
+protocol: mcp
+role: server
 language: rust
 
 # List of files to generate
@@ -29,23 +31,6 @@ files:
     destination: LICENSE
   - source: README.md.tera
     destination: README.md
-
-# Template variables that will be available during code generation
-template_variables:
-  project_name:
-    description: Name of the project
-    required: true
-    type: string
-  
-  api_version:
-    description: API version
-    default: "1.0.0"
-    type: string
-  
-  agent_instructions:
-    description: JSON string of MCP agent instructions to embed in the generated server
-    required: false
-    type: string
 
 # Directories that should be created before generating files
 required_directories:

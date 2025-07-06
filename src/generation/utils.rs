@@ -1,4 +1,7 @@
 //! String transformation utilities for code generation
+//!
+//! These utilities belong in the generation domain as they are used
+//! for transforming identifiers during code generation.
 
 /// Converts a string to snake_case format for Rust identifiers.
 ///
@@ -13,7 +16,7 @@
 ///
 /// # Examples
 /// ```
-/// use agenterra_core::utils::to_snake_case;
+/// use generation::utils::to_snake_case;
 ///
 /// assert_eq!(to_snake_case("findPetsByStatus"), "find_pets_by_status");
 /// assert_eq!(to_snake_case("FindPetsByStatus"), "find_pets_by_status");
@@ -76,11 +79,11 @@ pub fn to_snake_case(s: &str) -> String {
 ///
 /// # Examples
 /// ```
-/// use agenterra_core::utils::to_upper_camel_case;
+/// use generation::utils::to_proper_case;
 ///
-/// assert_eq!(to_upper_camel_case("find_pets_by_status"), "FindPetsByStatus");
-/// assert_eq!(to_upper_camel_case("http_response"), "HttpResponse");
-/// assert_eq!(to_upper_camel_case("find-pets-by-status"), "FindPetsByStatus");
+/// assert_eq!(to_proper_case("find_pets_by_status"), "FindPetsByStatus");
+/// assert_eq!(to_proper_case("http_response"), "HttpResponse");
+/// assert_eq!(to_proper_case("find-pets-by-status"), "FindPetsByStatus");
 /// ```
 pub fn to_proper_case(s: &str) -> String {
     // First convert to snake_case to normalize the input
@@ -98,6 +101,38 @@ pub fn to_proper_case(s: &str) -> String {
             }
         })
         .collect()
+}
+
+/// Converts a string to camelCase format for JavaScript/TypeScript identifiers.
+///
+/// This function normalizes the input through snake_case conversion first,
+/// then capitalizes each word except the first to create proper camelCase identifiers.
+///
+/// # Arguments
+/// * `s` - The input string to convert
+///
+/// # Returns
+/// A new String in camelCase format
+///
+/// # Examples
+/// ```
+/// use generation::utils::to_camel_case;
+///
+/// assert_eq!(to_camel_case("find_pets_by_status"), "findPetsByStatus");
+/// assert_eq!(to_camel_case("http_response"), "httpResponse");
+/// assert_eq!(to_camel_case("find-pets-by-status"), "findPetsByStatus");
+/// ```
+pub fn to_camel_case(s: &str) -> String {
+    let pascal = to_proper_case(s);
+    if pascal.is_empty() {
+        return pascal;
+    }
+
+    let mut chars = pascal.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
+    }
 }
 
 #[cfg(test)]
@@ -122,5 +157,14 @@ mod tests {
         assert_eq!(to_proper_case("find-pets-by-status"), "FindPetsByStatus");
         assert_eq!(to_proper_case("FIND_PETS_BY_STATUS"), "FindPetsByStatus");
         assert_eq!(to_proper_case("http_response"), "HttpResponse");
+    }
+
+    #[test]
+    fn test_to_camel_case() {
+        assert_eq!(to_camel_case("find_pets_by_status"), "findPetsByStatus");
+        assert_eq!(to_camel_case("FindPetsByStatus"), "findPetsByStatus");
+        assert_eq!(to_camel_case("find-pets-by-status"), "findPetsByStatus");
+        assert_eq!(to_camel_case("http_response"), "httpResponse");
+        assert_eq!(to_camel_case("get_http_response"), "getHttpResponse");
     }
 }
