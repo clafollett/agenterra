@@ -8,9 +8,7 @@ use async_trait::async_trait;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::infrastructure::templates::{
-    Template, TemplateDescriptor, TemplateDiscovery, TemplateError, TemplateLoader,
-};
+use crate::infrastructure::{Template, TemplateDiscovery, TemplateError, TemplateLoader};
 
 /// Adapter that wraps a TemplateLoader to provide TemplateDiscovery
 pub struct TemplateLoaderDiscoveryAdapter {
@@ -30,9 +28,15 @@ impl TemplateLoaderDiscoveryAdapter {
 
 #[async_trait]
 impl TemplateDiscovery for TemplateLoaderDiscoveryAdapter {
-    async fn discover(&self, _descriptor: &TemplateDescriptor) -> Result<Template, TemplateError> {
-        // When using --template-dir, we ignore the descriptor and load the specific template
-        // The descriptor will be derived from the template's manifest
+    async fn discover(
+        &self,
+        _protocol: crate::protocols::Protocol,
+        _role: crate::protocols::Role,
+        _language: crate::generation::Language,
+    ) -> Result<Template, TemplateError> {
+        // TODO: This is a bit of a hack. Completely ignoring all parameters just seems wrong. This needs to be rethought
+        // When using --template-dir, we ignore the requested attributes and load the specific template
+        // The protocol/role/language will be derived from the template's manifest
         self.loader.load_template(&self.template_path).await
     }
 }
@@ -55,35 +59,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_adapter_ignores_descriptor() {
-        let template = Template {
-            descriptor: TemplateDescriptor::new(Protocol::Mcp, Role::Client, Language::Go),
-            manifest: Default::default(),
+    async fn test_adapter_ignores_requested_attributes() {
+        use crate::infrastructure::TemplateManifest;
+        use std::collections::HashMap;
+
+        let manifest = TemplateManifest {
+            name: "test-template".to_string(),
+            version: "1.0.0".to_string(),
+            description: None,
+            path: "mcp/client/go".to_string(),
+            protocol: Protocol::Mcp,
+            role: Role::Client,
+            language: Language::Go,
             files: vec![],
-            source: crate::infrastructure::templates::TemplateSource::Embedded,
+            variables: HashMap::new(),
+            post_generate_hooks: vec![],
+        };
+
+        let template = Template {
+            manifest: manifest.clone(),
+            files: vec![],
+            source: crate::infrastructure::TemplateSource::Embedded,
         };
 
         let loader = Arc::new(MockTemplateLoader {
             template: template.clone(),
         });
 
-        let adapter = TemplateLoaderDiscoveryAdapter::new(
-            loader,
-            PathBuf::from("/some/path"),
-        );
+        let adapter = TemplateLoaderDiscoveryAdapter::new(loader, PathBuf::from("/some/path"));
 
-        // Pass a different descriptor - it should be ignored
-        let different_descriptor = TemplateDescriptor::new(
-            Protocol::A2a,
-            Role::Server,
-            Language::Rust,
-        );
+        // Pass different attributes - they should be ignored
+        let result = adapter
+            .discover(Protocol::A2a, Role::Server, Language::Rust)
+            .await
+            .unwrap();
 
-        let result = adapter.discover(&different_descriptor).await.unwrap();
-        
-        // Should get the template from the loader, not based on the descriptor
-        assert_eq!(result.descriptor.protocol, Protocol::Mcp);
-        assert_eq!(result.descriptor.role, Role::Client);
-        assert_eq!(result.descriptor.language, Language::Go);
+        // Should get the template from the loader, not based on the requested attributes
+        assert_eq!(result.manifest.protocol, Protocol::Mcp);
+        assert_eq!(result.manifest.role, Role::Client);
+        assert_eq!(result.manifest.language, Language::Go);
     }
 }

@@ -26,6 +26,12 @@ impl ProtocolRegistry {
             Arc::new(crate::protocols::handlers::mcp::McpProtocolHandler::new()),
         )?;
 
+        // TODO: Register A2A, ACP, ANP protocol handlers when implemented
+        // Currently only MCP is supported
+        // - A2A (Agent to Agent) - Google
+        // - ACP (Agent Communication Protocol) - IBM
+        // - ANP (Agent Network Protocol) - Cisco
+
         Ok(registry)
     }
 
@@ -51,20 +57,41 @@ impl ProtocolRegistry {
     ) -> Option<Arc<dyn crate::protocols::ProtocolHandler>> {
         self.handlers.read().ok()?.get(&protocol).cloned()
     }
+}
 
-    pub fn list(&self) -> Vec<crate::protocols::Protocol> {
-        self.handlers
-            .read()
-            .ok()
-            .map(|guard| guard.keys().cloned().collect())
-            .unwrap_or_default()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_register_and_get() {
+        let registry = ProtocolRegistry::new();
+        let handler = Arc::new(crate::protocols::handlers::mcp::McpProtocolHandler::new());
+
+        // Register handler
+        registry
+            .register(crate::protocols::Protocol::Mcp, handler.clone())
+            .unwrap();
+
+        // Get handler back
+        let retrieved = registry.get(crate::protocols::Protocol::Mcp);
+        assert!(retrieved.is_some());
+        assert_eq!(
+            retrieved.unwrap().protocol(),
+            crate::protocols::Protocol::Mcp
+        );
     }
 
-    pub fn is_implemented(&self, protocol: crate::protocols::Protocol) -> bool {
-        self.handlers
-            .read()
-            .ok()
-            .map(|guard| guard.contains_key(&protocol))
-            .unwrap_or(false)
+    #[test]
+    fn test_with_defaults() {
+        let registry = ProtocolRegistry::with_defaults().unwrap();
+
+        // Should have MCP registered
+        assert!(registry.get(crate::protocols::Protocol::Mcp).is_some());
+
+        // Should not have others registered
+        assert!(registry.get(crate::protocols::Protocol::A2a).is_none());
+        assert!(registry.get(crate::protocols::Protocol::Acp).is_none());
+        assert!(registry.get(crate::protocols::Protocol::Anp).is_none());
     }
 }

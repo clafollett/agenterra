@@ -1,14 +1,15 @@
 //! OpenAPI loading implementations
 
 pub mod composite_loader;
-pub mod context;
 pub mod file_loader;
 pub mod http_loader;
 pub mod parser;
+pub mod types;
 
 pub use composite_loader::CompositeOpenApiLoader;
 pub use file_loader::FileOpenApiLoader;
 pub use http_loader::HttpOpenApiLoader;
+pub use types::*;
 
 #[cfg(test)]
 mod tests {

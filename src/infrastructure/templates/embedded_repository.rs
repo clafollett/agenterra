@@ -1,18 +1,17 @@
 //! Embedded template repository implementation
 
-use crate::infrastructure::templates::{
-    RawTemplateFile, Template, TemplateDescriptor, TemplateDiscovery, TemplateError,
-    TemplateExporter, TemplateFile, TemplateFileType, TemplateMetadata,
-    TemplateRepository, TemplateSource, TemplateType,
+use crate::generation::Language;
+use crate::protocols::types::{Protocol, Role};
+
+use super::{
+    RawTemplateFile, Template, TemplateDiscovery, TemplateError, TemplateExporter, TemplateFile,
+    TemplateFileType, TemplateManifest, TemplateRepository, TemplateSource,
 };
 use async_trait::async_trait;
 use rust_embed::RustEmbed;
 use std::io;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
-
-// Use the common manifest parsing
-use super::manifest::parse_manifest_yaml;
 
 /// Container for all templates embedded at compile time
 #[derive(RustEmbed)]
@@ -26,29 +25,6 @@ impl EmbeddedTemplateRepository {
     pub fn new() -> Self {
         Self
     }
-
-    /// Parse a template path to extract its protocol, type, and kind
-    fn parse_template_path(path: &str) -> Option<(String, TemplateType, String)> {
-        let parts: Vec<&str> = path.split('/').collect();
-
-        // Expected format: protocol/role/kind/...
-        if parts.len() < 3 {
-            return None;
-        }
-
-        let protocol = parts[0].to_string();
-        let role = parts[1];
-        let kind = parts[2].to_string();
-
-        // TODO: Use a TemplateType from_str method implemented using the FromStr trait
-        let template_type = match role {
-            "server" => TemplateType::Server,
-            "client" => TemplateType::Client,
-            _ => return None,
-        };
-
-        Some((protocol, template_type, kind))
-    }
 }
 
 impl Default for EmbeddedTemplateRepository {
@@ -58,107 +34,53 @@ impl Default for EmbeddedTemplateRepository {
 }
 
 impl TemplateRepository for EmbeddedTemplateRepository {
-    fn list_templates(&self) -> Vec<TemplateMetadata> {
-        let mut templates = Vec::new();
-        let mut seen_templates = std::collections::HashSet::new();
+    fn list_manifests(&self) -> Vec<TemplateManifest> {
+        let mut manifests = Vec::new();
 
-        // Iterate through all embedded files
-        for file_path in EmbeddedTemplates::iter() {
-            let path_str = file_path.as_ref();
-
-            // Extract template directory (protocol/role/kind)
-            let parts: Vec<&str> = path_str.split('/').collect();
-            if parts.len() >= 3 {
-                let template_path = format!("{}/{}/{}", parts[0], parts[1], parts[2]);
-
-                // Skip if we've already processed this template
-                if seen_templates.contains(&template_path) {
-                    continue;
-                }
-
-                if let Some((protocol, template_type, kind)) =
-                    Self::parse_template_path(&template_path)
-                {
-                    // Try to load manifest for description
-                    let manifest_path = format!("{template_path}/manifest.yml");
-                    let description = EmbeddedTemplates::get(&manifest_path).and_then(|data| {
-                        let content = std::str::from_utf8(data.data.as_ref()).ok()?;
-                        let manifest: serde_yaml::Value = serde_yaml::from_str(content).ok()?;
-                        manifest
-                            .get("description")
-                            .and_then(|d| d.as_str())
-                            .map(|s| s.to_string())
-                    });
-
-                    templates.push(TemplateMetadata {
-                        path: template_path.clone(),
-                        template_type,
-                        kind,
-                        protocol,
-                        description,
-                    });
-
-                    seen_templates.insert(template_path);
-                }
+        // Iterate through all embedded files looking for manifest files
+        for manifest_path in EmbeddedTemplates::iter().filter(|p| p.ends_with("/manifest.yml")) {
+            if let Ok(Some(manifest)) = self.get_manifest(manifest_path.as_ref()) {
+                manifests.push(manifest);
             }
         }
 
         // Sort by path for consistent ordering
-        templates.sort_by(|a, b| a.path.cmp(&b.path));
-        templates
+        manifests.sort_by(|a, b| a.path.cmp(&b.path));
+
+        manifests
     }
 
-    fn get_template(&self, path: &str) -> Option<TemplateMetadata> {
-        // Verify the template exists by checking for a manifest
-        let manifest_paths = [
-            format!("{path}/manifest.yml"),
-            format!("{path}/manifest.toml"),
-        ];
+    fn get_manifest(&self, manifest_path: &str) -> Result<Option<TemplateManifest>, TemplateError> {
+        let path = if manifest_path.ends_with("/manifest.yml") {
+            manifest_path.to_string()
+        } else {
+            format!("{manifest_path}/manifest.yml")
+        };
 
-        let manifest_exists = manifest_paths
-            .iter()
-            .any(|p| EmbeddedTemplates::get(p).is_some());
+        // Load manifest content
+        let file = match EmbeddedTemplates::get(&path) {
+            Some(file) => file,
+            None => return Ok(None),
+        };
 
-        if !manifest_exists {
-            return None;
-        }
+        let content = match std::str::from_utf8(file.data.as_ref()) {
+            Ok(content) => content,
+            Err(e) => return Err(TemplateError::manifest_parse_error(manifest_path, e)),
+        };
 
-        let (protocol, template_type, kind) = Self::parse_template_path(path)?;
+        let manifest = TemplateManifest::from_yaml(content, manifest_path)?;
 
-        // Load description from manifest
-        let description = manifest_paths
-            .iter()
-            .find_map(|manifest_path| {
-                EmbeddedTemplates::get(manifest_path).map(|data| (manifest_path, data))
-            })
-            .and_then(|(manifest_path, data)| {
-                let content = std::str::from_utf8(data.data.as_ref()).ok()?;
-                if manifest_path.ends_with(".yml") {
-                    let manifest: serde_yaml::Value = serde_yaml::from_str(content).ok()?;
-                    manifest
-                        .get("description")
-                        .and_then(|d| d.as_str())
-                        .map(|s| s.to_string())
-                } else {
-                    let manifest: toml::Value = toml::from_str(content).ok()?;
-                    manifest
-                        .get("description")
-                        .and_then(|d| d.as_str())
-                        .map(|s| s.to_string())
-                }
-            });
-
-        Some(TemplateMetadata {
-            path: path.to_string(),
-            template_type,
-            kind,
-            protocol,
-            description,
-        })
+        Ok(Some(manifest))
     }
 
     fn has_template(&self, path: &str) -> bool {
-        self.get_template(path).is_some()
+        let manifest_path = if path.ends_with("/manifest.yml") {
+            path.to_string()
+        } else {
+            format!("{path}/manifest.yml")
+        };
+
+        EmbeddedTemplates::get(&manifest_path).is_some()
     }
 
     fn get_template_files(&self, template_path: &str) -> Vec<RawTemplateFile> {
@@ -187,12 +109,17 @@ impl TemplateRepository for EmbeddedTemplateRepository {
 
 #[async_trait]
 impl TemplateDiscovery for EmbeddedTemplateRepository {
-    async fn discover(&self, descriptor: &TemplateDescriptor) -> Result<Template, TemplateError> {
-        // Build the template path
-        let template_path = descriptor.path();
+    async fn discover(
+        &self,
+        protocol: Protocol,
+        role: Role,
+        language: Language,
+    ) -> Result<Template, TemplateError> {
+        // Build the template path from attributes
+        let template_path = format!("{protocol}/{role}/{language}");
 
         // Check if template exists
-        if self.get_template(&template_path).is_none() {
+        if !self.has_template(&template_path) {
             return Err(TemplateError::not_found(&template_path));
         }
 
@@ -208,12 +135,11 @@ impl TemplateDiscovery for EmbeddedTemplateRepository {
             Some(file) => {
                 // Parse the actual manifest YAML
                 let content = String::from_utf8_lossy(&file.contents);
-                parse_manifest_yaml(&content)?
+                TemplateManifest::from_yaml(&content, &template_path)?
             }
             None => {
                 return Err(TemplateError::InvalidManifest(format!(
-                    "No manifest.yml or manifest.yaml found for template '{}'",
-                    template_path
+                    "No manifest.yml or manifest.yaml found for template '{template_path}'"
                 )));
             }
         };
@@ -251,12 +177,20 @@ impl TemplateDiscovery for EmbeddedTemplateRepository {
             })
             .collect();
 
-        Ok(Template {
-            descriptor: descriptor.clone(),
+        let template = Template {
             manifest,
             files,
             source: TemplateSource::Embedded,
-        })
+        };
+
+        debug!(
+            template_path = %template_path,
+            source = %template.source,
+            file_count = template.files.len(),
+            "Template discovered"
+        );
+
+        Ok(template)
     }
 }
 
@@ -280,7 +214,7 @@ impl Default for EmbeddedTemplateExporter {
 }
 
 impl TemplateExporter for EmbeddedTemplateExporter {
-    fn export_template(&self, template: &TemplateMetadata, output_dir: &Path) -> io::Result<()> {
+    fn export_template(&self, template: &TemplateManifest, output_dir: &Path) -> io::Result<()> {
         let template_output_dir = output_dir.join(&template.path);
 
         info!(
@@ -323,7 +257,7 @@ impl TemplateExporter for EmbeddedTemplateExporter {
     }
 
     fn export_all_templates(&self, output_dir: &Path) -> io::Result<usize> {
-        let templates = self.repository.list_templates();
+        let templates = self.repository.list_manifests();
         let count = templates.len();
 
         info!(
@@ -337,5 +271,33 @@ impl TemplateExporter for EmbeddedTemplateExporter {
         }
 
         Ok(count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_list_manifests() {
+        let repo = EmbeddedTemplateRepository;
+        let manifests = repo.list_manifests();
+
+        // We only support MCP Client and Server at this time.
+        assert!(manifests.len() == 2);
+    }
+
+    #[test]
+    fn test_has_template() {
+        let repo = EmbeddedTemplateRepository;
+
+        // Test with a template that should exist
+        assert!(repo.has_template("mcp/client/rust"));
+
+        // Test with a template that should exist
+        assert!(repo.has_template("mcp/server/rust"));
+
+        // Test with a template that doesn't exist
+        assert!(!repo.has_template("nonexistent/template/path"));
     }
 }

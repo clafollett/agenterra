@@ -2,13 +2,11 @@
 
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
-use std::path::PathBuf;
 
 /// Input data for protocol processing
 #[derive(Debug, Clone)]
 pub struct ProtocolInput {
-    pub openapi_path: Option<PathBuf>,
-    pub openapi_spec: Option<crate::generation::OpenApiSpec>,
+    pub openapi_spec: Option<crate::generation::OpenApiContext>,
     pub config: ProtocolConfig,
     pub role: crate::protocols::Role,
     pub language: crate::generation::Language,
@@ -18,7 +16,6 @@ pub struct ProtocolInput {
 #[derive(Debug, Clone)]
 pub struct ProtocolConfig {
     pub project_name: String,
-    pub output_dir: PathBuf,
     pub version: Option<String>,
     pub options: std::collections::HashMap<String, JsonValue>,
 }
@@ -40,18 +37,4 @@ pub trait ProtocolHandler: Send + Sync {
         &self,
         config: &ProtocolConfig,
     ) -> Result<(), crate::protocols::ProtocolError>;
-
-    /// Returns supported features for this protocol implementation
-    fn supported_features(&self) -> Vec<String> {
-        vec![]
-    }
-}
-
-/// Factory trait for creating protocol handlers
-pub trait ProtocolHandlerFactory: Send + Sync {
-    /// Creates a new instance of the protocol handler
-    fn create(&self) -> Result<Box<dyn ProtocolHandler>, crate::protocols::ProtocolError>;
-
-    /// Returns the protocol this factory creates handlers for
-    fn protocol(&self) -> crate::protocols::Protocol;
 }

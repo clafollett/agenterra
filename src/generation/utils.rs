@@ -135,6 +135,40 @@ pub fn to_camel_case(s: &str) -> String {
     }
 }
 
+/// Sanitizes a string to be a valid Rust field name.
+///
+/// This function handles Rust reserved keywords by appending an underscore.
+/// It also converts the string to snake_case for consistency.
+///
+/// # Arguments
+/// * `s` - The input string to sanitize
+///
+/// # Returns
+/// A new String that is a valid Rust field name
+///
+/// # Examples
+/// ```
+/// use generation::utils::sanitize_rust_field_name;
+///
+/// assert_eq!(sanitize_rust_field_name("type"), "type_");
+/// assert_eq!(sanitize_rust_field_name("self"), "self_");
+/// assert_eq!(sanitize_rust_field_name("firstName"), "first_name");
+/// ```
+pub fn sanitize_rust_field_name(s: &str) -> String {
+    let snake_case = to_snake_case(s);
+
+    // List of Rust reserved keywords
+    match snake_case.as_str() {
+        "as" | "break" | "const" | "continue" | "crate" | "else" | "enum" | "extern" | "false"
+        | "fn" | "for" | "if" | "impl" | "in" | "let" | "loop" | "match" | "mod" | "move"
+        | "mut" | "pub" | "ref" | "return" | "self" | "Self" | "static" | "struct" | "super"
+        | "trait" | "true" | "type" | "unsafe" | "use" | "where" | "while" | "async" | "await"
+        | "dyn" | "abstract" | "become" | "box" | "do" | "final" | "macro" | "override"
+        | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" => format!("{}_", snake_case),
+        _ => snake_case,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +200,22 @@ mod tests {
         assert_eq!(to_camel_case("find-pets-by-status"), "findPetsByStatus");
         assert_eq!(to_camel_case("http_response"), "httpResponse");
         assert_eq!(to_camel_case("get_http_response"), "getHttpResponse");
+    }
+
+    #[test]
+    fn test_sanitize_rust_field_name() {
+        // Test reserved keywords
+        assert_eq!(sanitize_rust_field_name("type"), "type_");
+        assert_eq!(sanitize_rust_field_name("self"), "self_");
+        assert_eq!(sanitize_rust_field_name("match"), "match_");
+        assert_eq!(sanitize_rust_field_name("async"), "async_");
+
+        // Test normal field names
+        assert_eq!(sanitize_rust_field_name("firstName"), "first_name");
+        assert_eq!(sanitize_rust_field_name("user_id"), "user_id");
+        assert_eq!(sanitize_rust_field_name("HTTPResponse"), "httpresponse");
+
+        // Test that already snake_case keywords still get underscore
+        assert_eq!(sanitize_rust_field_name("for"), "for_");
     }
 }

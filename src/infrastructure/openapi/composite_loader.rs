@@ -1,6 +1,6 @@
 //! Composite OpenAPI loader that tries multiple loading strategies
 
-use crate::generation::{GenerationError, OpenApiLoader, OpenApiSpec};
+use crate::generation::{GenerationError, OpenApiContext, OpenApiLoader};
 use async_trait::async_trait;
 
 /// Composite loader that tries multiple loaders in sequence
@@ -17,12 +17,6 @@ impl CompositeOpenApiLoader {
             ],
         }
     }
-
-    /// Add a custom loader
-    pub fn add_loader(mut self, loader: Box<dyn OpenApiLoader>) -> Self {
-        self.loaders.push(loader);
-        self
-    }
 }
 
 impl Default for CompositeOpenApiLoader {
@@ -33,22 +27,14 @@ impl Default for CompositeOpenApiLoader {
 
 #[async_trait]
 impl OpenApiLoader for CompositeOpenApiLoader {
-    async fn load(&self, source: &str) -> Result<OpenApiSpec, GenerationError> {
-        let mut last_error = None;
-
-        for loader in &self.loaders {
-            match loader.load(source).await {
-                Ok(spec) => return Ok(spec),
-                Err(e) => {
-                    last_error = Some(e);
-                    // Try next loader
-                }
-            }
+    async fn load(&self, source: &str) -> Result<OpenApiContext, GenerationError> {
+        // Intelligently detect the source type and use the appropriate loader
+        if source.starts_with("http://") || source.starts_with("https://") {
+            // Use HTTP loader for URLs
+            self.loaders[0].load(source).await
+        } else {
+            // Use file loader for file paths
+            self.loaders[1].load(source).await
         }
-
-        // If all loaders failed, return the last error
-        Err(last_error.unwrap_or_else(|| {
-            GenerationError::LoadError(format!("No loader could handle source: {}", source))
-        }))
     }
 }

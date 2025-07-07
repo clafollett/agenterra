@@ -1,31 +1,16 @@
 //! Core protocol types and enums
 
+use crate::protocols::ProtocolError;
+
 use serde::{Deserialize, Serialize};
+use std::{fmt::Formatter, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Protocol {
-    Mcp,
     A2a,
     Acp,
     Anp,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Role {
-    Server,
-    Client,
-    Agent,
-    Broker,
-    Custom(String),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProtocolCapabilities {
-    pub protocol: Protocol,
-    pub supported_roles: Vec<Role>,
-    pub requires_openapi: bool,
-    pub supports_streaming: bool,
-    pub supports_bidirectional: bool,
+    Mcp,
 }
 
 impl Protocol {
@@ -62,64 +47,93 @@ impl Protocol {
         }
     }
 
-    pub fn validate_role(&self, role: &Role) -> Result<(), crate::protocols::ProtocolError> {
+    pub fn validate_role(&self, role: &Role) -> Result<(), ProtocolError> {
         let capabilities = self.capabilities();
         if capabilities.supported_roles.contains(role) {
             Ok(())
         } else {
-            Err(crate::protocols::ProtocolError::UnsupportedRole {
+            Err(ProtocolError::UnsupportedRole {
                 protocol: *self,
                 role: role.clone(),
             })
         }
     }
-
-    /// Returns all available protocols
-    pub fn all() -> Vec<Protocol> {
-        vec![Protocol::Mcp, Protocol::A2a, Protocol::Acp, Protocol::Anp]
-    }
-
-    /// Returns the protocol identifier as a string
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Protocol::Mcp => "mcp",
-            Protocol::A2a => "a2a",
-            Protocol::Acp => "acp",
-            Protocol::Anp => "anp",
-        }
-    }
 }
 
 impl std::fmt::Display for Protocol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Protocol::A2a => write!(f, "a2a"),
+            Protocol::Acp => write!(f, "acp"),
+            Protocol::Anp => write!(f, "anp"),
+            Protocol::Mcp => write!(f, "mcp"),
+        }
     }
 }
 
 impl std::str::FromStr for Protocol {
-    type Err = crate::protocols::ProtocolError;
+    type Err = ProtocolError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "mcp" => Ok(Protocol::Mcp),
             "a2a" => Ok(Protocol::A2a),
             "acp" => Ok(Protocol::Acp),
             "anp" => Ok(Protocol::Anp),
-            _ => Err(crate::protocols::ProtocolError::InvalidConfiguration(
-                format!("Unknown protocol: {}", s),
-            )),
+            "mcp" => Ok(Protocol::Mcp),
+            _ => Err(ProtocolError::InvalidConfiguration(format!(
+                "Unknown protocol: {s}"
+            ))),
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProtocolCapabilities {
+    pub protocol: Protocol,
+    pub supported_roles: Vec<Role>,
+    pub requires_openapi: bool,
+    pub supports_streaming: bool,
+    pub supports_bidirectional: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Role {
+    Agent,
+    Broker,
+    Client,
+    Server,
+    Custom(String),
+}
+
+impl Role {}
+
 impl std::fmt::Display for Role {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Role::Server => write!(f, "server"),
-            Role::Client => write!(f, "client"),
             Role::Agent => write!(f, "agent"),
             Role::Broker => write!(f, "broker"),
-            Role::Custom(name) => write!(f, "{}", name),
+            Role::Client => write!(f, "client"),
+            Role::Server => write!(f, "server"),
+            Role::Custom(name) => write!(f, "{name}"),
         }
     }
 }
+
+impl FromStr for Role {
+    type Err = ProtocolError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "agent" => Ok(Role::Agent),
+            "broker" => Ok(Role::Broker),
+            "client" => Ok(Role::Client),
+            "server" => Ok(Role::Server),
+            other => Err(ProtocolError::InvalidConfiguration(format!(
+                "Unknown role: {other}"
+            ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {}

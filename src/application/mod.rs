@@ -1,13 +1,13 @@
 //! Application layer - orchestrates use cases and coordinates between domains
 
-pub mod dto;
+pub mod commands;
 pub mod errors;
 pub mod generate_client;
 pub mod generate_server;
 pub mod template_management;
 pub mod traits;
 
-pub use dto::*;
+pub use commands::*;
 pub use errors::*;
 pub use template_management::*;
 pub use traits::*;
@@ -111,10 +111,14 @@ mod tests {
     #[test]
     fn test_application_error_types() {
         // Test that error types are correctly defined
-        let error = ApplicationError::ProtocolNotImplemented(Protocol::Mcp);
+        let error = ApplicationError::ProtocolError(
+            crate::protocols::ProtocolError::NotImplemented(Protocol::Mcp),
+        );
         match error {
-            ApplicationError::ProtocolNotImplemented(p) => assert_eq!(p, Protocol::Mcp),
-            _ => panic!("Expected ProtocolNotImplemented"),
+            ApplicationError::ProtocolError(crate::protocols::ProtocolError::NotImplemented(p)) => {
+                assert_eq!(p, Protocol::Mcp)
+            }
+            _ => panic!("Expected ProtocolError::NotImplemented"),
         }
 
         let validation_error = ValidationError::EmptyProjectName;

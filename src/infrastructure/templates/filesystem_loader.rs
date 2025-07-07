@@ -7,13 +7,9 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use crate::infrastructure::templates::{
-    Template, TemplateDescriptor, TemplateError, TemplateFile, TemplateLoader, TemplateManifest,
-    TemplateSource,
+use crate::infrastructure::{
+    Template, TemplateError, TemplateFile, TemplateLoader, TemplateManifest, TemplateSource,
 };
-
-// Use the common manifest parsing
-use super::manifest::parse_manifest_yaml;
 
 /// Template loader that loads a single template bundle from filesystem
 pub struct FileSystemTemplateLoader;
@@ -41,18 +37,23 @@ impl TemplateLoader for FileSystemTemplateLoader {
         // Load the manifest
         let manifest = load_manifest_from_dir(path).await?;
 
-        // Create descriptor from manifest metadata
-        let descriptor = TemplateDescriptor::from_manifest(&manifest)?;
-
         // Load all template files
         let files = load_template_files(path, &manifest).await?;
 
-        Ok(Template {
-            descriptor,
+        let template = Template {
             manifest,
             files,
             source: TemplateSource::FileSystem(path.to_path_buf()),
-        })
+        };
+
+        tracing::debug!(
+            template_path = %path.display(),
+            source = %template.source,
+            file_count = template.files.len(),
+            "Template loaded from filesystem"
+        );
+
+        Ok(template)
     }
 }
 
@@ -74,10 +75,11 @@ async fn load_manifest_from_dir(dir: &Path) -> Result<TemplateManifest, Template
 
     let content = fs::read_to_string(&path)
         .await
-        .map_err(|e| TemplateError::IoError(e))?;
+        .map_err(TemplateError::IoError)?;
 
-    // Use the common manifest parser
-    parse_manifest_yaml(&content)
+    // Use the TemplateManifest's from_yaml method
+    let relative_path = dir.to_string_lossy();
+    TemplateManifest::from_yaml(&content, &relative_path)
 }
 
 /// Load all template files referenced in the manifest
@@ -92,7 +94,7 @@ async fn load_template_files(
 
         let content = fs::read_to_string(&file_path)
             .await
-            .map_err(|e| TemplateError::IoError(e))?;
+            .map_err(TemplateError::IoError)?;
 
         // Keep the source filename for path to be consistent with embedded templates
         let relative_path = manifest_file.source.clone();
@@ -112,7 +114,7 @@ async fn load_template_files(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::templates::TemplateFileType;
+    use crate::infrastructure::TemplateFileType;
     use tempfile::TempDir;
     use tokio::fs;
 
@@ -212,7 +214,7 @@ hooks:
 
         match result.unwrap_err() {
             TemplateError::TemplateNotFound(_) => {}
-            other => panic!("Expected TemplateNotFound, got {:?}", other),
+            other => panic!("Expected TemplateNotFound, got {other:?}"),
         }
     }
 
@@ -230,7 +232,7 @@ hooks:
             TemplateError::InvalidManifest(msg) => {
                 assert!(msg.contains("No manifest"));
             }
-            other => panic!("Expected LoadError, got {:?}", other),
+            other => panic!("Expected LoadError, got {other:?}"),
         }
     }
 

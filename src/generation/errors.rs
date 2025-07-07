@@ -20,9 +20,6 @@ pub enum GenerationError {
     RenderError(String),
 
     #[error("Post-processing error: {0}")]
-    ProcessError(String),
-
-    #[error("Post-processing error: {0}")]
     PostProcessingError(String),
 
     #[error("OpenAPI loading error: {0}")]

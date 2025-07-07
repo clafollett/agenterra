@@ -47,11 +47,13 @@ impl ProtocolHandler for McpProtocolHandler {
             input.language,
         )
         .map_err(|e| match e {
-            crate::generation::GenerationError::UnsupportedLanguageForProtocol { language, protocol } => {
-                ProtocolError::InvalidConfiguration(
-                    format!("Language {:?} is not supported for {:?}/{:?}", language, protocol, input.role)
-                )
-            }
+            crate::generation::GenerationError::UnsupportedLanguageForProtocol {
+                language,
+                protocol,
+            } => ProtocolError::InvalidConfiguration(format!(
+                "Language {:?} is not supported for {:?}/{:?}",
+                language, protocol, input.role
+            )),
             _ => ProtocolError::InternalError(e.to_string()),
         })?;
 
@@ -98,29 +100,32 @@ impl ProtocolHandler for McpProtocolHandler {
             }
         }
 
-        // Add OpenAPI spec if present
+        // Add OpenAPI spec if present (for MCP Server)
         if let Some(spec) = input.openapi_spec {
-            // Add OpenAPI metadata to context
+            // Add OpenAPI metadata to context variables
             context.add_variable("api_title".to_string(), json!(spec.info.title));
             context.add_variable("api_version".to_string(), json!(spec.info.version));
             if let Some(description) = &spec.info.description {
                 context.add_variable("api_description".to_string(), json!(description));
             }
-            
+
             // Add server information if available
             if !spec.servers.is_empty() {
                 context.add_variable("base_api_url".to_string(), json!(spec.servers[0].url));
             }
 
-            // Extract operations for generation
-            let operations = spec.operations.clone();
+            // Extract operations that become MCP endpoints
+            let endpoints = spec.operations.clone();
             tracing::debug!(
-                "MCP handler extracted {} operations from OpenAPI spec",
-                operations.len()
+                "MCP handler extracted {} operations from OpenAPI spec to create MCP endpoints",
+                endpoints.len()
             );
 
-            context.openapi_spec = Some(spec);
-            context.operations = operations;
+            // Store in protocol-specific context
+            context.protocol_context = Some(crate::generation::ProtocolContext::McpServer {
+                openapi_spec: spec,
+                endpoints,
+            });
         }
 
         // Add custom options as variables
@@ -157,8 +162,7 @@ impl ProtocolHandler for McpProtocolHandler {
                     "stdio" | "http" | "websocket" => {}
                     _ => {
                         return Err(ProtocolError::InvalidConfiguration(format!(
-                            "Invalid transport type: {}. Must be one of: stdio, http, websocket",
-                            transport_str
+                            "Invalid transport type: {transport_str}. Must be one of: stdio, http, websocket"
                         )));
                     }
                 }
@@ -167,24 +171,11 @@ impl ProtocolHandler for McpProtocolHandler {
 
         Ok(())
     }
-
-    fn supported_features(&self) -> Vec<String> {
-        vec![
-            "tools".to_string(),
-            "resources".to_string(),
-            "prompts".to_string(),
-            "sampling".to_string(),
-            "stdio-transport".to_string(),
-            "http-transport".to_string(),
-            "websocket-transport".to_string(),
-        ]
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_mcp_handler_protocol() {
@@ -193,22 +184,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mcp_handler_supported_features() {
-        let handler = McpProtocolHandler::new();
-        let features = handler.supported_features();
-        assert!(features.contains(&"tools".to_string()));
-        assert!(features.contains(&"stdio-transport".to_string()));
-    }
-
-    #[tokio::test]
     async fn test_mcp_server_requires_openapi() {
         let handler = McpProtocolHandler::new();
         let input = ProtocolInput {
-            openapi_path: None,
             openapi_spec: None,
             config: ProtocolConfig {
                 project_name: "test-project".to_string(),
-                output_dir: PathBuf::from("/output"),
                 version: None,
                 options: std::collections::HashMap::new(),
             },
@@ -230,11 +211,9 @@ mod tests {
     async fn test_mcp_client_no_openapi_required() {
         let handler = McpProtocolHandler::new();
         let input = ProtocolInput {
-            openapi_path: None,
             openapi_spec: None,
             config: ProtocolConfig {
                 project_name: "test-client".to_string(),
-                output_dir: PathBuf::from("/output"),
                 version: Some("1.0.0".to_string()),
                 options: std::collections::HashMap::new(),
             },
@@ -261,8 +240,7 @@ mod tests {
         options.insert("port".to_string(), json!(8080));
 
         let input = ProtocolInput {
-            openapi_path: Some(PathBuf::from("/path/to/api.yaml")),
-            openapi_spec: Some(crate::generation::OpenApiSpec {
+            openapi_spec: Some(crate::generation::OpenApiContext {
                 version: "3.0.0".to_string(),
                 info: crate::generation::ApiInfo {
                     title: "Test API".to_string(),
@@ -275,7 +253,6 @@ mod tests {
             }),
             config: ProtocolConfig {
                 project_name: "test-server".to_string(),
-                output_dir: PathBuf::from("/output"),
                 version: None,
                 options,
             },
@@ -302,7 +279,6 @@ mod tests {
 
         let config = ProtocolConfig {
             project_name: "valid-project-name".to_string(),
-            output_dir: PathBuf::from("/output"),
             version: Some("1.0.0".to_string()),
             options,
         };
@@ -315,7 +291,6 @@ mod tests {
         let handler = McpProtocolHandler::new();
         let config = ProtocolConfig {
             project_name: "".to_string(),
-            output_dir: PathBuf::from("/output"),
             version: None,
             options: std::collections::HashMap::new(),
         };
@@ -335,7 +310,6 @@ mod tests {
         let handler = McpProtocolHandler::new();
         let config = ProtocolConfig {
             project_name: "invalid name!".to_string(),
-            output_dir: PathBuf::from("/output"),
             version: None,
             options: std::collections::HashMap::new(),
         };
@@ -358,7 +332,6 @@ mod tests {
 
         let config = ProtocolConfig {
             project_name: "test-project".to_string(),
-            output_dir: PathBuf::from("/output"),
             version: None,
             options,
         };
@@ -377,11 +350,9 @@ mod tests {
     async fn test_mcp_unsupported_role() {
         let handler = McpProtocolHandler::new();
         let input = ProtocolInput {
-            openapi_path: None,
             openapi_spec: None,
             config: ProtocolConfig {
                 project_name: "test-project".to_string(),
-                output_dir: PathBuf::from("/output"),
                 version: None,
                 options: std::collections::HashMap::new(),
             },

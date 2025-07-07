@@ -4,7 +4,6 @@ pub mod embedded_repository;
 pub mod errors;
 pub mod filesystem_loader;
 pub mod loader_adapter;
-pub mod manifest;
 pub mod traits;
 pub mod types;
 

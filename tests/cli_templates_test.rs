@@ -57,10 +57,35 @@ fn test_templates_info_command() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Template: mcp/server/rust"))
-        .stdout(predicate::str::contains("Type: Server"))
         .stdout(predicate::str::contains("Protocol: mcp"))
-        .stdout(predicate::str::contains("Files:"))
-        .stdout(predicate::str::contains("manifest.yml"));
+        .stdout(predicate::str::contains("Role: Server"))
+        .stdout(predicate::str::contains("Language: rust"))
+        .stdout(predicate::str::contains("Template files:"))
+        .stdout(predicate::str::contains("- Cargo.toml.tera -> Cargo.toml"))
+        .stdout(predicate::str::contains("- LICENSE -> LICENSE"))
+        .stdout(predicate::str::contains("- README.md.tera -> README.md"))
+        .stdout(predicate::str::contains(
+            "- common.rs.tera -> src/common.rs",
+        ))
+        .stdout(predicate::str::contains(
+            "- config.rs.tera -> src/config.rs",
+        ))
+        .stdout(predicate::str::contains(
+            "- handler.rs.tera -> src/handlers/{endpoint}.rs",
+        ))
+        .stdout(predicate::str::contains(
+            "- handlers_mod.rs.tera -> src/handlers/mod.rs",
+        ))
+        .stdout(predicate::str::contains("- main.rs.tera -> src/main.rs"))
+        .stdout(predicate::str::contains(
+            "- server.rs.tera -> src/server.rs",
+        ))
+        .stdout(predicate::str::contains(
+            "- signal.rs.tera -> src/signal.rs",
+        ))
+        .stdout(predicate::str::contains(
+            "- transport.rs.tera -> src/transport.rs",
+        ));
 }
 
 #[test]

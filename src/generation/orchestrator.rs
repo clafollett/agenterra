@@ -37,17 +37,26 @@ impl GenerationOrchestrator {
     ) -> Result<GenerationResult, GenerationError> {
         // 1. Validate context
         context.validate()?;
-        
+
         tracing::debug!(
-            "Orchestrator starting generation with {} operations", 
-            context.operations.len()
+            "Orchestrator starting generation for {:?}/{:?}",
+            context.protocol,
+            context.role
         );
 
-        // 2. Discover template based on descriptor
+        // 2. Discover template based on context attributes
         let template = self
             .template_discovery
-            .discover(&context.template_descriptor)
+            .discover(context.protocol, context.role.clone(), context.language)
             .await?;
+
+        tracing::debug!(
+            protocol = %context.protocol,
+            role = %context.role,
+            language = %context.language,
+            source = %template.source,
+            "Using template for generation"
+        );
 
         // 3. Build render context from generation context
         let render_context = self.context_builder.build(&context, &template).await?;
@@ -58,8 +67,11 @@ impl GenerationOrchestrator {
             .render(&template, &render_context, &context)
             .await?;
 
-        // 5. Post-process artifacts
-        let processed_artifacts = self.post_processor.process(artifacts, &context).await?;
+        // 5. Post-process artifacts and execute post-generation commands
+        let processed_artifacts = self
+            .post_processor
+            .process(artifacts, &context, &template.manifest.post_generate_hooks)
+            .await?;
 
         // 6. Return result
         Ok(GenerationResult {

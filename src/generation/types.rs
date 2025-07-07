@@ -17,18 +17,6 @@ pub enum Language {
 }
 
 impl Language {
-    /// Get the string identifier for this language
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Language::Rust => "rust",
-            Language::Python => "python",
-            Language::TypeScript => "typescript",
-            Language::Go => "go",
-            Language::Java => "java",
-            Language::CSharp => "csharp",
-        }
-    }
-
     /// Get the display name for this language
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -68,7 +56,14 @@ impl Language {
 
 impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
+        match self {
+            Language::Rust => write!(f, "rust"),
+            Language::Python => write!(f, "python"),
+            Language::TypeScript => write!(f, "typescript"),
+            Language::Go => write!(f, "go"),
+            Language::Java => write!(f, "java"),
+            Language::CSharp => write!(f, "csharp"),
+        }
     }
 }
 
@@ -96,7 +91,6 @@ pub struct Artifact {
     pub path: PathBuf,
     pub content: String,
     pub permissions: Option<u32>,
-    pub post_commands: Vec<String>,
 }
 
 /// Result of generation
@@ -106,118 +100,109 @@ pub struct GenerationResult {
     pub metadata: crate::generation::GenerationMetadata,
 }
 
-/// OpenAPI operation representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Operation {
-    /// Unique string used to identify the operation
-    #[serde(rename = "operationId")]
-    pub id: String,
-    /// The path where this operation is defined (e.g., "/pet/findByStatus")
-    pub path: String,
-    /// The HTTP method for this operation
-    pub method: String,
-    /// A list of tags for API documentation control
-    pub tags: Option<Vec<String>>,
-    /// A short summary of what the operation does
-    pub summary: Option<String>,
-    /// A verbose explanation of the operation behavior
-    pub description: Option<String>,
-    /// Additional external documentation for this operation
-    #[serde(rename = "externalDocs")]
-    pub external_docs: Option<serde_json::Value>,
-    /// A list of parameters that are applicable for this operation
-    pub parameters: Vec<Parameter>,
-    /// The request body applicable for this operation
-    pub request_body: Option<RequestBody>,
-    /// The list of possible responses
-    pub responses: Vec<Response>,
-    /// A map of possible out-of band callbacks related to the parent operation
-    pub callbacks: Option<serde_json::Value>,
-    /// Declares this operation to be deprecated
-    pub deprecated: Option<bool>,
-    /// A declaration of which security mechanisms can be used for this operation
-    pub security: Option<Vec<serde_json::Value>>,
-    /// An alternative server array to service this operation
-    pub servers: Option<Vec<serde_json::Value>>,
-    /// Specification extensions (fields starting with `x-`)
-    #[serde(flatten)]
-    pub vendor_extensions: std::collections::HashMap<String, serde_json::Value>,
-}
+// Re-export OpenAPI types from infrastructure module
+pub use crate::infrastructure::openapi::{
+    ApiInfo, Components, OpenApiContext, Operation, Parameter, ParameterLocation, RequestBody,
+    Response, Schema, Server,
+};
 
-/// Operation parameter
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Parameter {
-    pub name: String,
-    pub location: ParameterLocation,
-    pub required: bool,
-    pub schema: Schema,
-    pub description: Option<String>,
-}
-
-/// Parameter location
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ParameterLocation {
-    Path,
-    Query,
-    Header,
-    Cookie,
-}
-
-/// Request body
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestBody {
-    pub required: bool,
-    pub content: serde_json::Value,
-    pub description: Option<String>,
-}
-
-/// Response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Response {
-    pub status_code: String,
-    pub description: String,
-    pub content: Option<serde_json::Value>,
-}
-
-/// Schema representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Schema {
-    #[serde(rename = "type")]
-    pub schema_type: Option<String>,
-    pub format: Option<String>,
-    pub items: Option<Box<Schema>>,
-    pub properties: Option<serde_json::Value>,
-    pub required: Option<Vec<String>>,
-}
-
-/// OpenAPI specification
+/// Protocol-specific context data
 #[derive(Debug, Clone)]
-pub struct OpenApiSpec {
-    pub version: String,
-    pub info: ApiInfo,
-    pub servers: Vec<Server>,
-    pub operations: Vec<Operation>,
-    pub components: Option<Components>,
+pub enum ProtocolContext {
+    /// MCP Server context with OpenAPI specification
+    McpServer {
+        /// The full OpenAPI specification
+        openapi_spec: OpenApiContext,
+        /// Operations extracted from OpenAPI that become MCP endpoints/tools
+        endpoints: Vec<Operation>,
+    },
 }
 
-/// API information
-#[derive(Debug, Clone)]
-pub struct ApiInfo {
-    pub title: String,
-    pub version: String,
-    pub description: Option<String>,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
 
-/// Server definition
-#[derive(Debug, Clone)]
-pub struct Server {
-    pub url: String,
-    pub description: Option<String>,
-}
+    #[test]
+    fn test_language_from_str() {
+        // Test exact matches
+        assert_eq!(Language::from_str("rust").unwrap(), Language::Rust);
+        assert_eq!(Language::from_str("python").unwrap(), Language::Python);
+        assert_eq!(
+            Language::from_str("typescript").unwrap(),
+            Language::TypeScript
+        );
+        assert_eq!(Language::from_str("go").unwrap(), Language::Go);
+        assert_eq!(Language::from_str("java").unwrap(), Language::Java);
+        assert_eq!(Language::from_str("csharp").unwrap(), Language::CSharp);
 
-/// Components section
-#[derive(Debug, Clone)]
-pub struct Components {
-    pub schemas: serde_json::Value,
+        // Test aliases
+        assert_eq!(Language::from_str("py").unwrap(), Language::Python);
+        assert_eq!(Language::from_str("ts").unwrap(), Language::TypeScript);
+        assert_eq!(Language::from_str("golang").unwrap(), Language::Go);
+        assert_eq!(Language::from_str("c#").unwrap(), Language::CSharp);
+        assert_eq!(Language::from_str("cs").unwrap(), Language::CSharp);
+
+        // Test case insensitivity
+        assert_eq!(Language::from_str("RUST").unwrap(), Language::Rust);
+        assert_eq!(Language::from_str("Python").unwrap(), Language::Python);
+        assert_eq!(
+            Language::from_str("TypeScript").unwrap(),
+            Language::TypeScript
+        );
+
+        // Test invalid input
+        assert!(Language::from_str("javascript").is_err());
+        assert!(Language::from_str("ruby").is_err());
+        assert!(Language::from_str("").is_err());
+    }
+
+    #[test]
+    fn test_language_display() {
+        assert_eq!(Language::Rust.to_string(), "rust");
+        assert_eq!(Language::Python.to_string(), "python");
+        assert_eq!(Language::TypeScript.to_string(), "typescript");
+        assert_eq!(Language::Go.to_string(), "go");
+        assert_eq!(Language::Java.to_string(), "java");
+        assert_eq!(Language::CSharp.to_string(), "csharp");
+    }
+
+    #[test]
+    fn test_language_display_name() {
+        assert_eq!(Language::Rust.display_name(), "Rust");
+        assert_eq!(Language::Python.display_name(), "Python");
+        assert_eq!(Language::TypeScript.display_name(), "TypeScript");
+        assert_eq!(Language::Go.display_name(), "Go");
+        assert_eq!(Language::Java.display_name(), "Java");
+        assert_eq!(Language::CSharp.display_name(), "C#");
+    }
+
+    #[test]
+    fn test_language_file_extension() {
+        assert_eq!(Language::Rust.file_extension(), "rs");
+        assert_eq!(Language::Python.file_extension(), "py");
+        assert_eq!(Language::TypeScript.file_extension(), "ts");
+        assert_eq!(Language::Go.file_extension(), "go");
+        assert_eq!(Language::Java.file_extension(), "java");
+        assert_eq!(Language::CSharp.file_extension(), "cs");
+    }
+
+    #[test]
+    fn test_language_all() {
+        let all_languages = Language::all();
+        assert_eq!(all_languages.len(), 6);
+        assert!(all_languages.contains(&Language::Rust));
+        assert!(all_languages.contains(&Language::Python));
+        assert!(all_languages.contains(&Language::TypeScript));
+        assert!(all_languages.contains(&Language::Go));
+        assert!(all_languages.contains(&Language::Java));
+        assert!(all_languages.contains(&Language::CSharp));
+    }
+
+    #[test]
+    fn test_language_display_trait() {
+        // Test Display trait implementation
+        assert_eq!(format!("{}", Language::Rust), "rust");
+        assert_eq!(format!("{}", Language::CSharp), "csharp");
+    }
 }

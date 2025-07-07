@@ -9,7 +9,6 @@ use crate::application::{
 };
 use crate::generation::Language;
 use crate::protocols::Protocol;
-use serde_json;
 use std::path::PathBuf;
 
 /// Server generation parameters from CLI
@@ -94,14 +93,13 @@ impl McpServerIntegration {
         let template_discovery: std::sync::Arc<dyn crate::generation::TemplateDiscovery> =
             if let Some(ref template_dir) = params.template_dir {
                 // Use the new TemplateLoader approach for filesystem templates
-                let loader = std::sync::Arc::new(
-                    crate::infrastructure::templates::FileSystemTemplateLoader::new()
-                );
+                let loader =
+                    std::sync::Arc::new(crate::infrastructure::FileSystemTemplateLoader::new());
                 let infrastructure_discovery = std::sync::Arc::new(
-                    crate::infrastructure::templates::TemplateLoaderDiscoveryAdapter::new(
+                    crate::infrastructure::TemplateLoaderDiscoveryAdapter::new(
                         loader,
                         template_dir.clone(),
-                    )
+                    ),
                 );
                 // Wrap with the generation adapter
                 std::sync::Arc::new(crate::generation::TemplateDiscoveryAdapter::new(
@@ -110,9 +108,7 @@ impl McpServerIntegration {
             } else {
                 // Use embedded templates with adapter
                 std::sync::Arc::new(crate::generation::TemplateDiscoveryAdapter::new(
-                    std::sync::Arc::new(
-                        crate::infrastructure::templates::EmbeddedTemplateRepository::new(),
-                    ),
+                    std::sync::Arc::new(crate::infrastructure::EmbeddedTemplateRepository::new()),
                 ))
             };
 
@@ -189,14 +185,13 @@ impl McpClientIntegration {
         let template_discovery: std::sync::Arc<dyn crate::generation::TemplateDiscovery> =
             if let Some(ref template_dir) = params.template_dir {
                 // Use the new TemplateLoader approach for filesystem templates
-                let loader = std::sync::Arc::new(
-                    crate::infrastructure::templates::FileSystemTemplateLoader::new()
-                );
+                let loader =
+                    std::sync::Arc::new(crate::infrastructure::FileSystemTemplateLoader::new());
                 let infrastructure_discovery = std::sync::Arc::new(
-                    crate::infrastructure::templates::TemplateLoaderDiscoveryAdapter::new(
+                    crate::infrastructure::TemplateLoaderDiscoveryAdapter::new(
                         loader,
                         template_dir.clone(),
-                    )
+                    ),
                 );
                 // Wrap with the generation adapter
                 std::sync::Arc::new(crate::generation::TemplateDiscoveryAdapter::new(
@@ -205,9 +200,7 @@ impl McpClientIntegration {
             } else {
                 // Use embedded templates with adapter
                 std::sync::Arc::new(crate::generation::TemplateDiscoveryAdapter::new(
-                    std::sync::Arc::new(
-                        crate::infrastructure::templates::EmbeddedTemplateRepository::new(),
-                    ),
+                    std::sync::Arc::new(crate::infrastructure::EmbeddedTemplateRepository::new()),
                 ))
             };
 

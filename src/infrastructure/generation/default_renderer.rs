@@ -7,7 +7,7 @@ use tera::{Context, Tera};
 use crate::generation::{
     Artifact, GenerationContext, GenerationError, RenderContext, TemplateRenderingStrategy,
 };
-use crate::infrastructure::templates::{Template, TemplateFileType};
+use crate::infrastructure::{Template, TemplateFileType};
 
 /// Default template renderer for clients and non-OpenAPI protocols
 pub struct DefaultTemplateRenderer;
@@ -42,7 +42,7 @@ impl TemplateRenderingStrategy for DefaultTemplateRenderer {
             let template_name = file.path.to_string_lossy().to_string();
             tera.add_raw_template(&template_name, &file.content)
                 .map_err(|e| {
-                    GenerationError::RenderError(format!("Failed to add template: {}", e))
+                    GenerationError::RenderError(format!("Failed to add template: {e}"))
                 })?;
         }
 
@@ -67,13 +67,14 @@ impl TemplateRenderingStrategy for DefaultTemplateRenderer {
 
                     let rendered = tera.render(&template_name, &tera_context).map_err(|e| {
                         GenerationError::RenderError(format!(
-                            "Failed to render template '{}': {}",
-                            template_name, e
+                            "Failed to render template '{template_name}': {e}"
                         ))
                     })?;
 
                     // Get destination from manifest
-                    let destination = template.manifest.files
+                    let destination = template
+                        .manifest
+                        .files
                         .iter()
                         .find(|f| f.source == template_name)
                         .map(|f| PathBuf::from(&f.target))
@@ -83,12 +84,13 @@ impl TemplateRenderingStrategy for DefaultTemplateRenderer {
                         path: destination,
                         content: rendered,
                         permissions: None,
-                        post_commands: vec![],
                     });
                 }
                 TemplateFileType::Static => {
                     // Copy static files as-is
-                    let destination = template.manifest.files
+                    let destination = template
+                        .manifest
+                        .files
                         .iter()
                         .find(|f| f.source == template_name)
                         .map(|f| PathBuf::from(&f.target))
@@ -98,7 +100,6 @@ impl TemplateRenderingStrategy for DefaultTemplateRenderer {
                         path: destination,
                         content: file.content.clone(),
                         permissions: None,
-                        post_commands: vec![],
                     });
                 }
                 _ => {

@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-use crate::generation::{Language, Operation};
-use crate::infrastructure::templates::TemplateDescriptor;
+use crate::generation::{Language, ProtocolContext};
 use crate::protocols::{Protocol, Role};
 
 /// The main generation context that flows through the generation workflow
@@ -14,11 +13,9 @@ pub struct GenerationContext {
     pub protocol: Protocol,
     pub role: Role,
     pub language: Language,
-    pub template_descriptor: TemplateDescriptor,
     pub variables: HashMap<String, JsonValue>,
-    pub operations: Vec<Operation>,
     pub metadata: GenerationMetadata,
-    pub openapi_spec: Option<crate::generation::OpenApiSpec>,
+    pub protocol_context: Option<ProtocolContext>,
 }
 
 /// Metadata about the generation
@@ -35,33 +32,19 @@ pub struct GenerationMetadata {
 impl GenerationContext {
     /// Create a new generation context
     pub fn new(protocol: Protocol, role: Role, language: Language) -> Self {
-        let template_descriptor = TemplateDescriptor::new(protocol, role.clone(), language);
-
         Self {
             protocol,
             role,
             language,
-            template_descriptor,
             variables: HashMap::new(),
-            operations: Vec::new(),
             metadata: GenerationMetadata::default(),
-            openapi_spec: None,
+            protocol_context: None,
         }
     }
 
     /// Add a variable to the context
     pub fn add_variable(&mut self, key: String, value: JsonValue) {
         self.variables.insert(key, value);
-    }
-
-    /// Add multiple variables at once
-    pub fn add_variables(&mut self, vars: HashMap<String, JsonValue>) {
-        self.variables.extend(vars);
-    }
-
-    /// Set the operations from OpenAPI
-    pub fn set_operations(&mut self, operations: Vec<Operation>) {
-        self.operations = operations;
     }
 
     /// Validate the context has all required data
@@ -76,8 +59,7 @@ impl GenerationContext {
         // Validate role is supported by protocol
         self.protocol.validate_role(&self.role).map_err(|e| {
             crate::generation::GenerationError::ValidationError(format!(
-                "Invalid role for protocol: {}",
-                e
+                "Invalid role for protocol: {e}"
             ))
         })?;
 
@@ -129,23 +111,6 @@ impl RenderContext {
     /// Check if a variable exists
     pub fn has_variable(&self, key: &str) -> bool {
         self.variables.contains_key(key)
-    }
-
-    /// Get a variable value
-    pub fn get_variable(&self, key: &str) -> Option<&JsonValue> {
-        self.variables.get(key)
-    }
-
-    /// Convert to Tera context
-    pub fn to_tera_context(&self) -> tera::Context {
-        let mut context = tera::Context::new();
-
-        // Add all variables to the Tera context
-        for (key, value) in &self.variables {
-            context.insert(key, value);
-        }
-
-        context
     }
 }
 

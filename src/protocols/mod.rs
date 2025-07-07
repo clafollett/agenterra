@@ -27,9 +27,9 @@ mod tests {
             capabilities.supported_roles,
             vec![Role::Server, Role::Client]
         );
-        assert_eq!(capabilities.requires_openapi, true);
-        assert_eq!(capabilities.supports_streaming, true);
-        assert_eq!(capabilities.supports_bidirectional, true);
+        assert!(capabilities.requires_openapi);
+        assert!(capabilities.supports_streaming);
+        assert!(capabilities.supports_bidirectional);
     }
 
     #[test]
@@ -37,7 +37,7 @@ mod tests {
         let capabilities = Protocol::A2a.capabilities();
         assert_eq!(capabilities.protocol, Protocol::A2a);
         assert_eq!(capabilities.supported_roles, vec![Role::Agent]);
-        assert_eq!(capabilities.requires_openapi, false);
+        assert!(!capabilities.requires_openapi);
     }
 
     #[test]
@@ -64,20 +64,24 @@ mod tests {
     #[test]
     fn test_protocol_registry_registration() {
         let registry = ProtocolRegistry::new();
-        assert!(!registry.is_implemented(Protocol::Mcp));
+        assert!(registry.get(Protocol::Mcp).is_none());
 
         let handler = MockProtocolHandler::new(Protocol::Mcp);
-        registry.register(Protocol::Mcp, Arc::new(handler));
+        registry
+            .register(Protocol::Mcp, Arc::new(handler))
+            .expect("Failed to register handler");
 
-        assert!(registry.is_implemented(Protocol::Mcp));
-        assert!(!registry.is_implemented(Protocol::A2a));
+        assert!(registry.get(Protocol::Mcp).is_some());
+        assert!(registry.get(Protocol::A2a).is_none());
     }
 
     #[test]
     fn test_protocol_registry_get_handler() {
         let registry = ProtocolRegistry::new();
         let handler = MockProtocolHandler::new(Protocol::Mcp);
-        registry.register(Protocol::Mcp, Arc::new(handler));
+        registry
+            .register(Protocol::Mcp, Arc::new(handler))
+            .expect("Failed to register handler");
 
         let retrieved = registry.get(Protocol::Mcp);
         assert!(retrieved.is_some());
@@ -96,7 +100,7 @@ mod tests {
             ProtocolRegistry::with_defaults().expect("Failed to create registry with defaults");
 
         // MCP should be pre-registered
-        assert!(registry.is_implemented(Protocol::Mcp));
+        assert!(registry.get(Protocol::Mcp).is_some());
 
         let handler = registry.get(Protocol::Mcp);
         assert!(handler.is_some());
@@ -105,19 +109,59 @@ mod tests {
         assert_eq!(handler.protocol(), Protocol::Mcp);
 
         // Other protocols should not be registered
-        assert!(!registry.is_implemented(Protocol::A2a));
-        assert!(!registry.is_implemented(Protocol::Acp));
-        assert!(!registry.is_implemented(Protocol::Anp));
+        assert!(registry.get(Protocol::A2a).is_none());
+        assert!(registry.get(Protocol::Acp).is_none());
+        assert!(registry.get(Protocol::Anp).is_none());
+    }
+
+    #[test]
+    fn test_mock_protocol_handler_validation() {
+        let handler = MockProtocolHandler::new(Protocol::Mcp);
+
+        // Test valid configuration
+        let valid_config = ProtocolConfig {
+            project_name: "test-project".to_string(),
+            version: Some("1.0.0".to_string()),
+            options: std::collections::HashMap::new(),
+        };
+
+        assert!(handler.validate_configuration(&valid_config).is_ok());
+        assert_eq!(handler.validation_call_count(), 1);
+
+        // Test invalid configuration (empty project name)
+        let invalid_config = ProtocolConfig {
+            project_name: "".to_string(),
+            version: None,
+            options: std::collections::HashMap::new(),
+        };
+
+        let result = handler.validate_configuration(&invalid_config);
+        assert!(result.is_err());
+        match result {
+            Err(ProtocolError::InvalidConfiguration(msg)) => {
+                assert_eq!(msg, "Project name cannot be empty");
+            }
+            _ => panic!("Expected invalid configuration error"),
+        }
+        assert_eq!(handler.validation_call_count(), 2);
     }
 
     // Mock implementation for testing
     struct MockProtocolHandler {
         protocol: Protocol,
+        validation_calls: std::sync::Mutex<Vec<ProtocolConfig>>,
     }
 
     impl MockProtocolHandler {
         fn new(protocol: Protocol) -> Self {
-            Self { protocol }
+            Self {
+                protocol,
+                validation_calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn validation_call_count(&self) -> usize {
+            self.validation_calls.lock().unwrap().len()
         }
     }
 
@@ -131,11 +175,30 @@ mod tests {
             &self,
             _input: ProtocolInput,
         ) -> Result<crate::generation::GenerationContext, ProtocolError> {
-            unimplemented!("Mock implementation")
+            // This is intentionally unimplemented as these tests focus on registry behavior
+            // not context preparation
+            unimplemented!("Mock implementation - not used in registry tests")
         }
 
-        fn validate_configuration(&self, _config: &ProtocolConfig) -> Result<(), ProtocolError> {
-            Ok(())
+        fn validate_configuration(&self, config: &ProtocolConfig) -> Result<(), ProtocolError> {
+            // Track that validation was called
+            self.validation_calls.lock().unwrap().push(config.clone());
+
+            // Perform basic validation to make this test meaningful
+            if config.project_name.is_empty() {
+                return Err(ProtocolError::InvalidConfiguration(
+                    "Project name cannot be empty".to_string(),
+                ));
+            }
+
+            // Validate protocol-specific requirements
+            match self.protocol {
+                Protocol::Mcp => {
+                    // MCP-specific validation could go here
+                    Ok(())
+                }
+                _ => Err(ProtocolError::NotImplemented(self.protocol)),
+            }
         }
     }
 }

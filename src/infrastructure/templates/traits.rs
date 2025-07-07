@@ -1,45 +1,47 @@
 //! Template repository traits for the infrastructure layer
 
-use crate::infrastructure::templates::{TemplateError, types::*};
+use crate::infrastructure::{TemplateError, types::*};
 use async_trait::async_trait;
-use std::path::Path;
 use std::io;
+use std::path::Path;
 
 /// Trait for accessing templates from various sources
-/// 
+///
 /// This trait is used by the CLI for template operations like list, info, and export
 pub trait TemplateRepository: Send + Sync {
-    /// List all available templates in the repository
-    fn list_templates(&self) -> Vec<TemplateMetadata>;
-    
-    /// Get metadata for a specific template by its path
-    fn get_template(&self, path: &str) -> Option<TemplateMetadata>;
-    
+    /// List all available template manifests in the repository
+    fn list_manifests(&self) -> Vec<TemplateManifest>;
+
+    /// Get manifest for a specific template by its path (lightweight - no file contents)
+    fn get_manifest(&self, path: &str) -> Result<Option<TemplateManifest>, TemplateError>;
+
     /// Check if a template exists at the given path
+    /// Used for template validation before operations
     fn has_template(&self, path: &str) -> bool;
-    
+
     /// Get all files belonging to a template as raw bytes
     fn get_template_files(&self, template_path: &str) -> Vec<RawTemplateFile>;
 }
 
-/// Trait for discovering templates based on descriptors
+/// Trait for discovering templates based on attributes
 ///
 /// This trait is used by the generation domain to find templates
 #[async_trait]
 pub trait TemplateDiscovery: Send + Sync {
-    /// Find a template by its descriptor
-    async fn discover(&self, descriptor: &TemplateDescriptor) -> Result<Template, TemplateError>;
+    /// Find a template by its attributes
+    async fn discover(
+        &self,
+        protocol: crate::protocols::Protocol,
+        role: crate::protocols::Role,
+        language: crate::generation::Language,
+    ) -> Result<Template, TemplateError>;
 }
 
 /// Trait for exporting templates from a repository to the filesystem
 pub trait TemplateExporter: Send + Sync {
     /// Export a single template to the specified directory
-    fn export_template(
-        &self,
-        template: &TemplateMetadata,
-        output_dir: &Path,
-    ) -> io::Result<()>;
-    
+    fn export_template(&self, template: &TemplateManifest, output_dir: &Path) -> io::Result<()>;
+
     /// Export all available templates to the specified directory
     fn export_all_templates(&self, output_dir: &Path) -> io::Result<usize>;
 }

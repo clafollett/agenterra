@@ -4,7 +4,7 @@ use crate::application::{
     ApplicationError, GenerateClientRequest, GenerateClientResponse, OutputService,
 };
 use crate::generation::GenerationOrchestrator;
-use crate::protocols::{ProtocolConfig, ProtocolInput, ProtocolRegistry, Role};
+use crate::protocols::{ProtocolConfig, ProtocolError, ProtocolInput, ProtocolRegistry, Role};
 use std::sync::Arc;
 
 /// Use case for generating client implementations
@@ -35,10 +35,12 @@ impl GenerateClientUseCase {
         request.validate()?;
 
         // 2. Get protocol handler
-        let handler = self
-            .protocol_registry
-            .get(request.protocol)
-            .ok_or(ApplicationError::ProtocolNotImplemented(request.protocol))?;
+        let handler =
+            self.protocol_registry
+                .get(request.protocol)
+                .ok_or(ApplicationError::ProtocolError(
+                    ProtocolError::NotImplemented(request.protocol),
+                ))?;
 
         // 3. Prepare protocol input (no OpenAPI needed for clients)
         let input = ProtocolInput {
@@ -46,11 +48,9 @@ impl GenerateClientUseCase {
             language: request.language,
             config: ProtocolConfig {
                 project_name: request.project_name.clone(),
-                output_dir: request.output_dir.clone(),
                 version: None,
                 options: request.options.clone(),
             },
-            openapi_path: None,
             openapi_spec: None,
         };
 
@@ -88,19 +88,25 @@ impl GenerateClientUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generation::Language;
-    use crate::protocols::Protocol;
+    use crate::generation::{self, Language};
+    use crate::infrastructure;
+    use crate::protocols::{self, Protocol};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_execute_success() {
         let protocol_registry = Arc::new(create_mock_registry());
-        let generation_orchestrator = Arc::new(create_mock_orchestrator());
-        let output_service = Arc::new(MockOutputService);
+        let template_discovery = Arc::new(MockTemplateDiscovery::new());
+        let output_service = Arc::new(MockOutputService::new());
+        let generation_orchestrator =
+            Arc::new(create_mock_orchestrator(template_discovery.clone()));
 
-        let use_case =
-            GenerateClientUseCase::new(protocol_registry, generation_orchestrator, output_service);
+        let use_case = GenerateClientUseCase::new(
+            protocol_registry,
+            generation_orchestrator,
+            output_service.clone(),
+        );
 
         let request = GenerateClientRequest {
             protocol: Protocol::Mcp,
@@ -113,21 +119,98 @@ mod tests {
         let response = use_case.execute(request).await.unwrap();
         assert_eq!(response.artifacts_count, 3);
         assert_eq!(response.output_path, PathBuf::from("/output"));
+
+        // Verify template discovery was called with correct descriptor
+        let discovered = template_discovery.get_discovered_templates();
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].0, Protocol::Mcp);
+        assert_eq!(discovered[0].1, Role::Client);
+        assert_eq!(discovered[0].2, Language::Rust);
+
+        // Verify output service was called
+        let ensured_dirs = output_service.get_ensured_directories();
+        assert_eq!(ensured_dirs.len(), 1);
+        assert_eq!(ensured_dirs[0], PathBuf::from("/output"));
+
+        let written = output_service.get_written_artifacts();
+        assert_eq!(written.len(), 3);
+        // Verify paths were prepended with output directory
+        for artifact in &written {
+            assert!(artifact.path.starts_with("/output"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_invalid_protocol() {
+        let protocol_registry = Arc::new(ProtocolRegistry::new()); // Empty registry
+        let template_discovery = Arc::new(MockTemplateDiscovery::new());
+        let output_service = Arc::new(MockOutputService::new());
+        let generation_orchestrator = Arc::new(create_mock_orchestrator(template_discovery));
+
+        let use_case =
+            GenerateClientUseCase::new(protocol_registry, generation_orchestrator, output_service);
+
+        let request = GenerateClientRequest {
+            protocol: Protocol::A2a, // Not registered
+            language: Language::Rust,
+            project_name: "test-client".to_string(),
+            output_dir: PathBuf::from("/output"),
+            options: HashMap::new(),
+        };
+
+        let result = use_case.execute(request).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // A2a protocol exists but doesn't have a handler registered, so we get ValidationError
+        match err {
+            ApplicationError::ValidationError(_) => {
+                // Expected: A2a doesn't support Client role
+            }
+            _ => panic!("Expected ValidationError, got: {err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_invalid_request() {
+        let protocol_registry = Arc::new(create_mock_registry());
+        let template_discovery = Arc::new(MockTemplateDiscovery::new());
+        let output_service = Arc::new(MockOutputService::new());
+        let generation_orchestrator = Arc::new(create_mock_orchestrator(template_discovery));
+
+        let use_case =
+            GenerateClientUseCase::new(protocol_registry, generation_orchestrator, output_service);
+
+        let request = GenerateClientRequest {
+            protocol: Protocol::Mcp,
+            language: Language::Rust,
+            project_name: "".to_string(), // Invalid: empty project name
+            output_dir: PathBuf::from("/output"),
+            options: HashMap::new(),
+        };
+
+        let result = use_case.execute(request).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ApplicationError::ValidationError(_) => {}
+            _ => panic!("Expected ValidationError"),
+        }
     }
 
     // Helper functions
     fn create_mock_registry() -> ProtocolRegistry {
-        let mut registry = ProtocolRegistry::new();
+        let registry = ProtocolRegistry::new();
         let _ = registry.register(
             Protocol::Mcp,
-            Arc::new(crate::protocols::handlers::mcp::McpProtocolHandler::new()),
+            Arc::new(protocols::handlers::mcp::McpProtocolHandler::new()),
         );
         registry
     }
 
-    fn create_mock_orchestrator() -> GenerationOrchestrator {
+    fn create_mock_orchestrator(
+        template_discovery: Arc<MockTemplateDiscovery>,
+    ) -> GenerationOrchestrator {
         GenerationOrchestrator::new(
-            Arc::new(MockTemplateDiscovery),
+            template_discovery,
             Arc::new(MockContextBuilder),
             Arc::new(MockTemplateRenderer),
             Arc::new(MockPostProcessor),
@@ -135,40 +218,98 @@ mod tests {
     }
 
     // Mock implementations
-    struct MockOutputService;
+    struct MockOutputService {
+        written_artifacts: std::sync::Mutex<Vec<generation::Artifact>>,
+        ensured_directories: std::sync::Mutex<Vec<PathBuf>>,
+    }
+
+    impl MockOutputService {
+        fn new() -> Self {
+            Self {
+                written_artifacts: std::sync::Mutex::new(Vec::new()),
+                ensured_directories: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn get_written_artifacts(&self) -> Vec<generation::Artifact> {
+            self.written_artifacts.lock().unwrap().clone()
+        }
+
+        fn get_ensured_directories(&self) -> Vec<PathBuf> {
+            self.ensured_directories.lock().unwrap().clone()
+        }
+    }
 
     #[async_trait::async_trait]
     impl OutputService for MockOutputService {
         async fn write_artifacts(
             &self,
-            _artifacts: &[crate::generation::Artifact],
+            artifacts: &[generation::Artifact],
         ) -> Result<(), ApplicationError> {
+            self.written_artifacts
+                .lock()
+                .unwrap()
+                .extend_from_slice(artifacts);
             Ok(())
         }
 
-        async fn ensure_directory(&self, _path: &std::path::Path) -> Result<(), ApplicationError> {
+        async fn ensure_directory(&self, path: &std::path::Path) -> Result<(), ApplicationError> {
+            self.ensured_directories
+                .lock()
+                .unwrap()
+                .push(path.to_path_buf());
             Ok(())
         }
     }
 
-    struct MockTemplateDiscovery;
+    struct MockTemplateDiscovery {
+        discovered_templates:
+            std::sync::Mutex<Vec<(protocols::Protocol, protocols::Role, generation::Language)>>,
+    }
+
+    impl MockTemplateDiscovery {
+        fn new() -> Self {
+            Self {
+                discovered_templates: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn get_discovered_templates(
+            &self,
+        ) -> Vec<(protocols::Protocol, protocols::Role, generation::Language)> {
+            self.discovered_templates.lock().unwrap().clone()
+        }
+    }
 
     #[async_trait::async_trait]
-    impl crate::generation::TemplateDiscovery for MockTemplateDiscovery {
+    impl generation::TemplateDiscovery for MockTemplateDiscovery {
         async fn discover(
             &self,
-            _descriptor: &crate::infrastructure::templates::TemplateDescriptor,
-        ) -> Result<crate::infrastructure::templates::Template, crate::generation::GenerationError>
-        {
-            Ok(crate::infrastructure::templates::Template {
-                descriptor: crate::infrastructure::templates::TemplateDescriptor::new(
-                    Protocol::Mcp,
-                    crate::protocols::Role::Client,
-                    Language::Rust,
-                ),
-                manifest: crate::infrastructure::templates::TemplateManifest::default(),
+            protocol: protocols::Protocol,
+            role: protocols::Role,
+            language: generation::Language,
+        ) -> Result<infrastructure::Template, generation::GenerationError> {
+            self.discovered_templates
+                .lock()
+                .unwrap()
+                .push((protocol, role.clone(), language));
+
+            // Return a template that matches the requested parameters
+            Ok(infrastructure::Template {
+                manifest: infrastructure::TemplateManifest {
+                    name: "test-template".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: Some("Test template".to_string()),
+                    path: "test-template".to_string(),
+                    protocol,
+                    role,
+                    language,
+                    files: vec![],
+                    variables: HashMap::new(),
+                    post_generate_hooks: vec![],
+                },
                 files: vec![],
-                source: crate::infrastructure::templates::TemplateSource::Embedded,
+                source: infrastructure::TemplateSource::Embedded,
             })
         }
     }
@@ -176,33 +317,31 @@ mod tests {
     struct MockContextBuilder;
 
     #[async_trait::async_trait]
-    impl crate::generation::ContextBuilder for MockContextBuilder {
+    impl generation::ContextBuilder for MockContextBuilder {
         async fn build(
             &self,
-            _context: &crate::generation::GenerationContext,
-            _template: &crate::infrastructure::templates::Template,
-        ) -> Result<crate::generation::RenderContext, crate::generation::GenerationError> {
-            Ok(crate::generation::RenderContext::default())
+            _context: &generation::GenerationContext,
+            _template: &infrastructure::Template,
+        ) -> Result<generation::RenderContext, generation::GenerationError> {
+            Ok(generation::RenderContext::default())
         }
     }
 
     struct MockTemplateRenderer;
 
     #[async_trait::async_trait]
-    impl crate::generation::TemplateRenderingStrategy for MockTemplateRenderer {
+    impl generation::TemplateRenderingStrategy for MockTemplateRenderer {
         async fn render(
             &self,
-            // TODO: Need to implement usage of these parameters
-            _template: &crate::infrastructure::templates::Template,
-            _context: &crate::generation::RenderContext,
-            _generation_context: &crate::generation::GenerationContext,
-        ) -> Result<Vec<crate::generation::Artifact>, crate::generation::GenerationError> {
+            _template: &infrastructure::Template,
+            _context: &generation::RenderContext,
+            _generation_context: &generation::GenerationContext,
+        ) -> Result<Vec<generation::Artifact>, generation::GenerationError> {
             Ok(vec![
-                crate::generation::Artifact {
+                generation::Artifact {
                     path: PathBuf::from("src/main.rs"),
                     content: "fn main() {}".to_string(),
                     permissions: None,
-                    post_commands: vec![],
                 };
                 3  // Client has fewer artifacts than server
             ])
@@ -212,12 +351,13 @@ mod tests {
     struct MockPostProcessor;
 
     #[async_trait::async_trait]
-    impl crate::generation::PostProcessor for MockPostProcessor {
+    impl generation::PostProcessor for MockPostProcessor {
         async fn process(
             &self,
-            artifacts: Vec<crate::generation::Artifact>,
-            _context: &crate::generation::GenerationContext,
-        ) -> Result<Vec<crate::generation::Artifact>, crate::generation::GenerationError> {
+            artifacts: Vec<generation::Artifact>,
+            _context: &generation::GenerationContext,
+            _post_generation_commands: &[String],
+        ) -> Result<Vec<generation::Artifact>, generation::GenerationError> {
             Ok(artifacts)
         }
     }

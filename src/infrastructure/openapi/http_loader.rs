@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use std::time::Duration;
 
-use crate::generation::{GenerationError, OpenApiLoader, OpenApiSpec};
+use crate::generation::{GenerationError, OpenApiContext, OpenApiLoader};
 
 /// Loads OpenAPI specifications from HTTP/HTTPS URLs
 pub struct HttpOpenApiLoader {
@@ -35,29 +35,24 @@ impl Default for HttpOpenApiLoader {
 
 #[async_trait]
 impl OpenApiLoader for HttpOpenApiLoader {
-    async fn load(&self, source: &str) -> Result<OpenApiSpec, GenerationError> {
+    async fn load(&self, source: &str) -> Result<OpenApiContext, GenerationError> {
         // Only handle HTTP(S) URLs
         if !source.starts_with("http://") && !source.starts_with("https://") {
             return Err(GenerationError::LoadError(format!(
-                "HttpOpenApiLoader only handles HTTP(S) URLs, got: {}",
-                source
+                "HttpOpenApiLoader only handles HTTP(S) URLs, got: {source}"
             )));
         }
 
         // Fetch the content
         let response = self.client.get(source).send().await.map_err(|e| {
-            GenerationError::LoadError(format!(
-                "Failed to fetch OpenAPI spec from {}: {}",
-                source, e
-            ))
+            GenerationError::LoadError(format!("Failed to fetch OpenAPI spec from {source}: {e}"))
         })?;
 
         // Check status and get content type before consuming response
         let status = response.status();
         if !status.is_success() {
             return Err(GenerationError::LoadError(format!(
-                "HTTP {} when fetching {}",
-                status, source
+                "HTTP {status} when fetching {source}"
             )));
         }
 
@@ -71,24 +66,24 @@ impl OpenApiLoader for HttpOpenApiLoader {
 
         // Get the response text
         let content = response.text().await.map_err(|e| {
-            GenerationError::LoadError(format!("Failed to read response body: {}", e))
+            GenerationError::LoadError(format!("Failed to read response body: {e}"))
         })?;
 
         // Parse based on content type or URL extension
         let spec_value = if content_type.contains("json") || source.ends_with(".json") {
-            serde_json::from_str(&content).map_err(|e| GenerationError::SerializationError(e))?
+            serde_json::from_str(&content).map_err(GenerationError::SerializationError)?
         } else if content_type.contains("yaml")
             || source.ends_with(".yaml")
             || source.ends_with(".yml")
         {
             serde_yaml::from_str(&content)
-                .map_err(|e| GenerationError::LoadError(format!("Failed to parse YAML: {}", e)))?
+                .map_err(|e| GenerationError::LoadError(format!("Failed to parse YAML: {e}")))?
         } else {
             // Try JSON first, then YAML
             serde_json::from_str(&content)
                 .or_else(|_| serde_yaml::from_str(&content))
                 .map_err(|e| {
-                    GenerationError::LoadError(format!("Failed to parse OpenAPI spec: {}", e))
+                    GenerationError::LoadError(format!("Failed to parse OpenAPI spec: {e}"))
                 })?
         };
 

@@ -9,10 +9,10 @@
 //! - Security definitions
 //! - Callbacks and vendor extensions
 
-use serde_json::{Value as JsonValue, json};
+use serde_json::Value as JsonValue;
 
 use crate::generation::{
-    ApiInfo, Components, GenerationError, OpenApiSpec, Operation, Parameter, ParameterLocation,
+    ApiInfo, Components, GenerationError, OpenApiContext, Operation, Parameter, ParameterLocation,
     RequestBody, Response, Schema, Server,
 };
 
@@ -41,24 +41,19 @@ impl HttpMethod {
             HttpMethod::Options,
         ]
     }
-
-    /// Get the lowercase string representation
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            HttpMethod::Get => "get",
-            HttpMethod::Post => "post",
-            HttpMethod::Put => "put",
-            HttpMethod::Delete => "delete",
-            HttpMethod::Patch => "patch",
-            HttpMethod::Head => "head",
-            HttpMethod::Options => "options",
-        }
-    }
 }
 
 impl std::fmt::Display for HttpMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        match self {
+            HttpMethod::Get => write!(f, "get"),
+            HttpMethod::Post => write!(f, "post"),
+            HttpMethod::Put => write!(f, "put"),
+            HttpMethod::Delete => write!(f, "delete"),
+            HttpMethod::Patch => write!(f, "patch"),
+            HttpMethod::Head => write!(f, "head"),
+            HttpMethod::Options => write!(f, "options"),
+        }
     }
 }
 
@@ -76,7 +71,7 @@ impl OpenApiParser {
     }
 
     /// Parse the complete OpenAPI specification to our domain model
-    pub async fn parse(&self) -> Result<OpenApiSpec, GenerationError> {
+    pub async fn parse(&self) -> Result<OpenApiContext, GenerationError> {
         // Extract version
         let version = self
             .json
@@ -140,7 +135,7 @@ impl OpenApiParser {
                 schemas: schemas.clone(),
             });
 
-        Ok(OpenApiSpec {
+        Ok(OpenApiContext {
             version,
             info,
             servers,
@@ -179,7 +174,7 @@ impl OpenApiParser {
                     .iter()
                     .filter_map(|method| {
                         path_item
-                            .get(method.as_str())
+                            .get(method.to_string())
                             .and_then(JsonValue::as_object)
                             .map(|method_item| (path, method, path_item, method_item))
                     })
@@ -363,26 +358,74 @@ impl OpenApiParser {
         status_code: &str,
         response: &JsonValue,
     ) -> Result<Response, GenerationError> {
+        // Check if this is a $ref
+        let resolved_response = if let Some(ref_str) = response.get("$ref").and_then(|v| v.as_str())
+        {
+            self.resolve_ref(ref_str)?
+        } else {
+            response.clone()
+        };
+
+        // Process content to resolve any $ref in schemas
+        let content = if let Some(content_value) = resolved_response.get("content") {
+            if let Some(content_obj) = content_value.as_object() {
+                let mut resolved_content = serde_json::Map::new();
+                for (media_type, media_value) in content_obj {
+                    if let Some(media_obj) = media_value.as_object() {
+                        let mut resolved_media = media_obj.clone();
+                        // Check if there's a schema to resolve
+                        if let Some(schema) = media_obj.get("schema") {
+                            let resolved_schema = self.resolve_schema_refs(schema)?;
+                            resolved_media.insert("schema".to_string(), resolved_schema);
+                        }
+                        resolved_content
+                            .insert(media_type.clone(), JsonValue::Object(resolved_media));
+                    } else {
+                        resolved_content.insert(media_type.clone(), media_value.clone());
+                    }
+                }
+                Some(JsonValue::Object(resolved_content))
+            } else {
+                Some(content_value.clone())
+            }
+        } else {
+            None
+        };
+
         Ok(Response {
             status_code: status_code.to_string(),
-            description: response
+            description: resolved_response
                 .get("description")
                 .and_then(|v| v.as_str())
                 .unwrap_or("No description")
                 .to_string(),
-            content: response.get("content").cloned(),
+            content,
         })
     }
 
     /// Parse a request body
     fn parse_request_body(&self, body: &JsonValue) -> Result<RequestBody, GenerationError> {
+        // Check if this is a $ref
+        let resolved_body = if let Some(ref_str) = body.get("$ref").and_then(|v| v.as_str()) {
+            self.resolve_ref(ref_str)?
+        } else {
+            body.clone()
+        };
+
+        // Process content to resolve any $ref in schemas
+        let content = if let Some(content_value) = resolved_body.get("content") {
+            self.resolve_schema_refs(content_value)?
+        } else {
+            JsonValue::Null
+        };
+
         Ok(RequestBody {
-            required: body
+            required: resolved_body
                 .get("required")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
-            content: body.get("content").cloned().unwrap_or_default(),
-            description: body
+            content,
+            description: resolved_body
                 .get("description")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
@@ -390,7 +433,16 @@ impl OpenApiParser {
     }
 
     /// Parse a schema object
+    #[allow(clippy::only_used_in_recursion)]
     fn parse_schema(&self, schema: &JsonValue) -> Result<Schema, GenerationError> {
+        // First check if this is a $ref
+        if let Some(ref_str) = schema.get("$ref").and_then(|v| v.as_str()) {
+            // Resolve the reference
+            let resolved_schema = self.resolve_ref(ref_str)?;
+            // Parse the resolved schema
+            return self.parse_schema(&resolved_schema);
+        }
+
         let schema_type = schema
             .get("type")
             .and_then(|v| v.as_str())
@@ -406,7 +458,21 @@ impl OpenApiParser {
             None
         };
 
-        let properties = schema.get("properties").cloned();
+        // Parse properties recursively to resolve any nested schemas
+        let properties = if let Some(props) = schema.get("properties") {
+            if let Some(props_obj) = props.as_object() {
+                let mut parsed_props = std::collections::HashMap::new();
+                for (key, value) in props_obj {
+                    let parsed_schema = self.parse_schema(value)?;
+                    parsed_props.insert(key.clone(), parsed_schema);
+                }
+                Some(parsed_props)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let required = schema
             .get("required")
             .and_then(|v| v.as_array())
@@ -417,108 +483,222 @@ impl OpenApiParser {
                     .collect()
             });
 
+        // Extract all additional schema fields
+        let description = schema
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let title = schema
+            .get("title")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let default = schema.get("default").cloned();
+        let example = schema.get("example").cloned();
+        let enum_values = schema.get("enum").and_then(|v| v.as_array()).cloned();
+        let minimum = schema.get("minimum").and_then(|v| v.as_f64());
+        let maximum = schema.get("maximum").and_then(|v| v.as_f64());
+        let min_length = schema
+            .get("minLength")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+        let max_length = schema
+            .get("maxLength")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+        let pattern = schema
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let min_items = schema
+            .get("minItems")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+        let max_items = schema
+            .get("maxItems")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+        let unique_items = schema.get("uniqueItems").and_then(|v| v.as_bool());
+        let read_only = schema.get("readOnly").and_then(|v| v.as_bool());
+        let write_only = schema.get("writeOnly").and_then(|v| v.as_bool());
+        let nullable = schema.get("nullable").and_then(|v| v.as_bool());
+        let deprecated = schema.get("deprecated").and_then(|v| v.as_bool());
+        let xml = schema.get("xml").cloned();
+
+        // Parse additionalProperties
+        let additional_properties = if let Some(add_props) = schema.get("additionalProperties") {
+            if let Some(bool_val) = add_props.as_bool() {
+                Some(Box::new(
+                    crate::infrastructure::openapi::AdditionalProperties::Boolean(bool_val),
+                ))
+            } else {
+                let schema = self.parse_schema(add_props)?;
+                Some(Box::new(
+                    crate::infrastructure::openapi::AdditionalProperties::Schema(Box::new(schema)),
+                ))
+            }
+        } else {
+            None
+        };
+
+        // Parse composition schemas
+        let all_of = if let Some(all_of_arr) = schema.get("allOf").and_then(|v| v.as_array()) {
+            let mut schemas = Vec::new();
+            for schema_val in all_of_arr {
+                schemas.push(self.parse_schema(schema_val)?);
+            }
+            Some(schemas)
+        } else {
+            None
+        };
+
+        let one_of = if let Some(one_of_arr) = schema.get("oneOf").and_then(|v| v.as_array()) {
+            let mut schemas = Vec::new();
+            for schema_val in one_of_arr {
+                schemas.push(self.parse_schema(schema_val)?);
+            }
+            Some(schemas)
+        } else {
+            None
+        };
+
+        let any_of = if let Some(any_of_arr) = schema.get("anyOf").and_then(|v| v.as_array()) {
+            let mut schemas = Vec::new();
+            for schema_val in any_of_arr {
+                schemas.push(self.parse_schema(schema_val)?);
+            }
+            Some(schemas)
+        } else {
+            None
+        };
+
+        let not = if let Some(not_schema) = schema.get("not") {
+            Some(Box::new(self.parse_schema(not_schema)?))
+        } else {
+            None
+        };
+
+        // Parse discriminator
+        let discriminator =
+            if let Some(disc) = schema.get("discriminator").and_then(|v| v.as_object()) {
+                let property_name = disc
+                    .get("propertyName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| {
+                        GenerationError::ValidationError(
+                            "Discriminator missing propertyName".to_string(),
+                        )
+                    })?;
+                let mapping = disc.get("mapping").and_then(|v| v.as_object()).map(|m| {
+                    m.iter()
+                        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                        .collect()
+                });
+                Some(crate::infrastructure::openapi::Discriminator {
+                    property_name,
+                    mapping,
+                })
+            } else {
+                None
+            };
+
+        // Parse external docs
+        let external_docs =
+            if let Some(ext_docs) = schema.get("externalDocs").and_then(|v| v.as_object()) {
+                let url = ext_docs
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| {
+                        GenerationError::ValidationError("ExternalDocs missing url".to_string())
+                    })?;
+                let description = ext_docs
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                Some(crate::infrastructure::openapi::ExternalDocs { url, description })
+            } else {
+                None
+            };
+
         Ok(Schema {
             schema_type,
             format,
             items,
             properties,
             required,
+            description,
+            title,
+            default,
+            example,
+            enum_values,
+            minimum,
+            maximum,
+            min_length,
+            max_length,
+            pattern,
+            min_items,
+            max_items,
+            unique_items,
+            additional_properties,
+            all_of,
+            one_of,
+            any_of,
+            not,
+            discriminator,
+            read_only,
+            write_only,
+            xml,
+            external_docs,
+            deprecated,
+            nullable,
         })
     }
 
-    /// Extract properties from a schema, resolving $ref if necessary
-    /// This is a complete port from core::openapi::OpenApiContext::extract_schema_properties
-    fn extract_schema_properties(
-        &self,
-        schema: &JsonValue,
-    ) -> Result<(JsonValue, Option<String>), GenerationError> {
-        // Handle null or non-object schemas
-        let schema_obj = match schema.as_object() {
-            Some(obj) => obj,
-            None => return Ok((JsonValue::Null, None)),
-        };
-
-        // Direct inline object schema with properties
-        if schema_obj.get("properties").is_some()
-            || schema_obj.get("additionalProperties").is_some()
-        {
-            let props = schema_obj
-                .get("properties")
-                .cloned()
-                .unwrap_or(JsonValue::Null);
-            return Ok((props, None));
-        }
-
-        // Primitive types: return no properties
-        if let Some(typ) = schema_obj.get("type").and_then(JsonValue::as_str) {
-            if typ != "object" && typ != "array" {
-                return Ok((JsonValue::Null, None));
-            }
-        }
-
-        // Handle $ref
-        let ref_str = match schema_obj.get("$ref").and_then(JsonValue::as_str) {
-            Some(r) => r,
-            None => {
-                // Check for array items ref
-                if let Some(items) = schema_obj.get("items").and_then(JsonValue::as_object) {
-                    if let Some(r) = items.get("$ref").and_then(JsonValue::as_str) {
-                        r
-                    } else {
-                        return Ok((JsonValue::Null, None));
-                    }
-                } else {
-                    return Ok((JsonValue::Null, None));
+    /// Recursively resolve all $ref in a JSON value
+    fn resolve_schema_refs(&self, value: &JsonValue) -> Result<JsonValue, GenerationError> {
+        match value {
+            JsonValue::Object(obj) => {
+                // Check if this object has a $ref
+                if let Some(ref_str) = obj.get("$ref").and_then(|v| v.as_str()) {
+                    // Resolve the reference and recursively resolve any nested refs
+                    let resolved = self.resolve_ref(ref_str)?;
+                    return self.resolve_schema_refs(&resolved);
                 }
+
+                // Otherwise, recursively process all fields
+                let mut resolved_obj = serde_json::Map::new();
+                for (key, val) in obj {
+                    resolved_obj.insert(key.clone(), self.resolve_schema_refs(val)?);
+                }
+                Ok(JsonValue::Object(resolved_obj))
             }
-        };
-
-        // Resolve the reference
-        let key = "#/components/schemas/";
-        if !ref_str.starts_with(key) {
-            return Err(GenerationError::ValidationError(format!(
-                "Unexpected schema ref '{}'",
-                ref_str
-            )));
+            JsonValue::Array(arr) => {
+                // Recursively process array elements
+                let resolved_arr: Result<Vec<_>, _> = arr
+                    .iter()
+                    .map(|elem| self.resolve_schema_refs(elem))
+                    .collect();
+                Ok(JsonValue::Array(resolved_arr?))
+            }
+            // Primitive values are returned as-is
+            _ => Ok(value.clone()),
         }
-
-        let schema_name = &ref_str[key.len()..];
-        let schemas = self
-            .json
-            .get("components")
-            .and_then(JsonValue::as_object)
-            .and_then(|m| m.get("schemas"))
-            .and_then(JsonValue::as_object)
-            .ok_or_else(|| {
-                GenerationError::ValidationError("No components.schemas section".to_string())
-            })?;
-
-        let def = schemas.get(schema_name).ok_or_else(|| {
-            GenerationError::ValidationError(format!("Schema '{}' not found", schema_name))
-        })?;
-
-        let props = def.get("properties").cloned().unwrap_or(JsonValue::Null);
-        Ok((props, Some(schema_name.to_string())))
     }
 
-    /// Extract row properties from properties JSON
-    /// This is a complete port from core::openapi::OpenApiContext::extract_row_properties
-    pub fn extract_row_properties(properties_json: &JsonValue) -> Vec<JsonValue> {
-        if let Some(data) = properties_json.get("data").and_then(JsonValue::as_object) {
-            if let Some(props) = data.get("properties").and_then(JsonValue::as_object) {
-                return props
-                    .iter()
-                    .map(|(k, v)| json!({"name": k, "schema": v}))
-                    .collect();
-            }
+    /// Resolve a $ref reference
+    fn resolve_ref(&self, ref_str: &str) -> Result<JsonValue, GenerationError> {
+        // Handle JSON pointer references (e.g., "#/components/schemas/Pet")
+        if let Some(pointer) = ref_str.strip_prefix('#') {
+            self.json.pointer(pointer).cloned().ok_or_else(|| {
+                GenerationError::ValidationError(format!("Unable to resolve reference: {ref_str}"))
+            })
+        } else {
+            // External references not supported yet
+            Err(GenerationError::ValidationError(format!(
+                "External references not supported: {ref_str}"
+            )))
         }
-        if let Some(props) = properties_json.as_object() {
-            return props
-                .iter()
-                .map(|(k, v)| json!({"name": k, "schema": v}))
-                .collect();
-        }
-        Vec::new()
     }
 
     /// Extracts vendor extensions (x-* prefixed properties) from an OpenAPI operation
@@ -537,6 +717,131 @@ impl OpenApiParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_ref_resolution() {
+        // Create a simple spec with $ref
+        let spec_json = json!({
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "paths": {
+                "/pets/{petId}": {
+                    "get": {
+                        "operationId": "getPet",
+                        "parameters": [{
+                            "name": "petId",
+                            "in": "path",
+                            "required": true,
+                            "schema": { "$ref": "#/components/schemas/PetId" }
+                        }],
+                        "requestBody": {
+                            "$ref": "#/components/requestBodies/PetRequest"
+                        },
+                        "responses": {
+                            "200": {
+                                "$ref": "#/components/responses/PetResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "PetId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "Pet": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "$ref": "#/components/schemas/PetId" },
+                            "name": { "type": "string" }
+                        }
+                    }
+                },
+                "requestBodies": {
+                    "PetRequest": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/Pet" }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "PetResponse": {
+                        "description": "A pet",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/Pet" }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let parser = OpenApiParser::new(spec_json);
+        let spec = parser.parse().await.unwrap();
+
+        // Check that we have one operation
+        assert_eq!(spec.operations.len(), 1);
+        let operation = &spec.operations[0];
+
+        // Check parameter schema was resolved
+        assert_eq!(operation.parameters.len(), 1);
+        let param = &operation.parameters[0];
+        assert_eq!(param.schema.schema_type, Some("integer".to_string()));
+        assert_eq!(param.schema.format, Some("int64".to_string()));
+
+        // Check request body was resolved
+        assert!(operation.request_body.is_some());
+        let request_body = operation.request_body.as_ref().unwrap();
+        assert!(request_body.required);
+
+        // Check response was resolved
+        assert_eq!(operation.responses.len(), 1);
+        let response = &operation.responses[0];
+        assert_eq!(response.description, "A pet");
+        assert!(response.content.is_some());
+
+        // Check that nested $ref in Pet schema was resolved
+        let response_content = response.content.as_ref().unwrap();
+        let json_content = response_content.get("application/json").unwrap();
+        let schema_value = json_content.get("schema").unwrap();
+
+        // Debug print to see what we have
+        println!(
+            "Response schema: {}",
+            serde_json::to_string_pretty(schema_value).unwrap()
+        );
+
+        // The schema should be fully resolved with no $ref
+        assert!(
+            schema_value.get("$ref").is_none(),
+            "Expected $ref to be resolved"
+        );
+
+        // Check that we have the Pet object properties
+        assert_eq!(schema_value.get("type"), Some(&json!("object")));
+
+        let props = schema_value.get("properties").expect("Expected properties");
+        assert!(props.is_object(), "Properties should be an object");
+
+        // Check the id property (which was a $ref to PetId)
+        let id_prop = props.get("id").expect("Expected id property");
+        assert_eq!(id_prop.get("type"), Some(&json!("integer")));
+        assert_eq!(id_prop.get("format"), Some(&json!("int64")));
+
+        // Check the name property
+        let name_prop = props.get("name").expect("Expected name property");
+        assert_eq!(name_prop.get("type"), Some(&json!("string")));
+    }
 
     #[tokio::test]
     async fn test_petstore_parsing_parity() {
@@ -576,7 +881,7 @@ mod tests {
             get_pet_by_id.parameters[0].location,
             ParameterLocation::Path
         );
-        assert_eq!(get_pet_by_id.parameters[0].required, true);
+        assert!(get_pet_by_id.parameters[0].required);
 
         // Check responses
         assert!(!get_pet_by_id.responses.is_empty());
@@ -601,7 +906,7 @@ mod tests {
 
         assert!(update_pet.request_body.is_some());
         let request_body = update_pet.request_body.as_ref().unwrap();
-        assert_eq!(request_body.required, true);
+        assert!(request_body.required);
         assert!(request_body.description.is_some());
 
         // Check an operation with multiple parameters (updatePetWithForm)

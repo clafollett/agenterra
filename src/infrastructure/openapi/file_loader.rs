@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::fs;
 
 use super::parser::OpenApiParser;
-use crate::generation::{GenerationError, OpenApiLoader, OpenApiSpec};
+use crate::generation::{GenerationError, OpenApiContext, OpenApiLoader};
 
 /// Loads OpenAPI specifications from local files
 pub struct FileOpenApiLoader;
@@ -19,24 +19,24 @@ impl FileOpenApiLoader {
 
 #[async_trait]
 impl OpenApiLoader for FileOpenApiLoader {
-    async fn load(&self, source: &str) -> Result<OpenApiSpec, GenerationError> {
+    async fn load(&self, source: &str) -> Result<OpenApiContext, GenerationError> {
         // Read file content
         let content = fs::read_to_string(source)
             .await
-            .map_err(|e| GenerationError::IoError(e))?;
+            .map_err(GenerationError::IoError)?;
 
         // Parse content as JSON or YAML
         let spec_value = if source.ends_with(".json") {
-            serde_json::from_str(&content).map_err(|e| GenerationError::SerializationError(e))?
+            serde_json::from_str(&content).map_err(GenerationError::SerializationError)?
         } else if source.ends_with(".yaml") || source.ends_with(".yml") {
             serde_yaml::from_str(&content)
-                .map_err(|e| GenerationError::LoadError(format!("Failed to parse YAML: {}", e)))?
+                .map_err(|e| GenerationError::LoadError(format!("Failed to parse YAML: {e}")))?
         } else {
             // Try JSON first, then YAML
             serde_json::from_str(&content)
                 .or_else(|_| serde_yaml::from_str(&content))
                 .map_err(|e| {
-                    GenerationError::LoadError(format!("Failed to parse OpenAPI spec: {}", e))
+                    GenerationError::LoadError(format!("Failed to parse OpenAPI spec: {e}"))
                 })?
         };
 

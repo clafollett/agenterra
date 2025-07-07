@@ -8,7 +8,7 @@ use crate::generation::{
     Artifact, GenerationContext, GenerationError, RenderContext, TemplateRenderingStrategy,
     utils::to_snake_case,
 };
-use crate::infrastructure::templates::{Template, TemplateFileType};
+use crate::infrastructure::{Template, TemplateFileType};
 use crate::protocols::{Protocol, Role};
 
 /// MCP Server-specific template renderer
@@ -19,14 +19,14 @@ impl McpServerTemplateRenderer {
     pub fn new() -> Self {
         Self
     }
-    
+
     /// Generate schema JSON files for each endpoint
     fn generate_schema_artifacts(
         &self,
         context: &RenderContext,
     ) -> Result<Vec<Artifact>, GenerationError> {
         let mut artifacts = Vec::new();
-        
+
         // Get endpoints from context
         let endpoints = context
             .variables
@@ -38,7 +38,7 @@ impl McpServerTemplateRenderer {
                     "No endpoints found in context for schema generation".to_string(),
                 )
             })?;
-        
+
         // Generate one schema file per endpoint
         for endpoint in endpoints {
             let endpoint_name = endpoint
@@ -51,26 +51,25 @@ impl McpServerTemplateRenderer {
                         "Endpoint object missing 'endpoint' field".to_string(),
                     )
                 })?;
-            
+
             // Use snake_case for the filename to match MCP conventions
             let schema_filename = to_snake_case(endpoint_name);
-            let schema_path = PathBuf::from(format!("schemas/{}.json", schema_filename));
-            
+            let schema_path = PathBuf::from(format!("schemas/{schema_filename}.json"));
+
             // Serialize the endpoint object as the schema
-            let schema_json = serde_json::to_string_pretty(endpoint)
-                .map_err(|e| GenerationError::RenderError(format!(
-                    "Failed to serialize schema for endpoint '{}': {}",
-                    endpoint_name, e
-                )))?;
-            
+            let schema_json = serde_json::to_string_pretty(endpoint).map_err(|e| {
+                GenerationError::RenderError(format!(
+                    "Failed to serialize schema for endpoint '{endpoint_name}': {e}"
+                ))
+            })?;
+
             artifacts.push(Artifact {
                 path: schema_path,
                 content: schema_json,
                 permissions: None,
-                post_commands: vec![],
             });
         }
-        
+
         Ok(artifacts)
     }
 
@@ -99,7 +98,7 @@ impl McpServerTemplateRenderer {
 
         // Debug: log template name
         tracing::debug!("Processing operation template: {}", template_name);
-        
+
         // Generate one file per endpoint
         for endpoint in endpoints {
             let mut tera_context = TeraContext::new();
@@ -139,13 +138,17 @@ impl McpServerTemplateRenderer {
                         .map(|a| a.len())
                         .unwrap_or(0)
                 );
-                
+
                 // Additional debug: check specific fields that template expects
                 tracing::debug!(
                     "Endpoint '{}' has response_type: {}, response_is_array: {}",
                     endpoint_name,
-                    obj.get("response_type").and_then(|v| v.as_str()).unwrap_or("missing"),
-                    obj.get("response_is_array").and_then(|v| v.as_bool()).unwrap_or(false)
+                    obj.get("response_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("missing"),
+                    obj.get("response_is_array")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
                 );
             }
 
@@ -158,13 +161,12 @@ impl McpServerTemplateRenderer {
             let rendered = tera.render(template_name, &tera_context)
                 .map_err(|e| {
                     // Extract the actual error message and source
-                    let error_msg = format!("{:?}", e);
+                    let error_msg = format!("{e:?}");
                     tracing::error!(
                         "Template render error for '{template_name}' endpoint '{endpoint_name}': Full Tera error: {error_msg}", 
                     );
                     GenerationError::RenderError(format!(
-                        "Failed to render template '{template_name}' for endpoint '{endpoint_name}': {}",
-                        e
+                        "Failed to render template '{template_name}' for endpoint '{endpoint_name}': {e}"
                     ))
                 })?;
 
@@ -172,7 +174,6 @@ impl McpServerTemplateRenderer {
                 path: PathBuf::from(output_path),
                 content: rendered,
                 permissions: None,
-                post_commands: vec![],
             });
         }
 
@@ -247,8 +248,7 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
                             );
                         } else {
                             return Err(GenerationError::InvalidConfiguration(format!(
-                                "Unsupported for_each value: {}",
-                                collection_key
+                                "Unsupported for_each value: {collection_key}"
                             )));
                         }
                     } else {
@@ -271,7 +271,6 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
                             path: PathBuf::from(&manifest_file.target),
                             content: rendered,
                             permissions: None,
-                            post_commands: vec![],
                         });
                     }
                 }
@@ -281,7 +280,6 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
                         path: PathBuf::from(&manifest_file.target),
                         content: template_file.content.clone(),
                         permissions: None,
-                        post_commands: vec![],
                     });
                 }
                 _ => {
@@ -289,7 +287,7 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
                 }
             }
         }
-        
+
         // Generate schema files for MCP servers
         artifacts.extend(self.generate_schema_artifacts(context)?);
 

@@ -8,10 +8,7 @@ use crate::protocols::{Protocol, Role};
 use super::{DefaultTemplateRenderer, McpServerTemplateRenderer};
 
 /// Select the appropriate template rendering strategy based on protocol and role
-pub fn select_renderer(
-    protocol: Protocol,
-    role: Role,
-) -> Arc<dyn TemplateRenderingStrategy> {
+pub fn select_renderer(protocol: Protocol, role: Role) -> Arc<dyn TemplateRenderingStrategy> {
     match (protocol, role) {
         (Protocol::Mcp, Role::Server) => {
             // MCP servers need special handling for OpenAPI operations

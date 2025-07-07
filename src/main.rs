@@ -10,7 +10,7 @@ mod protocols;
 
 use anyhow::Context;
 use clap::Parser;
-use infrastructure::templates::{EmbeddedTemplateExporter, EmbeddedTemplateRepository};
+use infrastructure::{EmbeddedTemplateExporter, EmbeddedTemplateRepository};
 use integration::{ClientParams, McpClientIntegration, McpServerIntegration, ServerParams};
 use reqwest::Url;
 use std::path::PathBuf;
@@ -180,22 +180,34 @@ async fn main() -> anyhow::Result<()> {
 
     match &cli.command {
         Commands::Scaffold { target } => match target {
-            TargetCommands::Mcp { role } => handle_mcp_command(role).await?,
             TargetCommands::A2a { .. } => {
+                // TODO: Implement A2A (Agent to Agent) protocol handler
+                // Protocol by: Google
+                // Architecture: Centralized peer-to-peer
+                // See: https://github.com/agenterra/agenterra/issues/XXX
                 anyhow::bail!(
                     "A2A protocol is not yet implemented. Currently only MCP is supported."
                 );
             }
             TargetCommands::Acp { .. } => {
+                // TODO: Implement ACP (Agent Communication Protocol) protocol handler
+                // Protocol by: IBM
+                // Architecture: Brokered client-server
+                // See: https://github.com/agenterra/agenterra/issues/XXX
                 anyhow::bail!(
                     "ACP protocol is not yet implemented. Currently only MCP is supported."
                 );
             }
             TargetCommands::Anp { .. } => {
+                // TODO: Implement ANP (Agent Network Protocol) protocol handler
+                // Protocol by: Cisco
+                // Architecture: Decentralized peer-to-peer
+                // See: https://github.com/agenterra/agenterra/issues/XXX
                 anyhow::bail!(
                     "ANP protocol is not yet implemented. Currently only MCP is supported."
                 );
             }
+            TargetCommands::Mcp { role } => handle_mcp_command(role).await?,
         },
         Commands::Templates { action } => handle_template_command(action).await?,
     }
@@ -204,7 +216,6 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn handle_mcp_command(role: &McpCommands) -> anyhow::Result<()> {
-
     match role {
         McpCommands::Server {
             project_name,
@@ -270,16 +281,14 @@ async fn handle_template_command(action: &TemplateCommands) -> anyhow::Result<()
             let use_case = application::ExportTemplatesUseCase::new(exporter, repository);
 
             match template {
-                Some(template_path) => {
-                    match use_case.execute_single(template_path, path) {
-                        Ok(()) => println!("Exported template {} to {}", template_path, path.display()),
-                        Err(application::ApplicationError::TemplateNotFound(_)) => {
-                            eprintln!("Template not found: {template_path}");
-                            std::process::exit(1);
-                        }
-                        Err(e) => return Err(e.into()),
+                Some(template_path) => match use_case.execute_single(template_path, path) {
+                    Ok(()) => println!("Exported template {} to {}", template_path, path.display()),
+                    Err(application::ApplicationError::TemplateNotFound(_)) => {
+                        eprintln!("Template not found: {template_path}");
+                        std::process::exit(1);
                     }
-                }
+                    Err(e) => return Err(e.into()),
+                },
                 None => {
                     let count = use_case.execute_all(path)?;
                     println!("Exported {} templates to {}", count, path.display());
@@ -290,9 +299,9 @@ async fn handle_template_command(action: &TemplateCommands) -> anyhow::Result<()
             let repository = EmbeddedTemplateRepository::new();
             let discovery = EmbeddedTemplateRepository::new();
             let use_case = application::TemplateInfoUseCase::new(repository, discovery);
-            
+
             match use_case.execute(template).await {
-                Ok(output) => println!("{}", output),
+                Ok(output) => println!("{output}"),
                 Err(application::ApplicationError::TemplateNotFound(_)) => {
                     eprintln!("Template not found: {template}");
                     eprintln!("\nRun 'agenterra templates list' to see available templates.");

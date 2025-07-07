@@ -8,6 +8,7 @@ pub enum ProtocolError {
         role: crate::protocols::Role,
     },
 
+    /// Used for A2A, ACP, ANP protocols (future implementation)
     #[error("Protocol {0:?} not implemented")]
     NotImplemented(crate::protocols::Protocol),
 

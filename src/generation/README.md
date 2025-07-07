@@ -18,7 +18,7 @@ The generation module follows a clear workflow:
 - `TemplateDescriptor`: Identifies templates by protocol/role/language
 - `Template`: Complete template with manifest and files
 - `Artifact`: Generated file with content and metadata
-- `OpenApiSpec`: Domain representation of OpenAPI specifications
+- `OpenApiContext`: Domain representation of OpenAPI specifications
 
 ### Context (`context.rs`)
 - `GenerationContext`: The core aggregate containing all generation data

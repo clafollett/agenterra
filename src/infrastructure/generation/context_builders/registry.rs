@@ -32,27 +32,20 @@ impl ContextBuilderRegistry {
         Self { builders }
     }
 
-    /// Register a custom builder for a language
-    pub fn register(&mut self, language: Language, builder: Arc<dyn ContextBuilder>) {
-        self.builders.insert(language, builder);
-    }
-
     /// Get a builder for a specific language
     pub fn get(&self, language: Language) -> Result<Arc<dyn ContextBuilder>, GenerationError> {
-        self.builders
-            .get(&language)
-            .cloned()
-            .ok_or_else(|| GenerationError::UnsupportedLanguage(language.to_string()))
-    }
-
-    /// Check if a language has a registered builder
-    pub fn has_builder(&self, language: Language) -> bool {
-        self.builders.contains_key(&language)
-    }
-
-    /// Get all supported languages
-    pub fn supported_languages(&self) -> Vec<Language> {
-        self.builders.keys().copied().collect()
+        self.builders.get(&language).cloned().ok_or_else(|| {
+            let available = Language::all()
+                .iter()
+                .map(|l| l.display_name())
+                .collect::<Vec<_>>()
+                .join(", ");
+            GenerationError::UnsupportedLanguage(format!(
+                "{} (available: {})",
+                language.display_name(),
+                available
+            ))
+        })
     }
 }
 
@@ -84,12 +77,11 @@ impl ContextBuilder for CompositeContextBuilder {
     async fn build(
         &self,
         context: &crate::generation::GenerationContext,
-        template: &crate::infrastructure::templates::Template,
+        template: &crate::infrastructure::Template,
     ) -> Result<crate::generation::RenderContext, GenerationError> {
         tracing::debug!(
-            "CompositeContextBuilder selecting builder for language: {:?}, operations: {}",
-            context.language,
-            context.operations.len()
+            "CompositeContextBuilder selecting builder for language: {:?}",
+            context.language
         );
         let builder = self.registry.get(context.language)?;
         builder.build(context, template).await
@@ -100,23 +92,18 @@ impl ContextBuilder for CompositeContextBuilder {
 mod tests {
     use super::*;
     use crate::generation::GenerationContext;
-    use crate::infrastructure::templates::{
-        Template, TemplateDescriptor, TemplateManifest, TemplateSource,
-    };
+    use crate::infrastructure::{Template, TemplateManifest, TemplateSource};
     use crate::protocols::{Protocol, Role};
+    use std::collections::HashMap;
 
     #[test]
     fn test_registry_default_builders() {
         let registry = ContextBuilderRegistry::new();
 
-        assert!(registry.has_builder(Language::Rust));
-        assert!(registry.has_builder(Language::Python));
-        assert!(registry.has_builder(Language::TypeScript));
-
-        let languages = registry.supported_languages();
-        assert!(languages.contains(&Language::Rust));
-        assert!(languages.contains(&Language::Python));
-        assert!(languages.contains(&Language::TypeScript));
+        // Test that default builders are registered
+        assert!(registry.get(Language::Rust).is_ok());
+        assert!(registry.get(Language::Python).is_ok());
+        assert!(registry.get(Language::TypeScript).is_ok());
     }
 
     #[tokio::test]
@@ -127,9 +114,21 @@ mod tests {
         let mut context = GenerationContext::new(Protocol::Mcp, Role::Server, Language::Rust);
         context.metadata.project_name = "test".to_string();
 
+        let manifest = TemplateManifest {
+            name: "test-template".to_string(),
+            version: "1.0.0".to_string(),
+            description: None,
+            path: "mcp/server/rust".to_string(),
+            protocol: Protocol::Mcp,
+            role: Role::Server,
+            language: Language::Rust,
+            files: vec![],
+            variables: HashMap::new(),
+            post_generate_hooks: vec![],
+        };
+
         let template = Template {
-            descriptor: TemplateDescriptor::new(Protocol::Mcp, Role::Server, Language::Rust),
-            manifest: TemplateManifest::default(),
+            manifest,
             files: vec![],
             source: TemplateSource::Embedded,
         };

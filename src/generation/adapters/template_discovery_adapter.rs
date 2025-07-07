@@ -3,18 +3,23 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 
-use crate::generation::GenerationError;
-use crate::infrastructure::templates::{
-    Template, TemplateDescriptor, TemplateDiscovery as InfrastructureTemplateDiscovery,
-    TemplateError,
+use crate::generation::{GenerationError, Language};
+use crate::infrastructure::{
+    Template, TemplateDiscovery as InfrastructureTemplateDiscovery, TemplateError,
 };
+use crate::protocols::{Protocol, Role};
 
 /// Generation-specific trait for template discovery
 /// This trait uses GenerationError which is appropriate for the generation domain
 #[async_trait]
 pub trait TemplateDiscovery: Send + Sync {
-    /// Find a template by its descriptor
-    async fn discover(&self, descriptor: &TemplateDescriptor) -> Result<Template, GenerationError>;
+    /// Find a template by its attributes
+    async fn discover(
+        &self,
+        protocol: Protocol,
+        role: Role,
+        language: Language,
+    ) -> Result<Template, GenerationError>;
 }
 
 /// Adapter that converts infrastructure TemplateError to GenerationError
@@ -31,24 +36,26 @@ impl<T: InfrastructureTemplateDiscovery> TemplateDiscoveryAdapter<T> {
 
 #[async_trait]
 impl<T: InfrastructureTemplateDiscovery> TemplateDiscovery for TemplateDiscoveryAdapter<T> {
-    async fn discover(&self, descriptor: &TemplateDescriptor) -> Result<Template, GenerationError> {
+    async fn discover(
+        &self,
+        protocol: Protocol,
+        role: Role,
+        language: Language,
+    ) -> Result<Template, GenerationError> {
         self.inner
-            .discover(descriptor)
+            .discover(protocol, role, language)
             .await
             .map_err(|e| match e {
                 TemplateError::TemplateNotFound(path) => {
-                    GenerationError::DiscoveryError(format!("Template not found: {}", path))
+                    GenerationError::DiscoveryError(format!("Template not found: {path}"))
                 }
                 TemplateError::InvalidManifest(msg) => {
-                    GenerationError::LoadError(format!("Invalid manifest: {}", msg))
+                    GenerationError::LoadError(format!("Invalid manifest: {msg}"))
                 }
-                TemplateError::IoError(e) => {
-                    GenerationError::LoadError(format!("IO error: {}", e))
-                }
+                TemplateError::IoError(e) => GenerationError::LoadError(format!("IO error: {e}")),
                 TemplateError::YamlError(e) => {
-                    GenerationError::LoadError(format!("YAML error: {}", e))
+                    GenerationError::LoadError(format!("YAML error: {e}"))
                 }
-                TemplateError::Other(msg) => GenerationError::LoadError(msg),
             })
     }
 }

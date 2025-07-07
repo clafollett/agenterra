@@ -22,21 +22,10 @@ pub fn validate_language_support(
         _ => {
             // For now, only MCP is implemented
             Err(GenerationError::ValidationError(format!(
-                "Protocol {} is not yet implemented",
-                protocol
+                "Protocol {protocol} is not yet implemented"
             )))
         }
     }
-}
-
-/// Determines if OpenAPI is required for a protocol/role combination
-pub fn requires_openapi(protocol: Protocol, role: &Role) -> bool {
-    matches!((protocol, role), (Protocol::Mcp, Role::Server))
-}
-
-/// Gets default metadata values
-pub fn default_version() -> String {
-    "0.1.0".to_string()
 }
 
 /// Validates project name format
@@ -66,19 +55,6 @@ pub fn validate_project_name(name: &str) -> Result<(), GenerationError> {
     Ok(())
 }
 
-/// Gets recommended file permissions for different artifact types
-pub fn get_artifact_permissions(path: &std::path::Path, language: Language) -> Option<u32> {
-    let extension = path.extension()?.to_str()?;
-
-    match (language, extension) {
-        // Executable scripts
-        (_, "sh") | (_, "bash") => Some(0o755),
-        (Language::Python, "py") if path.file_name()?.to_str()?.contains("cli") => Some(0o755),
-        // Regular files
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,13 +71,6 @@ mod tests {
 
         // MCP Client supports more languages
         assert!(validate_language_support(Protocol::Mcp, &Role::Client, Language::Go).is_err());
-    }
-
-    #[test]
-    fn test_requires_openapi() {
-        assert!(requires_openapi(Protocol::Mcp, &Role::Server));
-        assert!(!requires_openapi(Protocol::Mcp, &Role::Client));
-        assert!(!requires_openapi(Protocol::Mcp, &Role::Agent));
     }
 
     #[test]

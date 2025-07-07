@@ -9,7 +9,6 @@ mod tests {
     use super::*;
     use crate::application::OutputService;
     use crate::generation::Artifact;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -22,13 +21,11 @@ mod tests {
                 path: temp_dir.path().join("src/main.rs"),
                 content: "fn main() { println!(\"Hello\"); }".to_string(),
                 permissions: None,
-                post_commands: vec![],
             },
             Artifact {
                 path: temp_dir.path().join("Cargo.toml"),
                 content: "[package]\nname = \"test\"\nversion = \"0.1.0\"".to_string(),
                 permissions: None,
-                post_commands: vec![],
             },
         ];
 
@@ -71,7 +68,6 @@ mod tests {
             path: temp_dir.path().join("script.sh"),
             content: "#!/bin/bash\necho 'Hello'".to_string(),
             permissions: Some(0o755),
-            post_commands: vec![],
         };
 
         // Write artifact

@@ -1,9 +1,9 @@
 //! Template management use cases
 
-use crate::infrastructure::templates::{
-    TemplateRepository, TemplateExporter, TemplateDiscovery, TemplateDescriptor
-};
-use crate::application::errors::ApplicationError;
+use crate::application::ApplicationError;
+use crate::generation::GenerationError;
+use crate::infrastructure::{TemplateDiscovery, TemplateExporter, TemplateRepository};
+use crate::protocols::Role;
 use std::path::Path;
 
 /// Use case for listing all available templates
@@ -17,37 +17,73 @@ impl<R: TemplateRepository> ListTemplatesUseCase<R> {
     }
 
     pub fn execute(&self) -> String {
-        let templates = self.repository.list_templates();
-        
-        // Group templates by role
-        let mut server_templates = Vec::new();
-        let mut client_templates = Vec::new();
+        let manifests = self.repository.list_manifests();
 
-        for template in templates {
-            match template.template_type {
-                crate::infrastructure::templates::TemplateType::Server => server_templates.push(template),
-                crate::infrastructure::templates::TemplateType::Client => client_templates.push(template),
+        // Group templates by role
+        let mut agent_manifests = Vec::new();
+        let mut broker_manifests = Vec::new();
+        let mut client_manifests = Vec::new();
+        let mut server_manifests = Vec::new();
+        let mut custom_manifests = Vec::new();
+
+        for manifest in manifests {
+            match &manifest.role {
+                Role::Agent => agent_manifests.push(manifest),
+                Role::Broker => broker_manifests.push(manifest),
+                Role::Client => client_manifests.push(manifest),
+                Role::Server => server_manifests.push(manifest),
+                Role::Custom(_) => custom_manifests.push(manifest),
             }
         }
 
         let mut output = String::from("Available embedded templates:\n");
 
-        if !server_templates.is_empty() {
-            output.push_str("\nServer Templates:\n");
-            for template in server_templates {
-                output.push_str(&format!("  {}\n", template.path));
-                if let Some(desc) = &template.description {
-                    output.push_str(&format!("    {}\n", desc));
+        if !agent_manifests.is_empty() {
+            output.push_str("\nAgent Templates:\n");
+            for manifest in agent_manifests {
+                output.push_str(&format!("  {}\n", manifest.path));
+                if let Some(desc) = &manifest.description {
+                    output.push_str(&format!("    {desc}\n"));
                 }
             }
         }
 
-        if !client_templates.is_empty() {
+        if !broker_manifests.is_empty() {
+            output.push_str("\nBroker Templates:\n");
+            for manifest in broker_manifests {
+                output.push_str(&format!("  {}\n", manifest.path));
+                if let Some(desc) = &manifest.description {
+                    output.push_str(&format!("    {desc}\n"));
+                }
+            }
+        }
+
+        if !server_manifests.is_empty() {
+            output.push_str("\nServer Templates:\n");
+            for manifest in server_manifests {
+                output.push_str(&format!("  {}\n", manifest.path));
+                if let Some(desc) = &manifest.description {
+                    output.push_str(&format!("    {desc}\n"));
+                }
+            }
+        }
+
+        if !client_manifests.is_empty() {
             output.push_str("\nClient Templates:\n");
-            for template in client_templates {
-                output.push_str(&format!("  {}\n", template.path));
-                if let Some(desc) = &template.description {
-                    output.push_str(&format!("    {}\n", desc));
+            for manifest in client_manifests {
+                output.push_str(&format!("  {}\n", manifest.path));
+                if let Some(desc) = &manifest.description {
+                    output.push_str(&format!("    {desc}\n"));
+                }
+            }
+        }
+
+        if !custom_manifests.is_empty() {
+            output.push_str("\nCustom Templates:\n");
+            for manifest in custom_manifests {
+                output.push_str(&format!("  {}\n", manifest.path));
+                if let Some(desc) = &manifest.description {
+                    output.push_str(&format!("    {desc}\n"));
                 }
             }
         }
@@ -65,23 +101,41 @@ pub struct ExportTemplatesUseCase<E: TemplateExporter, R: TemplateRepository> {
 
 impl<E: TemplateExporter, R: TemplateRepository> ExportTemplatesUseCase<E, R> {
     pub fn new(exporter: E, repository: R) -> Self {
-        Self { exporter, repository }
+        Self {
+            exporter,
+            repository,
+        }
     }
 
     pub fn execute_all(&self, output_dir: &Path) -> Result<usize, ApplicationError> {
         self.exporter
             .export_all_templates(output_dir)
-            .map_err(ApplicationError::IoError)
+            .map_err(|e| ApplicationError::GenerationError(GenerationError::IoError(e)))
     }
 
-    pub fn execute_single(&self, template_path: &str, output_dir: &Path) -> Result<(), ApplicationError> {
-        let template_metadata = self.repository
-            .get_template(template_path)
-            .ok_or_else(|| ApplicationError::TemplateNotFound(template_path.to_string()))?;
-        
+    pub fn execute_single(
+        &self,
+        template_path: &str,
+        output_dir: &Path,
+    ) -> Result<(), ApplicationError> {
+        // Check if template exists first
+        if !self.repository.has_template(template_path) {
+            return Err(ApplicationError::TemplateNotFound(
+                template_path.to_string(),
+            ));
+        }
+
+        let manifest = match self.repository.get_manifest(template_path) {
+            Ok(manifest) => manifest,
+            Err(e) => return Err(ApplicationError::TemplateError(e)),
+        };
+
+        let manifest =
+            manifest.ok_or(ApplicationError::InvalidTemplate(template_path.to_string()))?;
+
         self.exporter
-            .export_template(&template_metadata, output_dir)
-            .map_err(ApplicationError::IoError)
+            .export_template(&manifest, output_dir)
+            .map_err(|e| ApplicationError::ExportError(e.to_string()))
     }
 }
 
@@ -93,48 +147,65 @@ pub struct TemplateInfoUseCase<R: TemplateRepository, D: TemplateDiscovery> {
 
 impl<R: TemplateRepository, D: TemplateDiscovery> TemplateInfoUseCase<R, D> {
     pub fn new(repository: R, discovery: D) -> Self {
-        Self { repository, discovery }
+        Self {
+            repository,
+            discovery,
+        }
     }
 
     pub async fn execute(&self, template_path: &str) -> Result<String, ApplicationError> {
-        // Get basic template metadata
-        let template_info = self.repository.get_template(template_path)
-            .ok_or_else(|| ApplicationError::TemplateNotFound(template_path.to_string()))?;
+        // Check if template exists first
+        if !self.repository.has_template(template_path) {
+            return Err(ApplicationError::TemplateNotFound(
+                template_path.to_string(),
+            ));
+        }
 
-        let mut output = format!("Template: {}\n", template_info.path);
-        output.push_str(&format!("Type: {:?}\n", template_info.template_type));
-        output.push_str(&format!("Kind: {}\n", template_info.kind));
-        output.push_str(&format!("Protocol: {}\n", template_info.protocol));
+        // Get template manifest
+        let manifest = match self.repository.get_manifest(template_path) {
+            Ok(manifest) => manifest,
+            Err(e) => return Err(ApplicationError::TemplateError(e)),
+        };
 
-        // Try to load the full template to get manifest details
-        if let Ok(descriptor) = TemplateDescriptor::from_path(&template_info.path)
-            .ok_or_else(|| ApplicationError::InvalidTemplate("Invalid template path".to_string())) 
+        let manifest =
+            manifest.ok_or(ApplicationError::InvalidTemplate(template_path.to_string()))?;
+
+        let mut output = format!("Template: {}\n", manifest.path);
+        output.push_str(&format!("Protocol: {}\n", manifest.protocol));
+        output.push_str(&format!("Role: {:?}\n", manifest.role));
+        output.push_str(&format!("Language: {}\n", manifest.language));
+
+        // Try to load the full template to get more manifest details
+        if let Ok(full_template) = self
+            .discovery
+            .discover(manifest.protocol, manifest.role.clone(), manifest.language)
+            .await
         {
-            if let Ok(full_template) = self.discovery.discover(&descriptor).await {
-                output.push_str("\nManifest Information:\n");
-                output.push_str(&format!("  Name: {}\n", full_template.manifest.name));
-                output.push_str(&format!("  Version: {}\n", full_template.manifest.version));
-                if let Some(description) = &full_template.manifest.description {
-                    output.push_str(&format!("  Description: {}\n", description));
-                }
-            } else {
-                // Fallback to repository description
-                if let Some(desc) = &template_info.description {
-                    output.push_str(&format!("Description: {}\n", desc));
-                }
+            output.push_str("\nManifest Information:\n");
+            output.push_str(&format!("  Name: {}\n", full_template.manifest.name));
+            output.push_str(&format!("  Version: {}\n", full_template.manifest.version));
+            if let Some(description) = &full_template.manifest.description {
+                output.push_str(&format!("  Description: {description}\n"));
+            }
+
+            // Display template source
+            output.push_str(&format!("  Source: {}\n", full_template.source));
+        } else {
+            // Fallback to manifest description
+            if let Some(desc) = &manifest.description {
+                output.push_str(&format!("Description: {desc}\n"));
             }
         }
 
-        // Get template files
-        let files = self.repository.get_template_files(&template_info.path);
-        output.push_str(&format!("\nFiles: {} total\n", files.len()));
+        // Display template files from manifest (lightweight - no content loading)
+        output.push_str(&format!("\nFiles: {} total\n", manifest.files.len()));
 
-        output.push_str("\nAll files in template:\n");
-        let mut sorted_files = files.clone();
-        sorted_files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-        
+        output.push_str("\nTemplate files:\n");
+        let mut sorted_files = manifest.files.clone();
+        sorted_files.sort_by(|a, b| a.source.cmp(&b.source));
+
         for file in &sorted_files {
-            output.push_str(&format!("  - {}\n", file.relative_path));
+            output.push_str(&format!("  - {} -> {}\n", file.source, file.target));
         }
 
         Ok(output)

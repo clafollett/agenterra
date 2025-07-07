@@ -38,10 +38,12 @@ impl GenerateServerUseCase {
         request.validate()?;
 
         // 2. Get protocol handler
-        let handler = self
-            .protocol_registry
-            .get(request.protocol)
-            .ok_or(ApplicationError::ProtocolNotImplemented(request.protocol))?;
+        let handler =
+            self.protocol_registry
+                .get(request.protocol)
+                .ok_or(ApplicationError::ProtocolError(
+                    crate::protocols::ProtocolError::NotImplemented(request.protocol),
+                ))?;
 
         // 3. Load OpenAPI if needed
         let capabilities = handler.protocol().capabilities();
@@ -66,14 +68,9 @@ impl GenerateServerUseCase {
             language: request.language,
             config: ProtocolConfig {
                 project_name: request.project_name.clone(),
-                output_dir: request.output_dir.clone(),
                 version: None,
                 options: request.options.clone(),
             },
-            openapi_path: request
-                .schema_path
-                .as_ref()
-                .map(|p| std::path::PathBuf::from(p)),
             openapi_spec,
         };
 
@@ -93,9 +90,9 @@ impl GenerateServerUseCase {
         for artifact in &mut output_artifacts {
             artifact.path = request.output_dir.join(&artifact.path);
         }
-        
+
         let artifacts_count = output_artifacts.len();
-        
+
         self.output_service
             .write_artifacts(&output_artifacts)
             .await?;
@@ -111,8 +108,9 @@ impl GenerateServerUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generation::Language;
-    use crate::protocols::Protocol;
+    use crate::generation::{self, GenerationError, Language};
+    use crate::infrastructure::{Template, TemplateManifest, TemplateSource};
+    use crate::protocols::{self, Protocol, Role};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -121,13 +119,13 @@ mod tests {
         let protocol_registry = Arc::new(create_mock_registry());
         let openapi_loader = Arc::new(MockOpenApiLoader);
         let generation_orchestrator = Arc::new(create_mock_orchestrator());
-        let output_service = Arc::new(MockOutputService);
+        let output_service = Arc::new(MockOutputService::new());
 
         let use_case = GenerateServerUseCase::new(
             protocol_registry,
             openapi_loader,
             generation_orchestrator,
-            output_service,
+            output_service.clone(),
         );
 
         let request = GenerateServerRequest {
@@ -142,14 +140,23 @@ mod tests {
         let response = use_case.execute(request).await.unwrap();
         assert_eq!(response.artifacts_count, 5);
         assert_eq!(response.output_path, PathBuf::from("/output"));
+
+        // Verify the output service was called with artifacts
+        let written = output_service.get_written_artifacts();
+        assert_eq!(written.len(), 5);
+
+        // Verify directory was ensured
+        let dirs = output_service.get_ensured_directories();
+        assert!(!dirs.is_empty());
+        assert!(dirs.contains(&PathBuf::from("/output")));
     }
 
     // Helper functions to create mocks
     fn create_mock_registry() -> ProtocolRegistry {
-        let mut registry = ProtocolRegistry::new();
+        let registry = ProtocolRegistry::new();
         let _ = registry.register(
             Protocol::Mcp,
-            Arc::new(crate::protocols::handlers::mcp::McpProtocolHandler::new()),
+            Arc::new(protocols::handlers::mcp::McpProtocolHandler::new()),
         );
         registry
     }
@@ -167,14 +174,11 @@ mod tests {
     struct MockOpenApiLoader;
 
     #[async_trait::async_trait]
-    impl crate::generation::OpenApiLoader for MockOpenApiLoader {
-        async fn load(
-            &self,
-            _source: &str,
-        ) -> Result<crate::generation::OpenApiSpec, crate::generation::GenerationError> {
-            Ok(crate::generation::OpenApiSpec {
+    impl generation::OpenApiLoader for MockOpenApiLoader {
+        async fn load(&self, _source: &str) -> Result<generation::OpenApiContext, GenerationError> {
+            Ok(generation::OpenApiContext {
                 version: "3.0.0".to_string(),
-                info: crate::generation::ApiInfo {
+                info: generation::ApiInfo {
                     title: "Test API".to_string(),
                     version: "1.0.0".to_string(),
                     description: None,
@@ -186,18 +190,75 @@ mod tests {
         }
     }
 
-    struct MockOutputService;
+    struct MockOutputService {
+        written_artifacts: std::sync::Mutex<Vec<generation::Artifact>>,
+        ensured_directories: std::sync::Mutex<Vec<std::path::PathBuf>>,
+    }
+
+    impl MockOutputService {
+        fn new() -> Self {
+            Self {
+                written_artifacts: std::sync::Mutex::new(Vec::new()),
+                ensured_directories: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn get_written_artifacts(&self) -> Vec<generation::Artifact> {
+            self.written_artifacts.lock().unwrap().clone()
+        }
+
+        fn get_ensured_directories(&self) -> Vec<std::path::PathBuf> {
+            self.ensured_directories.lock().unwrap().clone()
+        }
+    }
 
     #[async_trait::async_trait]
     impl OutputService for MockOutputService {
         async fn write_artifacts(
             &self,
-            _artifacts: &[crate::generation::Artifact],
+            artifacts: &[generation::Artifact],
         ) -> Result<(), ApplicationError> {
+            // Track artifacts being written
+            let mut written = self.written_artifacts.lock().unwrap();
+            written.extend(artifacts.iter().cloned());
+
+            // Validate artifacts have content
+            for artifact in artifacts {
+                if artifact.path.to_string_lossy().is_empty() {
+                    return Err(ApplicationError::GenerationError(
+                        GenerationError::InvalidConfiguration(
+                            "Artifact path cannot be empty".to_string(),
+                        ),
+                    ));
+                }
+                if artifact.content.is_empty() {
+                    return Err(ApplicationError::GenerationError(
+                        GenerationError::InvalidConfiguration(
+                            "Artifact content cannot be empty".to_string(),
+                        ),
+                    ));
+                }
+            }
+
             Ok(())
         }
 
-        async fn ensure_directory(&self, _path: &std::path::Path) -> Result<(), ApplicationError> {
+        async fn ensure_directory(&self, path: &std::path::Path) -> Result<(), ApplicationError> {
+            // Track directories being ensured
+            self.ensured_directories
+                .lock()
+                .unwrap()
+                .push(path.to_path_buf());
+
+            // Validate path
+            if path.to_string_lossy().is_empty() {
+                return Err(ApplicationError::GenerationError(
+                    GenerationError::InvalidConfiguration(
+                        "Directory path cannot be empty".to_string(),
+                    ),
+                ));
+            }
+
             Ok(())
         }
     }
@@ -205,20 +266,28 @@ mod tests {
     struct MockTemplateDiscovery;
 
     #[async_trait::async_trait]
-    impl crate::generation::TemplateDiscovery for MockTemplateDiscovery {
+    impl generation::TemplateDiscovery for MockTemplateDiscovery {
         async fn discover(
             &self,
-            _descriptor: &crate::infrastructure::templates::TemplateDescriptor,
-        ) -> Result<crate::infrastructure::templates::Template, crate::generation::GenerationError> {
-            Ok(crate::infrastructure::templates::Template {
-                descriptor: crate::infrastructure::templates::TemplateDescriptor::new(
-                    Protocol::Mcp,
-                    crate::protocols::Role::Server,
-                    Language::Rust,
-                ),
-                manifest: crate::infrastructure::templates::TemplateManifest::default(),
+            protocol: Protocol,
+            role: Role,
+            language: Language,
+        ) -> Result<Template, GenerationError> {
+            Ok(Template {
+                manifest: TemplateManifest {
+                    name: "test-template".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: Some("Test template".to_string()),
+                    path: "test-template".to_string(),
+                    protocol,
+                    role,
+                    language,
+                    files: vec![],
+                    variables: HashMap::new(),
+                    post_generate_hooks: vec![],
+                },
                 files: vec![],
-                source: crate::infrastructure::templates::TemplateSource::Embedded,
+                source: TemplateSource::Embedded,
             })
         }
     }
@@ -226,32 +295,31 @@ mod tests {
     struct MockContextBuilder;
 
     #[async_trait::async_trait]
-    impl crate::generation::ContextBuilder for MockContextBuilder {
+    impl generation::ContextBuilder for MockContextBuilder {
         async fn build(
             &self,
-            _context: &crate::generation::GenerationContext,
-            _template: &crate::infrastructure::templates::Template,
-        ) -> Result<crate::generation::RenderContext, crate::generation::GenerationError> {
-            Ok(crate::generation::RenderContext::default())
+            _context: &generation::GenerationContext,
+            _template: &Template,
+        ) -> Result<generation::RenderContext, GenerationError> {
+            Ok(generation::RenderContext::default())
         }
     }
 
     struct MockTemplateRenderer;
 
     #[async_trait::async_trait]
-    impl crate::generation::TemplateRenderingStrategy for MockTemplateRenderer {
+    impl generation::TemplateRenderingStrategy for MockTemplateRenderer {
         async fn render(
             &self,
-            _template: &crate::infrastructure::templates::Template,
-            _context: &crate::generation::RenderContext,
-            _generation_context: &crate::generation::GenerationContext,
-        ) -> Result<Vec<crate::generation::Artifact>, crate::generation::GenerationError> {
+            _template: &Template,
+            _context: &generation::RenderContext,
+            _generation_context: &generation::GenerationContext,
+        ) -> Result<Vec<generation::Artifact>, GenerationError> {
             Ok(vec![
                 crate::generation::Artifact {
                     path: PathBuf::from("src/main.rs"),
                     content: "fn main() {}".to_string(),
                     permissions: None,
-                    post_commands: vec![],
                 };
                 5
             ])
@@ -261,12 +329,13 @@ mod tests {
     struct MockPostProcessor;
 
     #[async_trait::async_trait]
-    impl crate::generation::PostProcessor for MockPostProcessor {
+    impl generation::PostProcessor for MockPostProcessor {
         async fn process(
             &self,
-            artifacts: Vec<crate::generation::Artifact>,
-            _context: &crate::generation::GenerationContext,
-        ) -> Result<Vec<crate::generation::Artifact>, crate::generation::GenerationError> {
+            artifacts: Vec<generation::Artifact>,
+            _context: &generation::GenerationContext,
+            _post_generation_commands: &[String],
+        ) -> Result<Vec<generation::Artifact>, GenerationError> {
             Ok(artifacts)
         }
     }
