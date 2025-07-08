@@ -67,7 +67,7 @@ impl McpRepl {
     pub async fn run(&mut self) -> Result<()> {
         info!("Starting MCP client REPL interface");
         println!("{{ project_name }} - Interactive REPL");
-        println!("Type 'help' for available commands, 'quit' to exit");
+        println!("Type '/help' for available commands, '/quit' to exit");
         println!();
 
         self.show_capabilities().await;
@@ -95,7 +95,7 @@ impl McpRepl {
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
-                    println!("Use 'quit' to exit");
+                    println!("Use /exit or /quit to exit the REPL");
                 }
                 Err(ReadlineError::Eof) => {
                     break;
@@ -123,21 +123,15 @@ impl McpRepl {
         debug!("Processing REPL command: {}", parts[0]);
 
         match parts[0] {
-            "help" | "h" => {
+            "/help" => {
                 self.show_help();
             }
-            "tools" | "t" => {
-                self.show_tools().await;
+            "/capabilities" => {
+                self.show_capabilities().await;
             }
-            "resources" | "r" => {
-                self.show_resources().await;
-            }
-            "prompts" | "p" => {
-                self.show_prompts().await;
-            }
-            "call" | "c" => {
+            "/call-tool" => {
                 if parts.len() < 2 {
-                    println!("Usage: call <tool_name> [arguments_json]");
+                    println!("Usage: call-tool <tool_name> [arguments_json]");
                 } else {
                     let tool_name = parts[1];
                     let args = if parts.len() > 2 {
@@ -150,17 +144,9 @@ impl McpRepl {
                     self.call_tool(tool_name, args).await?;
                 }
             }
-            "get" | "g" => {
+            "/get-prompt" => {
                 if parts.len() < 2 {
-                    println!("Usage: get <resource_uri>");
-                } else {
-                    let uri = parts[1];
-                    self.get_resource(uri).await?;
-                }
-            }
-            "prompt" => {
-                if parts.len() < 2 {
-                    println!("Usage: prompt <prompt_name> [arguments_json]");
+                    println!("Usage: get-prompt <prompt_name> [arguments_json]");
                 } else {
                     let prompt_name = parts[1];
                     let args = if parts.len() > 2 {
@@ -173,17 +159,34 @@ impl McpRepl {
                     self.get_prompt(prompt_name, args).await?;
                 }
             }
-            "status" | "s" => {
-                self.show_status().await;
+            "/get-resource" => {
+                if parts.len() < 2 {
+                    println!("Usage: get-resource <resource_uri>");
+                } else {
+                    let uri = parts[1];
+                    self.get_resource(uri).await?;
+                }
             }
-            "clear" => {
+            "/list-prompts" => {
+                self.list_prompts().await;
+            }
+            "/list-resources" => {
+                self.list_resources().await;
+            }
+            "/list-tools" => {
+                self.list_tools().await;
+            }
+            "/clear" => {
                 print!("\x1B[2J\x1B[1;1H");
             }
-            "quit" | "exit" | "q" => {
+            "/status" => {
+                self.status().await;
+            }
+            "/exit" | "/quit" => {
                 return Ok(false);
             }
             _ => {
-                println!("Unknown command: {}. Type 'help' for available commands.", parts[0]);
+                println!("Unknown command: {}. Type '/help' for available commands.", parts[0]);
             }
         }
 
@@ -229,16 +232,17 @@ impl McpRepl {
     /// Show help message
     fn show_help(&self) {
         println!("Available commands:");
-        println!("  help, h          - Show this help message");
-        println!("  tools, t         - List available tools");
-        println!("  resources, r     - List available resources");
-        println!("  prompts, p       - List available prompts");
-        println!("  call, c <tool> [args] - Call a tool with optional JSON arguments");
-        println!("  get, g <uri>     - Get a resource by URI");
-        println!("  prompt <name> [args] - Get a prompt with optional JSON arguments");
-        println!("  status, s        - Show connection status");
-        println!("  clear            - Clear screen");
-        println!("  quit, exit, q    - Exit the REPL");
+        println!("  /help            - Show this help message");
+        println!("  /capabilities    - Show server capabilities summary");
+        println!("  /call-tool <tool> [args]     - Call a tool with optional JSON arguments");
+        println!("  /get-prompt <name> [args]    - Get a prompt with optional JSON arguments");
+        println!("  /get-resource <uri>          - Get a resource by URI");
+        println!("  /list-prompts    - List available prompts");
+        println!("  /list-resources  - List available resources");
+        println!("  /list-tools      - List available tools");
+        println!("  /clear           - Clear screen");
+        println!("  /status          - Show connection status");
+        println!("  /quit, /exit     - Exit the REPL");
         println!();
         println!("Tool Permission System:");
         println!("  When calling tools, you may be prompted for permission:");
@@ -251,7 +255,7 @@ impl McpRepl {
     }
 
     /// Show available tools
-    async fn show_tools(&mut self) {
+    async fn list_tools(&mut self) {
         let tools = match self.client.list_tools().await {
             Ok(tools) => tools,
             Err(e) => {
@@ -273,7 +277,7 @@ impl McpRepl {
     }
 
     /// Show available resources
-    async fn show_resources(&mut self) {
+    async fn list_resources(&mut self) {
         let resources = match self.client.list_resources().await {
             Ok(resources) => resources,
             Err(e) => {
@@ -295,7 +299,7 @@ impl McpRepl {
     }
 
     /// Show available prompts
-    async fn show_prompts(&mut self) {
+    async fn list_prompts(&mut self) {
         let prompts = match self.client.list_prompts().await {
             Ok(prompts) => prompts,
             Err(e) => {
@@ -384,8 +388,46 @@ impl McpRepl {
     async fn get_resource(&mut self, uri: &str) -> Result<()> {
         match self.client.get_resource(uri).await {
             Ok(content) => {
-                println!("Resource content:");
-                println!("{}", serde_json::to_string_pretty(&content)?);
+                println!("Resource: {}", uri);
+                if let Some(name) = &content.info.name {
+                    println!("Name: {}", name);
+                }
+                if let Some(desc) = &content.info.description {
+                    println!("Description: {}", desc);
+                }
+                if let Some(mime) = &content.info.mime_type {
+                    println!("MIME Type: {}", mime);
+                }
+                
+                // Display the actual content based on encoding
+                println!("\nContent:");
+                match content.encoding.as_deref() {
+                    Some("base64") => {
+                        // Decode base64 and try to display as text if it's a text type
+                        if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &content.data) {
+                            if content.info.mime_type.as_deref().unwrap_or("").starts_with("text/") 
+                                || content.info.mime_type.as_deref() == Some("application/json") {
+                                if let Ok(text) = String::from_utf8(decoded) {
+                                    println!("{}", text);
+                                } else {
+                                    println!("[Binary content - {} bytes]", content.data.len());
+                                }
+                            } else {
+                                println!("[Binary content - {} bytes]", content.data.len());
+                            }
+                        } else {
+                            println!("[Invalid base64 encoding]");
+                        }
+                    }
+                    _ => {
+                        // No encoding or unknown encoding - try to display as UTF-8 text
+                        if let Ok(text) = String::from_utf8(content.data.clone()) {
+                            println!("{}", text);
+                        } else {
+                            println!("[Binary content - {} bytes]", content.data.len());
+                        }
+                    }
+                }
                 println!();
             }
             Err(e) => {
@@ -411,7 +453,7 @@ impl McpRepl {
     }
 
     /// Show connection status
-    async fn show_status(&mut self) {
+    async fn status(&mut self) {
         println!("Connection Status:");
         println!("  Server: {}", self.server_name);
         if let Some(version) = self.client.server_version() {
@@ -558,7 +600,6 @@ mod tests {
         // This tool is NOT in always_allowed, so it should prompt
         let tool_name = "risky_tool";
         
-        // TODO: This will fail until we implement should_prompt_for_permission
         let should_prompt = repl.should_prompt_for_permission(tool_name).await.unwrap();
         assert!(should_prompt, "Should prompt for non-always-allowed tool");
     }
@@ -576,7 +617,6 @@ mod tests {
         // This tool IS in always_allowed, so it should NOT prompt
         let tool_name = "safe_tool";
         
-        // TODO: This will fail until we implement should_prompt_for_permission
         let should_prompt = repl.should_prompt_for_permission(tool_name).await.unwrap();
         assert!(!should_prompt, "Should not prompt for always-allowed tool");
     }
@@ -670,7 +710,6 @@ mod tests {
         let tool_name = "test_tool";
         let args = json!({"param": "value"});
         
-        // TODO: This will fail until we implement call_tool
         let result = repl.call_tool_and_prompter(tool_name, args.clone(), &mut mock_prompter).await;
         assert!(result.is_ok(), "Should succeed when user accepts");
         

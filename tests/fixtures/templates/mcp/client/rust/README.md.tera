@@ -1,0 +1,5 @@
+# {{ project_name }} - Test Client Template
+
+This MCP client was generated using a TEST TEMPLATE from tests/fixtures/templates/mcp/client/rust.
+
+THIS IS NOT THE EMBEDDED CLIENT TEMPLATE.

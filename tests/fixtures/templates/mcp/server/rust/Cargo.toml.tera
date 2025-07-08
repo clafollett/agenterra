@@ -1,0 +1,9 @@
+[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2021"
+
+# THIS IS A TEST TEMPLATE - NOT FOR PRODUCTION USE
+
+[dependencies]
+# Test template dependencies

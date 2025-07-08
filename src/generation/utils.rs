@@ -164,7 +164,7 @@ pub fn sanitize_rust_field_name(s: &str) -> String {
         | "mut" | "pub" | "ref" | "return" | "self" | "Self" | "static" | "struct" | "super"
         | "trait" | "true" | "type" | "unsafe" | "use" | "where" | "while" | "async" | "await"
         | "dyn" | "abstract" | "become" | "box" | "do" | "final" | "macro" | "override"
-        | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" => format!("{}_", snake_case),
+        | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" => format!("{snake_case}_"),
         _ => snake_case,
     }
 }

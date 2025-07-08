@@ -1,0 +1,16 @@
+name: "Test MCP Client Template"
+version: "1.0.0"
+protocol: "mcp"
+role: "client"
+language: "rust"
+description: "Test template for verifying custom template directory functionality"
+files:
+  - source: "Cargo.toml.tera"
+    destination: "Cargo.toml"
+    type: template
+  - source: "README.md.tera"
+    destination: "README.md"
+    type: template
+  - source: "client_test_marker.txt"
+    destination: "client_test_marker.txt"
+    type: static

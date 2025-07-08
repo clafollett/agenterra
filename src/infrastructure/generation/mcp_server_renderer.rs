@@ -1,6 +1,7 @@
 //! MCP Server-specific template renderer
 
 use async_trait::async_trait;
+use serde_json::json;
 use std::path::PathBuf;
 use tera::{Context as TeraContext, Tera};
 
@@ -56,8 +57,163 @@ impl McpServerTemplateRenderer {
             let schema_filename = to_snake_case(endpoint_name);
             let schema_path = PathBuf::from(format!("schemas/{schema_filename}.json"));
 
-            // Serialize the endpoint object as the schema
-            let schema_json = serde_json::to_string_pretty(endpoint).map_err(|e| {
+            // Helper function to clean OpenAPI schema by removing null values
+            fn clean_schema(value: &serde_json::Value) -> serde_json::Value {
+                match value {
+                    serde_json::Value::Object(map) => {
+                        let mut cleaned = serde_json::Map::new();
+                        for (k, v) in map {
+                            if !v.is_null() {
+                                let cleaned_value = clean_schema(v);
+                                // Only include non-empty objects and arrays
+                                match &cleaned_value {
+                                    serde_json::Value::Object(m) if !m.is_empty() => {
+                                        cleaned.insert(k.clone(), cleaned_value);
+                                    }
+                                    serde_json::Value::Array(a) if !a.is_empty() => {
+                                        cleaned.insert(k.clone(), cleaned_value);
+                                    }
+                                    serde_json::Value::Null => {}
+                                    _ => {
+                                        cleaned.insert(k.clone(), cleaned_value);
+                                    }
+                                }
+                            }
+                        }
+                        serde_json::Value::Object(cleaned)
+                    }
+                    serde_json::Value::Array(arr) => {
+                        serde_json::Value::Array(arr.iter().map(clean_schema).collect())
+                    }
+                    _ => value.clone(),
+                }
+            }
+
+            // Create a clean schema object for LLM consumption
+            let mut clean = serde_json::Map::new();
+
+            // Add basic metadata
+            clean.insert("operationId".to_string(), json!(endpoint_name));
+
+            if let Some(summary) = endpoint.get("summary").and_then(|v| v.as_str()) {
+                if !summary.is_empty() {
+                    clean.insert("summary".to_string(), json!(summary));
+                }
+            }
+
+            if let Some(description) = endpoint.get("description").and_then(|v| v.as_str()) {
+                if !description.is_empty() {
+                    clean.insert("description".to_string(), json!(description));
+                }
+            }
+
+            if let Some(path) = endpoint.get("path").and_then(|v| v.as_str()) {
+                clean.insert("path".to_string(), json!(path));
+            }
+
+            if let Some(tags) = endpoint.get("tags").and_then(|v| v.as_array()) {
+                if !tags.is_empty() {
+                    clean.insert("tags".to_string(), json!(tags));
+                }
+            }
+
+            // Add parameters if present
+            if let Some(params) = endpoint.get("parameters").and_then(|v| v.as_array()) {
+                if !params.is_empty() {
+                    let clean_params: Vec<_> = params
+                        .iter()
+                        .filter_map(|p| {
+                            let mut param = serde_json::Map::new();
+                            if let Some(name) = p.get("name").and_then(|v| v.as_str()) {
+                                param.insert("name".to_string(), json!(name));
+                            }
+                            if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
+                                param.insert("description".to_string(), json!(desc));
+                            }
+                            if let Some(rust_type) = p.get("rust_type").and_then(|v| v.as_str()) {
+                                param.insert("type".to_string(), json!(rust_type));
+                            }
+                            if let Some(required) = p.get("required").and_then(|v| v.as_bool()) {
+                                param.insert("required".to_string(), json!(required));
+                            }
+                            if !param.is_empty() {
+                                Some(serde_json::Value::Object(param))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !clean_params.is_empty() {
+                        clean.insert("parameters".to_string(), json!(clean_params));
+                    }
+                }
+            }
+
+            // Add request body schema
+            if let Some(props_schema) = endpoint.get("properties_schema") {
+                let cleaned_schema = clean_schema(props_schema);
+                if !cleaned_schema
+                    .as_object()
+                    .map(|o| o.is_empty())
+                    .unwrap_or(true)
+                {
+                    let mut request_body = serde_json::Map::new();
+                    request_body.insert("schema".to_string(), cleaned_schema);
+
+                    // Add simplified properties list
+                    if let Some(properties) = endpoint.get("properties").and_then(|v| v.as_array())
+                    {
+                        let props_list: Vec<_> = properties
+                            .iter()
+                            .filter_map(|p| {
+                                let mut prop = serde_json::Map::new();
+                                if let Some(name) = p.get("name").and_then(|v| v.as_str()) {
+                                    prop.insert("name".to_string(), json!(name));
+                                }
+                                if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
+                                    prop.insert("description".to_string(), json!(desc));
+                                }
+                                if let Some(example) = p.get("example") {
+                                    if !example.is_null() {
+                                        prop.insert("example".to_string(), example.clone());
+                                    }
+                                }
+                                if !prop.is_empty() {
+                                    Some(serde_json::Value::Object(prop))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        if !props_list.is_empty() {
+                            request_body.insert("properties".to_string(), json!(props_list));
+                        }
+                    }
+
+                    clean.insert(
+                        "requestBody".to_string(),
+                        serde_json::Value::Object(request_body),
+                    );
+                }
+            }
+
+            // Add response schema
+            if let Some(resp_schema) = endpoint.get("response_schema") {
+                let cleaned_schema = clean_schema(resp_schema);
+                if !cleaned_schema
+                    .as_object()
+                    .map(|o| o.is_empty())
+                    .unwrap_or(true)
+                {
+                    let mut response = serde_json::Map::new();
+                    response.insert("schema".to_string(), cleaned_schema);
+                    clean.insert("response".to_string(), serde_json::Value::Object(response));
+                }
+            }
+
+            let clean_schema = serde_json::Value::Object(clean);
+
+            let schema_json = serde_json::to_string_pretty(&clean_schema).map_err(|e| {
                 GenerationError::RenderError(format!(
                     "Failed to serialize schema for endpoint '{endpoint_name}': {e}"
                 ))
