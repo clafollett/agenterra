@@ -7,10 +7,19 @@ description: "Test template for verifying custom template directory functionalit
 files:
   - source: "Cargo.toml.tera"
     destination: "Cargo.toml"
-    type: template
+  - source: "main.rs.tera"
+    destination: "src/main.rs"
+  - source: "lib.rs.tera"
+    destination: "src/lib.rs"
+  - source: "domain_mod.rs.tera"
+    destination: "src/domain/mod.rs"
+  - source: "domain_client.rs.tera"
+    destination: "src/domain/client.rs"
+  - source: "ui_mod.rs.tera"
+    destination: "src/ui/mod.rs"
+  - source: "ui_repl.rs.tera"
+    destination: "src/ui/repl.rs"
   - source: "README.md.tera"
     destination: "README.md"
-    type: template
   - source: "client_test_marker.txt"
     destination: "client_test_marker.txt"
-    type: static

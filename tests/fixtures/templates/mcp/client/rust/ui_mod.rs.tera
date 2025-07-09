@@ -1,0 +1,2 @@
+// Test client template ui/mod.rs
+pub mod repl;

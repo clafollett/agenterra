@@ -22,7 +22,7 @@ pub enum GenerationError {
     #[error("Post-processing error: {0}")]
     PostProcessingError(String),
 
-    #[error("OpenAPI loading error: {0}")]
+    #[error("Loading error: {0}")]
     LoadError(String),
 
     #[error("Unsupported language {language:?} for protocol {protocol:?}")]

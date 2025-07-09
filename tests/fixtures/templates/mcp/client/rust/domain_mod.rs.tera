@@ -1,0 +1,2 @@
+// Test client template domain/mod.rs
+pub mod client;

@@ -49,7 +49,10 @@ impl GenerateServerUseCase {
         let capabilities = handler.protocol().capabilities();
         let openapi_spec = if capabilities.requires_openapi {
             match &request.schema_path {
-                Some(path) => Some(self.openapi_loader.load(path).await?),
+                Some(path) => {
+                    tracing::debug!("GenerateServerUseCase: Loading OpenAPI from path: {}", path);
+                    Some(self.openapi_loader.load(path).await?)
+                }
                 None => {
                     return Err(ApplicationError::ValidationError(
                         crate::application::ValidationError::MissingField(

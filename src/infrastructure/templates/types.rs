@@ -263,19 +263,42 @@ fn parse_hooks(
 
 // Check if a file is a configuration file based on its name/extension
 fn is_configuration_file(source: &str) -> bool {
-    source.ends_with(".json")
-        || source.ends_with(".yaml")
-        || source.ends_with(".yml")
-        || source.ends_with(".toml")
-        || source.ends_with(".xml")
-        || source.ends_with(".properties")
-        || source.ends_with(".ini")
-        || source.ends_with(".conf")
-        || source.ends_with(".config")
-        || source == "Cargo.toml"
-        || source == "package.json"
-        || source == "pyproject.toml"
-        || source == "tsconfig.json"
-        || source == ".env"
-        || source == ".gitignore"
+    use std::path::Path;
+
+    // Known configuration file extensions
+    static CONFIG_EXTENSIONS: &[&str] = &[
+        "json",
+        "yaml",
+        "yml",
+        "toml",
+        "xml",
+        "properties",
+        "ini",
+        "conf",
+        "config",
+    ];
+
+    // Known configuration file names
+    static CONFIG_FILES: &[&str] = &[
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "tsconfig.json",
+        ".env",
+        ".gitignore",
+    ];
+
+    // Check if it's a known config file
+    if CONFIG_FILES.contains(&source) {
+        return true;
+    }
+
+    // Check extension
+    if let Some(ext) = Path::new(source).extension() {
+        if let Some(ext_str) = ext.to_str() {
+            return CONFIG_EXTENSIONS.contains(&ext_str);
+        }
+    }
+
+    false
 }

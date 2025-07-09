@@ -20,10 +20,14 @@ impl FileOpenApiLoader {
 #[async_trait]
 impl OpenApiLoader for FileOpenApiLoader {
     async fn load(&self, source: &str) -> Result<OpenApiContext, GenerationError> {
+        // Log the path being loaded
+        tracing::debug!("FileOpenApiLoader: Attempting to load from path: {source}");
+
         // Read file content
-        let content = fs::read_to_string(source)
-            .await
-            .map_err(GenerationError::IoError)?;
+        let content = fs::read_to_string(source).await.map_err(|e| {
+            tracing::error!("FileOpenApiLoader: Failed to read file '{source}': {e}");
+            GenerationError::IoError(e)
+        })?;
 
         // Parse content as JSON or YAML
         let spec_value = if source.ends_with(".json") {

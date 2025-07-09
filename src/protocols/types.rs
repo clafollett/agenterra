@@ -105,8 +105,6 @@ pub enum Role {
     Custom(String),
 }
 
-impl Role {}
-
 impl std::fmt::Display for Role {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

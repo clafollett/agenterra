@@ -1,0 +1,1 @@
+This file indicates that the custom client template was used instead of the embedded template.

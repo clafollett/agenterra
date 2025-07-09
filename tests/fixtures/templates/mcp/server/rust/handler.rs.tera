@@ -1,0 +1,4 @@
+// Test template handler for {{ endpoint }}
+pub fn handle_{{ endpoint }}() {
+    println!("Handling {{ endpoint }}");
+}

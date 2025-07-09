@@ -7,10 +7,16 @@ description: "Test template for verifying custom template directory functionalit
 files:
   - source: "Cargo.toml.tera"
     destination: "Cargo.toml"
-    type: template
+  - source: "main.rs.tera"
+    destination: "src/main.rs"
+  - source: "server.rs.tera"
+    destination: "src/server.rs"
+  - source: "handler.rs.tera"
+    for_each: "endpoint"
+    destination: "src/handlers/{endpoint}.rs"
+  - source: "handlers_mod.rs.tera"
+    destination: "src/handlers/mod.rs"
   - source: "README.md.tera"
     destination: "README.md"
-    type: template
-  - source: "test_marker.txt"
-    destination: "test_marker.txt"
-    type: static
+  - source: "server_test_marker.txt"
+    destination: "server_test_marker.txt"

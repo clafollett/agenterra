@@ -52,7 +52,9 @@ impl<T: InfrastructureTemplateDiscovery> TemplateDiscovery for TemplateDiscovery
                 TemplateError::InvalidManifest(msg) => {
                     GenerationError::LoadError(format!("Invalid manifest: {msg}"))
                 }
-                TemplateError::IoError(e) => GenerationError::LoadError(format!("IO error: {e}")),
+                TemplateError::IoError(e) => {
+                    GenerationError::LoadError(format!("Template IO error: {e}"))
+                }
                 TemplateError::YamlError(e) => {
                     GenerationError::LoadError(format!("YAML error: {e}"))
                 }

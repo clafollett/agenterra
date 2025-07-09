@@ -1,0 +1,3 @@
+// Test client template lib.rs for {{ project_name }}
+pub mod domain;
+pub mod ui;

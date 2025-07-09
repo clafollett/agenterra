@@ -92,9 +92,14 @@ async fn load_template_files(
     for manifest_file in &manifest.files {
         let file_path = dir.join(&manifest_file.source);
 
-        let content = fs::read_to_string(&file_path)
-            .await
-            .map_err(TemplateError::IoError)?;
+        let content = fs::read_to_string(&file_path).await.map_err(|e| {
+            tracing::error!(
+                "Failed to read template file '{}': {}",
+                file_path.display(),
+                e
+            );
+            TemplateError::IoError(e)
+        })?;
 
         // Keep the source filename for path to be consistent with embedded templates
         let relative_path = manifest_file.source.clone();

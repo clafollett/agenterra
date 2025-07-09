@@ -343,6 +343,16 @@ fn test_custom_template_scaffolding() -> Result<()> {
     let server_name = "custom_template_server";
     let schema_path = project_dir.join("tests/fixtures/openapi/petstore.openapi.v3.json");
 
+    // Verify schema file exists before running command
+    assert!(
+        schema_path.exists(),
+        "Schema file not found at: {}",
+        schema_path.display()
+    );
+
+    info!("Using schema path: {}", schema_path.display());
+    info!("Using template dir: {}", server_template_dir.display());
+
     let server_result = Command::new(&agenterra)
         .args([
             "scaffold",
@@ -376,7 +386,7 @@ fn test_custom_template_scaffolding() -> Result<()> {
     );
 
     // Check for test marker file that only exists in custom template
-    let server_marker = server_output.join("test_marker.txt");
+    let server_marker = server_output.join("server_test_marker.txt");
     assert!(
         server_marker.exists(),
         "Custom template marker file not found - embedded template was used instead!"
@@ -454,40 +464,12 @@ fn test_custom_template_scaffolding() -> Result<()> {
     Ok(())
 }
 
-/// End-to-end integration test that:
-/// 1. Scaffolds both MCP server and client from templates
-/// 2. Builds the generated projects
-/// 3. Runs their test suites
-/// 4. Verifies SSE transport options in CLI
-/// 5. Tests actual MCP communication between server and client
-/// 6. Verifies SQLite database caching functionality
-#[tokio::test]
-async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
-    // Initialize tracing for test visibility
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("e2e_mcp_test=info".parse().unwrap())
-                .add_directive("agenterra=info".parse().unwrap()),
-        )
-        .with_test_writer()
-        .try_init();
+// === Helper Functions for E2E Tests ===
 
-    // Discover project root first
-    // Determine project root at compile time via Cargo
-    let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-    // Resolve path to agenterra binary (prefer Cargo-built path)
-    let agenterra = project_dir
-        .join("target/debug/agenterra")
-        .to_string_lossy()
-        .into_owned();
-
-    // Test embedded templates - no template directories needed
-
-    // Use target/tmp/e2e-tests directory for generated artifacts
-    // Clean any previous run directories to avoid duplicate headers or build conflicts
+/// Helper to setup test directories and clean previous runs
+fn setup_test_directories(project_dir: &std::path::Path) -> Result<std::path::PathBuf> {
     let scaffold_path = project_dir.join("target/tmp/e2e-tests");
+
     // Clean any previous run directories to avoid conflicts
     for sub in ["e2e_mcp_server", "e2e_mcp_client"] {
         let dir = scaffold_path.join(sub);
@@ -495,23 +477,22 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
     }
     std::fs::create_dir_all(&scaffold_path)?;
 
-    // Clean up any existing client databases to ensure fresh state
-    cleanup_project_databases("e2e_mcp_client")?;
+    Ok(scaffold_path)
+}
 
-    info!("=== Testing MCP Server Generation (Embedded Templates) ===");
-    info!("Project dir: {}", project_dir.display());
-
-    // Test 1: Generate MCP server
-    let server_name = "e2e_mcp_server";
-    let server_output = scaffold_path.join(server_name); // Full path for verification
-    let schema_path = project_dir.join("tests/fixtures/openapi/petstore.openapi.v3.json");
-
+/// Helper to scaffold MCP server
+async fn scaffold_mcp_server(
+    agenterra: &str,
+    server_name: &str,
+    scaffold_path: &std::path::Path,
+    schema_path: &std::path::Path,
+) -> Result<()> {
     // Verify schema file exists
     if !schema_path.exists() {
-        panic!("Schema file not found at: {}", schema_path.display());
+        anyhow::bail!("Schema file not found at: {}", schema_path.display());
     }
 
-    let server_result = Command::new(&agenterra)
+    let server_result = Command::new(agenterra)
         .args([
             "scaffold",
             "mcp",
@@ -519,7 +500,7 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
             "--project-name",
             server_name,
             "--output-dir",
-            scaffold_path.to_str().unwrap(), // Pass parent directory
+            scaffold_path.to_str().unwrap(),
             "--schema-path",
             schema_path.to_str().unwrap(),
             "--template",
@@ -527,39 +508,31 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
             "--base-url",
             "https://petstore3.swagger.io",
         ])
-        .output()?;
-
-    debug!(
-        "Server generation stdout: {}",
-        String::from_utf8_lossy(&server_result.stdout)
-    );
-    if !server_result.stderr.is_empty() {
-        warn!(
-            "Server generation stderr: {}",
-            String::from_utf8_lossy(&server_result.stderr)
-        );
-    }
+        .output()
+        .context("Failed to run scaffold command for server")?;
 
     if !server_result.status.success() {
-        panic!(
+        let stderr = String::from_utf8_lossy(&server_result.stderr);
+        eprintln!("Server generation failed:");
+        eprintln!("stdout: {}", String::from_utf8_lossy(&server_result.stdout));
+        eprintln!("stderr: {stderr}");
+        anyhow::bail!(
             "Server generation failed with exit code: {:?}",
             server_result.status.code()
         );
     }
 
-    // Verify server files exist
-    assert!(server_output.join("Cargo.toml").exists());
-    assert!(server_output.join("src/main.rs").exists());
-    assert!(server_output.join("src/handlers/mod.rs").exists());
-
     info!("✅ Server generation successful");
+    Ok(())
+}
 
-    info!("=== Testing MCP Client Generation (Embedded Templates) ===");
-
-    // Test 2: Generate MCP client
-    let client_name = "e2e_mcp_client";
-    let client_output = scaffold_path.join(client_name);
-    let client_result = Command::new(&agenterra)
+/// Helper to scaffold MCP client
+async fn scaffold_mcp_client(
+    agenterra: &str,
+    client_name: &str,
+    scaffold_path: &std::path::Path,
+) -> Result<()> {
+    let client_result = Command::new(agenterra)
         .args([
             "scaffold",
             "mcp",
@@ -567,133 +540,89 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
             "--project-name",
             client_name,
             "--output-dir",
-            scaffold_path.to_str().unwrap(), // Pass parent directory
+            scaffold_path.to_str().unwrap(),
             "--template",
             "rust",
         ])
-        .output()?;
+        .output()
+        .context("Failed to run scaffold command for client")?;
 
     if !client_result.status.success() {
         eprintln!("Client generation failed:");
         eprintln!("stdout: {}", String::from_utf8_lossy(&client_result.stdout));
         eprintln!("stderr: {}", String::from_utf8_lossy(&client_result.stderr));
-        panic!("Client generation failed");
+        anyhow::bail!("Client generation failed");
     }
-
-    // Verify client files exist
-    assert!(client_output.join("Cargo.toml").exists());
-    assert!(client_output.join("src/main.rs").exists());
-    assert!(client_output.join("src/domain/client.rs").exists());
-    assert!(client_output.join("src/ui/repl.rs").exists());
 
     info!("✅ Client generation successful");
+    Ok(())
+}
 
-    // Ensure standalone crates by appending minimal workspace footer
-    for path in [&server_output, &client_output] {
-        let cargo_toml = path.join("Cargo.toml");
-        if let Ok(contents) = fs::read_to_string(&cargo_toml) {
-            if !contents.contains("[workspace]") {
-                if let Ok(mut f) = OpenOptions::new().append(true).open(&cargo_toml) {
-                    writeln!(f, "\n[workspace]\n").ok();
-                }
-            }
-        }
-    }
-
-    // Test 3: Build generated projects (always test compilation)
-    info!("=== Building Generated Server ===");
-
-    let server_build = Command::new("cargo")
+/// Helper to build and test a generated project
+async fn build_and_test_project(project_path: &std::path::Path, project_name: &str) -> Result<()> {
+    // Build the project
+    info!("=== Building Generated {} ===", project_name);
+    let build_result = Command::new("cargo")
         .args([
             "build",
             "--manifest-path",
-            &server_output.join("Cargo.toml").to_string_lossy(),
+            &project_path.join("Cargo.toml").to_string_lossy(),
         ])
-        .output()?;
+        .output()
+        .context(format!("Failed to build {project_name}"))?;
 
-    if !server_build.status.success() {
-        eprintln!("Server build failed:");
-        eprintln!("stderr: {}", String::from_utf8_lossy(&server_build.stderr));
-        panic!("Server build failed");
+    if !build_result.status.success() {
+        let stderr = String::from_utf8_lossy(&build_result.stderr);
+        anyhow::bail!("{} build failed:\n{}", project_name, stderr);
     }
+    info!("✅ {} builds successfully", project_name);
 
-    info!("✅ Server builds successfully");
-
-    // Test 3.5: Run server tests
-    info!("=== Testing Generated Server ===");
-
-    let server_test = Command::new("cargo")
+    // Run tests
+    info!("=== Testing Generated {} ===", project_name);
+    let test_result = Command::new("cargo")
         .args([
             "test",
             "--manifest-path",
-            &server_output.join("Cargo.toml").to_string_lossy(),
+            &project_path.join("Cargo.toml").to_string_lossy(),
         ])
-        .output()?;
+        .output()
+        .context(format!("Failed to test {project_name}"))?;
 
-    if !server_test.status.success() {
-        eprintln!("Server tests failed:");
-        eprintln!("stdout: {}", String::from_utf8_lossy(&server_test.stdout));
-        eprintln!("stderr: {}", String::from_utf8_lossy(&server_test.stderr));
-        panic!("Server tests failed");
-    }
+    if !test_result.status.success() {
+        let stderr = String::from_utf8_lossy(&test_result.stderr);
 
-    info!("✅ Server tests pass successfully");
-
-    info!("=== Building Generated Client ===");
-
-    let client_build = Command::new("cargo")
-        .args([
-            "build",
-            "--manifest-path",
-            &client_output.join("Cargo.toml").to_string_lossy(),
-        ])
-        .output()?;
-
-    if !client_build.status.success() {
-        eprintln!("Client build failed:");
-        eprintln!("stderr: {}", String::from_utf8_lossy(&client_build.stderr));
-        panic!("Client build failed");
-    }
-
-    info!("✅ Client builds successfully");
-
-    // Test 3.6: Run client tests
-    info!("=== Testing Generated Client ===");
-
-    let client_test = Command::new("cargo")
-        .args([
-            "test",
-            "--manifest-path",
-            &client_output.join("Cargo.toml").to_string_lossy(),
-        ])
-        .output()?;
-
-    if !client_test.status.success() {
-        let stderr = String::from_utf8_lossy(&client_test.stderr);
-
-        // Check if all tests were ignored (which is OK for integration tests without mock server)
-        if stderr.contains("0 passed") && stderr.contains("0 failed") && stderr.contains("ignored")
+        // Special handling for client tests that may be ignored
+        if project_name.contains("client")
+            && stderr.contains("0 passed")
+            && stderr.contains("0 failed")
+            && stderr.contains("ignored")
         {
-            info!("⚠️  Client tests were ignored (likely integration tests requiring mock server)");
+            info!(
+                "⚠️  {} tests were ignored (likely integration tests requiring mock server)",
+                project_name
+            );
         } else {
-            eprintln!("Client tests failed:");
-            eprintln!("stdout: {}", String::from_utf8_lossy(&client_test.stdout));
+            eprintln!("{project_name} tests failed:");
+            eprintln!("stdout: {}", String::from_utf8_lossy(&test_result.stdout));
             eprintln!("stderr: {stderr}");
-            panic!("Client tests failed");
+            anyhow::bail!("{} tests failed", project_name);
         }
+    } else {
+        info!("✅ {} tests pass successfully", project_name);
     }
 
-    info!("✅ Client tests pass successfully");
+    Ok(())
+}
 
-    // The generated binary names match the project names
-    let server_binary = server_output.join("target/debug/e2e_mcp_server");
-    let client_binary = client_output.join("target/debug/e2e_mcp_client");
-
-    // Test 4: Verify CLI help includes SSE transport options
+/// Helper to test CLI help output for SSE options
+async fn test_cli_help_sse_options(
+    server_binary: &std::path::Path,
+    client_output: &std::path::Path,
+) -> Result<()> {
     info!("=== Testing CLI Help for SSE Options ===");
 
-    // Test server CLI help
-    let server_help = Command::new(&server_binary)
+    // Check server help
+    let server_help = Command::new(server_binary)
         .arg("--help")
         .output()
         .context("Failed to get server help")?;
@@ -713,7 +642,8 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
     );
     info!("✅ Server CLI help includes SSE options");
 
-    // Test client CLI help
+    // Check client help
+    let client_binary = client_output.join("target/debug/e2e_mcp_client");
     let client_help = Command::new(&client_binary)
         .arg("--help")
         .output()
@@ -730,11 +660,15 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
     );
     info!("✅ Client CLI help includes SSE options");
 
-    // Test 5: Verify SSE transport mode can be started
+    Ok(())
+}
+
+/// Helper to test SSE transport mode
+async fn test_sse_transport_mode(server_binary: &std::path::Path) -> Result<()> {
     info!("=== Testing SSE Transport Mode ===");
 
     // Test server with SSE mode (should start but we'll kill it quickly)
-    let mut sse_server = Command::new(&server_binary)
+    let mut sse_server = Command::new(server_binary)
         .args(["--transport", "sse", "--sse-addr", "127.0.0.1:9999"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -747,6 +681,102 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
     // Kill the server
     sse_server.kill().ok();
     info!("✅ Server can start in SSE mode");
+
+    Ok(())
+}
+
+/// End-to-end integration test that:
+/// 1. Scaffolds both MCP server and client from templates
+/// 2. Builds the generated projects
+/// 3. Runs their test suites
+/// 4. Verifies SSE transport options in CLI
+/// 5. Tests actual MCP communication between server and client
+/// 6. Verifies SQLite database caching functionality
+#[tokio::test]
+async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
+    // Initialize tracing for test visibility
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("e2e_mcp_test=info".parse().unwrap())
+                .add_directive("agenterra=info".parse().unwrap()),
+        )
+        .with_test_writer()
+        .try_init();
+
+    // Determine project root at compile time via Cargo
+    let project_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+    // Resolve path to agenterra binary
+    let agenterra = project_dir
+        .join("target/debug/agenterra")
+        .to_string_lossy()
+        .into_owned();
+
+    // Setup test directories
+    let scaffold_path = setup_test_directories(&project_dir)?;
+
+    // Clean up any existing client databases to ensure fresh state
+    cleanup_project_databases("e2e_mcp_client")?;
+
+    info!("=== Testing MCP Server Generation (Embedded Templates) ===");
+    info!("Project dir: {}", project_dir.display());
+
+    // Test 1: Generate MCP server
+    let server_name = "e2e_mcp_server";
+    let server_output = scaffold_path.join(server_name);
+    let schema_path = project_dir.join("tests/fixtures/openapi/petstore.openapi.v3.json");
+
+    // Create server directory first since scaffold expects it to exist
+    std::fs::create_dir_all(&server_output)?;
+
+    // Scaffold the server
+    scaffold_mcp_server(&agenterra, server_name, &scaffold_path, &schema_path).await?;
+
+    // Verify server files exist
+    assert!(server_output.join("Cargo.toml").exists());
+    assert!(server_output.join("src/main.rs").exists());
+    assert!(server_output.join("src/handlers/mod.rs").exists());
+
+    info!("=== Testing MCP Client Generation (Embedded Templates) ===");
+
+    // Test 2: Generate MCP client
+    let client_name = "e2e_mcp_client";
+    let client_output = scaffold_path.join(client_name);
+
+    // Scaffold the client
+    scaffold_mcp_client(&agenterra, client_name, &scaffold_path).await?;
+
+    // Verify client files exist
+    assert!(client_output.join("Cargo.toml").exists());
+    assert!(client_output.join("src/main.rs").exists());
+    assert!(client_output.join("src/domain/client.rs").exists());
+    assert!(client_output.join("src/ui/repl.rs").exists());
+
+    // Ensure standalone crates by appending minimal workspace footer
+    for path in [&server_output, &client_output] {
+        let cargo_toml = path.join("Cargo.toml");
+        if let Ok(contents) = fs::read_to_string(&cargo_toml) {
+            if !contents.contains("[workspace]") {
+                if let Ok(mut f) = OpenOptions::new().append(true).open(&cargo_toml) {
+                    writeln!(f, "\n[workspace]\n").ok();
+                }
+            }
+        }
+    }
+
+    // Test 3: Build and test generated projects
+    build_and_test_project(&server_output, "Server").await?;
+    build_and_test_project(&client_output, "Client").await?;
+
+    // The generated binary names match the project names
+    let server_binary = server_output.join("target/debug/e2e_mcp_server");
+
+    // Test 4: Verify CLI help includes SSE transport options
+    test_cli_help_sse_options(&server_binary, &client_output).await?;
+
+    // Test 5: Verify SSE transport mode can be started
+    test_sse_transport_mode(&server_binary).await?;
 
     // Test 6: End-to-end MCP communication using generated client
     info!("=== Testing MCP Server ↔ Client Communication ===");
