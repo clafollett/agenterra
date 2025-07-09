@@ -28,10 +28,11 @@
 - **💾 SQLite Resource Caching** - Built-in resource caching with connection pooling for MCP clients
 - **🛡️ Client Permission Management** - Interactive tool permission prompting with persistent preferences
 - **📦 Binary Distribution** - Easy installation and deployment
+- **📚 Embedded Templates** - Templates included in binary for `cargo install` support
 
-## 🔒 Enterprise Security
+## 🔒 Security
 
-Agenterra generates code with enterprise-grade security features built-in. Every generated server and client includes comprehensive protection against modern attack vectors.
+Agenterra generates code with security features built-in. Every generated server and client includes comprehensive protection against modern attack vectors.
 
 **Key Security Features:**
 - **Input Validation**: Protection against SQL injection, command injection, and prompt injection
@@ -39,7 +40,7 @@ Agenterra generates code with enterprise-grade security features built-in. Every
 - **Transport Security**: Secure SSE mode with URL validation
 - **Resource Protection**: Size limits and rate limiting to prevent DoS
 
-See [Enterprise Security Features](docs/ENTERPRISE_SECURITY.md) for complete details.
+See [Security Features](docs/SECURITY.md) for complete details.
 
 ## 🚀 Quick Start
 
@@ -393,15 +394,33 @@ agenterra scaffold mcp server --schema-path api.json --project-name my_server --
 
 ### Templates
 
-Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation.
+Agenterra uses [Tera](https://tera.netlify.app/) templates for code generation. Templates are embedded in the binary for easy distribution and can be managed using the built-in template commands.
 
 **Built-in Server Templates:**
-- `rust_axum` - Rust MCP server using Axum web framework
+- `rust` - Rust MCP server using Axum web framework
 
 **Built-in Client Templates:**
-- `rust_reqwest` - Rust MCP client with REPL interface and SQLite resource caching
+- `rust` - Rust MCP client with REPL interface and SQLite resource caching
+
+**Managing Templates:**
+
+```bash
+# List all available embedded templates
+agenterra templates list
+
+# Show detailed information about a specific template
+agenterra templates info mcp/server/rust
+
+# Export all templates to a directory
+agenterra templates export ./my-templates
+
+# Export a single template
+agenterra templates export ./my-templates --template mcp/server/rust
+```
 
 **Custom Templates:**
+- Use exported templates as a starting point for customization
+- Specify custom template directory with `--template-dir` when scaffolding
 - Create templates under `templates/mcp/server/` or `templates/mcp/client/`
 - **Details**: See [`docs/TEMPLATES.md`](docs/TEMPLATES.md)
 

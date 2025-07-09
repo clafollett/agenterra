@@ -108,7 +108,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 1. **Rust Style**
    - Follow Rust style guidelines
    - Use `cargo fmt`
-   - Run `cargo clippy --all-targets --all-features -- -D warnings`
+   - Run `cargo clippy --fix --allow-dirty -- -D warnings`
 
 2. **Testing**
    - Write unit tests
@@ -129,19 +129,27 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 ```
 agenterra/
-├── src/                     # Single-crate Rust application
-├── crates/
-│   ├── rmcp/                # Vendored MCP protocol implementation
-│   └── rmcp-macros/         # MCP protocol macros
-├── docs/                    # Documentation
-├── templates/               # Code generation templates
-│   └── mcp/                 # MCP protocol templates
-│       ├── server/          # MCP server templates
-│       │   └── rust_axum/   # Rust Axum server template
-│       └── client/          # MCP client templates
-│           └── rust_reqwest/ # Rust reqwest client template with SQLite caching
-├── tests/fixtures/          # Test OpenAPI specs
-└── .github/workflows/       # CI/CD automation
+├── src/                # Single-crate Rust application
+│   ├── core/           # Core functionality
+│   │   └── templates/  # Template system (embedded & filesystem)
+│   └── mcp/            # MCP-specific code
+│       └── builders/   # MCP server/client builders
+├── docs/               # Documentation
+├── templates/          # Code generation templates
+│   └── mcp/            # MCP protocol templates
+│       ├── server/     # MCP server templates
+│       │   └── rust/   # Rust server template
+│       └── client/     # MCP client templates
+│           └── rust/   # Rust client template with SQLite caching
+├── tests/              # Test suite
+│   ├── fixtures/       # Test fixtures
+│   │   └── openapi/    # OpenAPI test specs
+│   ├── cli_templates_test.rs  # CLI template command tests
+│   └── e2e_mcp_test.rs        # End-to-end MCP tests
+├── scripts/            # Build and utility scripts
+└── .github/            # GitHub configuration
+    ├── workflows/      # CI/CD automation
+    └── ISSUE_TEMPLATE/ # Issue templates
 ```
 
 ## Getting Help 💬

@@ -63,7 +63,7 @@ Use semantic commit messages with GitHub issue linking:
      - `fix/issue-123/login-error`
      - `docs/issue-57/update-readme`
 2. **Make changes** following coding standards
-3. **Run pre-commit checks:** `cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test`
+3. **Run pre-commit checks:** `cargo fmt --all -- --check && cargo clippy --fix --allow-dirty -- -D warnings && cargo test`
    - For non-Rust code, run the formatter, linter, and test suite appropriate to that language before committing.
 4. **Push branch** and create pull request
 5. **Wait for CI** - All checks must pass
@@ -214,6 +214,28 @@ use serde::{Deserialize, Serialize};
 - `snake_case` - functions, variables
 - `CamelCase` - types, structs, enums
 - `SCREAMING_SNAKE_CASE` - constants
+
+### Logging Standards
+- **ALWAYS use the `tracing` crate** for all logging
+- **NEVER use `println!`, `eprintln!`, or `dbg!`** in production code
+- **Log levels:**
+  - `error!` - Errors that need immediate attention
+  - `warn!` - Important warnings that don't stop execution
+  - `info!` - High-level operational information
+  - `debug!` - Detailed information for debugging
+  - `trace!` - Very detailed trace information
+- **Include context** in log messages with structured fields:
+  ```rust
+  use tracing::{debug, error, info, warn};
+  
+  // Good - structured logging with context
+  info!(template_path = %path.display(), "Loading template");
+  error!(error = %e, file = ?file_path, "Failed to read template");
+  
+  // Bad - no context, uses println
+  println!("Loading template");
+  eprintln!("Error: {}", e);
+  ```
 
 ### Method Organization
 **Public methods:** 

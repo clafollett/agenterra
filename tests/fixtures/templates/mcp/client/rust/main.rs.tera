@@ -1,0 +1,4 @@
+// Test client template main.rs for {{ project_name }}
+fn main() {
+    println!("Custom client test template was used!");
+}

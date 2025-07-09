@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Embedded templates in binary for `cargo install` support ([#90](https://github.com/clafollett/agenterra/issues/90))
+  - Templates are now embedded using `rust-embed` crate
+  - Added `templates` CLI subcommand with `list`, `info`, and `export` actions
+  - Support for exporting all templates or a single template
+  - Simplified template naming (e.g., `rust` instead of `rust_axum`)
+
 ## [0.2.0](https://github.com/clafollett/agenterra/compare/agenterra-v0.1.4...agenterra-v0.2.0) - 2025-07-02
 
 ### Added

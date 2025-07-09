@@ -1,0 +1,4 @@
+// Test client template ui/repl.rs
+pub fn run() {
+    println!("Custom client REPL");
+}

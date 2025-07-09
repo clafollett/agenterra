@@ -1,25 +1,20 @@
-//! agenterra CLI entrypoint
-//! Parses command-line arguments and dispatches to the core generator.
+//! agenterra CLI entrypoint - simplified to use integration layer
+//! Parses command-line arguments and dispatches to the integration layer.
 #![deny(unsafe_code)]
-mod core;
-mod mcp;
 
-// Internal imports (std, crate)
-use core::{
-    openapi::OpenApiContext,
-    protocol::Protocol,
-    templates::{
-        ClientTemplateKind, ServerTemplateKind, TemplateManager, TemplateOptions,
-        dir::resolve_output_dir,
-    },
-};
-use std::path::PathBuf;
+mod application;
+mod generation;
+mod infrastructure;
+mod integration;
+mod protocols;
 
-// External imports (alphabetized)
 use anyhow::Context;
 use clap::Parser;
+use infrastructure::{EmbeddedTemplateExporter, EmbeddedTemplateRepository};
+use integration::{ClientParams, McpClientIntegration, McpServerIntegration, ServerParams};
 use reqwest::Url;
-use tracing::{Level, error, info};
+use std::path::PathBuf;
+use tracing::{Level, info};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -37,10 +32,30 @@ pub enum Commands {
         #[command(subcommand)]
         target: TargetCommands,
     },
+    /// Manage embedded templates
+    Templates {
+        #[command(subcommand)]
+        action: TemplateCommands,
+    },
 }
 
 #[derive(clap::Subcommand, Debug)]
 pub enum TargetCommands {
+    /// Agent to Agent Protocol (A2A) - by Google
+    A2a {
+        #[command(subcommand)]
+        role: A2aCommands,
+    },
+    /// Agent Communication Protocol (ACP) - by IBM
+    Acp {
+        #[command(subcommand)]
+        role: AcpCommands,
+    },
+    /// Agent Network Protocol (ANP) - by Cisco
+    Anp {
+        #[command(subcommand)]
+        role: AnpCommands,
+    },
     /// Model Context Protocol (MCP) servers and clients
     Mcp {
         #[command(subcommand)]
@@ -50,7 +65,7 @@ pub enum TargetCommands {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum McpCommands {
-    /// Generate MCP server from OpenAPI specification that exposes API endpoints as MCP tools
+    /// Generate MCP server from OpenAPI specification
     Server {
         /// Project name for the generated MCP server
         #[arg(long, default_value = "agenterra_mcp_server")]
@@ -59,7 +74,7 @@ pub enum McpCommands {
         #[arg(long)]
         schema_path: String,
         /// Template to use for code generation
-        #[arg(long, default_value = "rust_axum")]
+        #[arg(long, default_value = "rust")]
         template: String,
         /// Custom template directory
         #[arg(long)]
@@ -77,13 +92,13 @@ pub enum McpCommands {
         #[arg(long)]
         base_url: Option<Url>,
     },
-    /// Generate MCP client that can connect to MCP servers (no OpenAPI spec required)
+    /// Generate MCP client
     Client {
         /// Project name for the generated MCP client
         #[arg(long, default_value = "agenterra_mcp_client")]
         project_name: String,
         /// Template to use for client generation
-        #[arg(long, default_value = "rust_reqwest")]
+        #[arg(long, default_value = "rust")]
         template: String,
         /// Custom template directory
         #[arg(long)]
@@ -94,195 +109,208 @@ pub enum McpCommands {
     },
 }
 
+// Placeholder enums for unimplemented protocols
+#[derive(clap::Subcommand, Debug)]
+pub enum A2aCommands {
+    /// Generate A2A agent
+    Agent {
+        /// Project name
+        #[arg(long, default_value = "agenterra_a2a_agent")]
+        project_name: String,
+        /// Template to use
+        #[arg(long, default_value = "rust")]
+        template: String,
+        /// Custom template directory
+        #[arg(long)]
+        template_dir: Option<PathBuf>,
+        /// Output directory
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum AcpCommands {
+    /// Generate ACP server
+    Server {
+        /// Project name
+        #[arg(long, default_value = "agenterra_acp_server")]
+        project_name: String,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum AnpCommands {
+    /// Generate ANP broker
+    Broker {
+        /// Project name
+        #[arg(long, default_value = "agenterra_anp_broker")]
+        project_name: String,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum TemplateCommands {
+    /// List all available embedded templates
+    List,
+    /// Export templates to a directory
+    Export {
+        /// Directory to export templates to
+        path: PathBuf,
+        /// Optional: Export only a specific template
+        #[arg(long)]
+        template: Option<String>,
+    },
+    /// Show information about a specific template
+    Info {
+        /// Template path (e.g., "mcp/server/rust")
+        template: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize logging with default level INFO
+    // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
         .init();
 
     info!("Starting Agenterra CLI");
     let cli = Cli::parse();
+
     match &cli.command {
         Commands::Scaffold { target } => match target {
-            TargetCommands::Mcp { role } => match role {
-                McpCommands::Server {
-                    project_name,
-                    schema_path,
-                    template,
-                    template_dir,
-                    output_dir,
-                    log_file,
-                    port,
-                    base_url,
-                } => {
-                    generate_mcp_server(ServerGenParams {
-                        project_name,
-                        schema_path,
-                        template,
-                        template_dir,
-                        output_dir,
-                        log_file,
-                        port,
-                        base_url,
-                    })
-                    .await?
-                }
-                McpCommands::Client {
-                    project_name,
-                    template,
-                    template_dir,
-                    output_dir,
-                } => generate_mcp_client(project_name, template, template_dir, output_dir).await?,
-            },
+            TargetCommands::A2a { .. } => {
+                // TODO: Implement A2A (Agent to Agent) protocol handler
+                // Protocol by: Google
+                // Architecture: Centralized peer-to-peer
+                // See: https://github.com/agenterra/agenterra/issues/XXX
+                anyhow::bail!(
+                    "A2A protocol is not yet implemented. Currently only MCP is supported."
+                );
+            }
+            TargetCommands::Acp { .. } => {
+                // TODO: Implement ACP (Agent Communication Protocol) protocol handler
+                // Protocol by: IBM
+                // Architecture: Brokered client-server
+                // See: https://github.com/agenterra/agenterra/issues/XXX
+                anyhow::bail!(
+                    "ACP protocol is not yet implemented. Currently only MCP is supported."
+                );
+            }
+            TargetCommands::Anp { .. } => {
+                // TODO: Implement ANP (Agent Network Protocol) protocol handler
+                // Protocol by: Cisco
+                // Architecture: Decentralized peer-to-peer
+                // See: https://github.com/agenterra/agenterra/issues/XXX
+                anyhow::bail!(
+                    "ANP protocol is not yet implemented. Currently only MCP is supported."
+                );
+            }
+            TargetCommands::Mcp { role } => handle_mcp_command(role).await?,
         },
+        Commands::Templates { action } => handle_template_command(action).await?,
     }
+
     Ok(())
 }
 
-/// Parameters for MCP server generation
-struct ServerGenParams<'a> {
-    project_name: &'a str,
-    schema_path: &'a str,
-    template: &'a str,
-    template_dir: &'a Option<PathBuf>,
-    output_dir: &'a Option<PathBuf>,
-    log_file: &'a Option<String>,
-    port: &'a Option<u16>,
-    base_url: &'a Option<Url>,
-}
+async fn handle_mcp_command(role: &McpCommands) -> anyhow::Result<()> {
+    match role {
+        McpCommands::Server {
+            project_name,
+            schema_path,
+            template,
+            template_dir,
+            output_dir,
+            log_file,
+            port,
+            base_url,
+        } => {
+            let params = ServerParams {
+                project_name: project_name.clone(),
+                schema_path: schema_path.clone(),
+                template: template.clone(),
+                template_dir: template_dir.clone(),
+                output_dir: output_dir.clone(),
+                port: *port,
+                log_file: log_file.clone(),
+                base_url: base_url.clone(),
+            };
 
-/// Generate MCP server from OpenAPI specification
-async fn generate_mcp_server(params: ServerGenParams<'_>) -> anyhow::Result<()> {
-    info!(
-        template = %params.template,
-        "Generating MCP server"
-    );
+            McpServerIntegration::generate(params)
+                .await
+                .context("Failed to generate MCP server")?;
 
-    // Parse template
-    let template_kind_enum: ServerTemplateKind = params
-        .template
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid server template '{}': {}", params.template, e))?;
+            info!("Successfully generated MCP server");
+        }
+        McpCommands::Client {
+            project_name,
+            template,
+            template_dir,
+            output_dir,
+        } => {
+            let params = ClientParams {
+                project_name: project_name.clone(),
+                template: template.clone(),
+                template_dir: template_dir.clone(),
+                output_dir: output_dir.clone(),
+            };
 
-    // Resolve output directory with workspace-aware defaults
-    let output_path = resolve_output_dir(params.project_name, params.output_dir.as_deref())
-        .context("Failed to resolve output directory")?;
+            McpClientIntegration::generate(params)
+                .await
+                .context("Failed to generate MCP client")?;
 
-    // Initialize the template manager with MCP protocol
-    let template_manager = TemplateManager::new_with_protocol(
-        Protocol::Mcp,
-        template_kind_enum,
-        params.template_dir.clone(),
-    )
-    .await
-    .context("Failed to initialize server template manager")?;
-
-    // Load and validate OpenAPI schema BEFORE creating directories
-    let schema_obj = OpenApiContext::from_file_or_url(params.schema_path)
-        .await
-        .context("Failed to load OpenAPI schema")?;
-
-    // Create output directory only after all validations pass
-    if !output_path.exists() {
-        info!(path = %output_path.display(), "Creating output directory");
-        tokio::fs::create_dir_all(&output_path).await.map_err(|e| {
-            error!(path = %output_path.display(), error = %e, "Failed to create output directory");
-            anyhow::anyhow!("Failed to create output directory: {}", e)
-        })?
+            info!("Successfully generated MCP client");
+        }
     }
 
-    // Create config
-    let config = crate::core::config::Config {
-        project_name: params.project_name.to_string(),
-        openapi_schema_path: params.schema_path.to_string(),
-        output_dir: output_path.to_string_lossy().to_string(),
-        template_kind: params.template.to_string(),
-        template_dir: params
-            .template_dir
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string()),
-        include_all: true,
-        include_operations: Vec::new(),
-        exclude_operations: Vec::new(),
-        base_url: params.base_url.clone(),
-    };
-
-    // Create template options
-    let template_opts = TemplateOptions {
-        server_port: *params.port,
-        log_file: params.log_file.clone(),
-        ..Default::default()
-    };
-
-    // Generate the server code
-    info!("Generating MCP server code...");
-    template_manager
-        .generate(&schema_obj, &config, Some(template_opts))
-        .await
-        .map_err(|e| {
-            error!("Failed to generate server code: {}", e);
-            anyhow::anyhow!("Failed to generate server code: {}", e)
-        })?;
-
-    info!(
-        output_path = %output_path.display(),
-        "Successfully generated MCP server"
-    );
     Ok(())
 }
 
-/// Generate MCP client
-async fn generate_mcp_client(
-    project_name: &str,
-    template: &str,
-    template_dir: &Option<PathBuf>,
-    output_dir: &Option<PathBuf>,
-) -> anyhow::Result<()> {
-    info!(
-        template = %template,
-        "Generating MCP client"
-    );
+async fn handle_template_command(action: &TemplateCommands) -> anyhow::Result<()> {
+    match action {
+        TemplateCommands::List => {
+            let repository = EmbeddedTemplateRepository::new();
+            let use_case = application::ListTemplatesUseCase::new(repository);
+            println!("{}", use_case.execute());
+        }
+        TemplateCommands::Export { path, template } => {
+            let exporter = EmbeddedTemplateExporter::new();
+            let repository = EmbeddedTemplateRepository::new();
+            let use_case = application::ExportTemplatesUseCase::new(exporter, repository);
 
-    // Parse and validate template
-    let template_kind_enum: ClientTemplateKind = template
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid client template '{}': {}", template, e))?;
+            match template {
+                Some(template_path) => match use_case.execute_single(template_path, path) {
+                    Ok(()) => println!("Exported template {} to {}", template_path, path.display()),
+                    Err(application::ApplicationError::TemplateNotFound(_)) => {
+                        eprintln!("Template not found: {template_path}");
+                        std::process::exit(1);
+                    }
+                    Err(e) => return Err(e.into()),
+                },
+                None => {
+                    let count = use_case.execute_all(path)?;
+                    println!("Exported {} templates to {}", count, path.display());
+                }
+            }
+        }
+        TemplateCommands::Info { template } => {
+            let repository = EmbeddedTemplateRepository::new();
+            let discovery = EmbeddedTemplateRepository::new();
+            let use_case = application::TemplateInfoUseCase::new(repository, discovery);
 
-    // Resolve output directory with workspace-aware defaults
-    let output_path = resolve_output_dir(project_name, output_dir.as_deref())
-        .context("Failed to resolve output directory")?;
+            match use_case.execute(template).await {
+                Ok(output) => println!("{output}"),
+                Err(application::ApplicationError::TemplateNotFound(_)) => {
+                    eprintln!("Template not found: {template}");
+                    eprintln!("\nRun 'agenterra templates list' to see available templates.");
+                    std::process::exit(1);
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
 
-    // Initialize template manager for the chosen client template with MCP protocol
-    let template_manager = TemplateManager::new_client_with_protocol(
-        Protocol::Mcp,
-        template_kind_enum,
-        template_dir.clone(),
-    )
-    .await?;
-
-    // Build a core config (no OpenAPI schema needed for clients)
-    let core_config = crate::core::config::Config {
-        project_name: project_name.to_string(),
-        openapi_schema_path: String::new(),
-        output_dir: output_path.to_string_lossy().to_string(),
-        template_kind: template_kind_enum.as_str().to_string(),
-        template_dir: template_dir
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string()),
-        include_all: true,
-        include_operations: Vec::new(),
-        exclude_operations: Vec::new(),
-        base_url: None,
-    };
-
-    // Generate the client directly via TemplateManager
-    info!("Generating MCP client code...");
-    template_manager.generate_client(&core_config, None).await?;
-
-    info!(
-        output_path = %output_path.display(),
-        "Successfully generated MCP client"
-    );
     Ok(())
 }

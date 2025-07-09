@@ -1,0 +1,4 @@
+// Test template main.rs for {{ project_name }}
+fn main() {
+    println!("Custom test template was used!");
+}

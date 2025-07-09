@@ -1,0 +1,4 @@
+// Test template handlers/mod.rs
+{% for endpoint in endpoints -%}
+pub mod {{ endpoint }};
+{% endfor %}

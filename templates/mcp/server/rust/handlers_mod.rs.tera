@@ -1,0 +1,151 @@
+//! Do not edit by hand.
+//! Auto-generated handler stubs for MCP endpoints.
+// MCP auto-generated: Endpoint handler modules
+{%- for ep in endpoints %}
+pub mod {{ ep.endpoint }};
+{%- endfor %}
+
+// Internal dependencies
+use crate::config::Config;
+
+// External dependencies
+use log::debug;
+use agenterra_rmcp::{
+    handler::server::tool::Parameters, model::*, service::*, tool, Error as McpError,
+    ServerHandler,
+};
+
+#[derive(Clone)]
+pub struct McpServer {
+    tool_router: agenterra_rmcp::handler::server::router::tool::ToolRouter<McpServer>,
+    config: Config,
+}
+
+impl McpServer {
+    /// Create a new MCP server instance with default configuration
+    pub fn new(config: Config) -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+            config,
+        }
+    }
+}
+
+#[agenterra_rmcp::tool_router]
+impl McpServer {
+    /// Returns MCP server status for Inspector/health validation
+    #[tool(description = "Returns MCP server status for Inspector/health validation")]
+    pub async fn ping(&self) -> Result<CallToolResult, McpError> {
+        Ok(CallToolResult::success(vec![Content::text(
+            "The MCP server is alive!",
+        )]))
+    }
+
+    {%- for ep in endpoints %}
+    /// MCP API `/{{ ep.endpoint }}` endpoint handler
+    #[tool(description = r#"{{ ep.summary }}{% if ep.description %} - {{ ep.description }}{% endif %}{% if ep.tags and ep.tags | length > 0 %} - {{ ep.tags.0 }}{% endif %}"#)]
+    pub async fn {{ ep.fn_name }}(
+        &self,
+        Parameters(params): Parameters<{{ ep.endpoint }}::{{ ep.parameters_type }}>,
+    ) -> Result<CallToolResult, McpError> {
+        {{ ep.endpoint }}::{{ ep.fn_name }}_handler(&self.config, &params).await
+    }
+    {%- endfor %}
+}
+
+#[agenterra_rmcp::tool_handler]
+impl ServerHandler for McpServer {
+    fn get_info(&self) -> ServerInfo {
+        debug!("[MCP] get_info() called - should show tools!");
+
+        // Set up explicit capabilities for tools and resources
+        let tools_capability = ToolsCapability {
+            list_changed: Some(true),
+        };
+
+        let resources_capability = ResourcesCapability {
+            list_changed: Some(true),
+            ..ResourcesCapability::default()
+        };
+
+        let info = ServerInfo {
+            protocol_version: ProtocolVersion::V_2024_11_05,
+            capabilities: ServerCapabilities {
+                experimental: None,
+                logging: None,
+                completions: None,
+                prompts: None,
+                resources: Some(resources_capability),
+                tools: Some(tools_capability),
+            },
+            server_info: Implementation::from_build_env(),
+            {% if agent_instructions %}
+            instructions: Some(r#"{{ agent_instructions }}"#.into()),
+            {% else %}
+            instructions: None,
+            {% endif %}
+        };
+
+        debug!("[MCP] Returning ServerInfo with enabled tools and resources: {:?}", info);
+        info
+    }
+
+    /// Implements MCP resource enumeration for all schema resources (one per endpoint)
+    fn list_resources(
+        &self, _request: Option<PaginatedRequestParam>, _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
+        use agenterra_rmcp::model::{Annotated, RawResource};
+        let resources = vec![
+            {%- for ep in endpoints %}
+            Annotated {
+                raw: RawResource {
+                    uri: format!("/schema/{}", "{{ ep.endpoint }}"),
+                    name: "{{ ep.endpoint }}".to_string(),
+                    description: Some(
+                        "JSON schema for the /{{ ep.endpoint }} endpoint (fields, types, docs, envelope)"
+                            .to_string(),
+                    ),
+                    mime_type: Some("application/json".to_string()),
+                    size: None,
+                },
+                annotations: Default::default(),
+            },
+            {%- endfor %}
+        ];
+        std::future::ready(Ok(ListResourcesResult { resources, next_cursor: None }))
+    }
+
+    /// Implements MCP resource fetching for schema resources by URI
+    fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
+        use agenterra_rmcp::model::{ResourceContents, ReadResourceResult};
+        let uri = request.uri;
+        let prefix = "/schema/";
+        let result = if let Some(endpoint) = uri.strip_prefix(prefix) {
+            let ep_lower = endpoint.to_lowercase();
+            let schema_json = match ep_lower.as_str() {
+                {%- for ep in endpoints %}
+                "{{ ep.endpoint }}" => include_str!("../../schemas/{{ ep.endpoint }}.json"),
+                {%- endfor %}
+                _ => return std::future::ready(Err(McpError::resource_not_found(
+                    format!("Schema not found for endpoint '{}': unknown endpoint", endpoint),
+                    None,
+                ))),
+            };
+            let resource =
+                ResourceContents::text(schema_json, format!("/schema/{ep_lower}"));
+            Ok(ReadResourceResult {
+                contents: vec![resource],
+            })
+        } else {
+            Err(McpError::resource_not_found(
+                format!("Unknown resource URI: {uri}"),
+                None,
+            ))
+        };
+        std::future::ready(result)
+    }
+}

@@ -16,7 +16,7 @@ This document outlines the MANDATORY steps to validate any changes to MCP templa
 ### Step 1: Clean and Validate Workspace
 ```bash
 # At repository root
-cargo clean && cargo fmt && cargo clippy --all-targets --all-features -- -D warnings
+cargo clean && cargo fmt && cargo clippy --fix --allow-dirty -- -D warnings
 ```
 Fix any issues found by clippy before proceeding.
 
@@ -33,13 +33,13 @@ Find the generated projects and validate them:
 #### For Client:
 ```bash
 cd target/tmp/cli_flag_tests/test_cli_flag_combinations/test_default_project_name/agenterra_mcp_client
-cargo fmt && cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt && cargo clippy --fix --allow-dirty -- -D warnings
 ```
 
 #### For Server:
 ```bash
 cd ../agenterra_mcp_server  
-cargo fmt && cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt && cargo clippy --fix --allow-dirty -- -D warnings
 ```
 
 ### Step 4: Backfill Template Fixes

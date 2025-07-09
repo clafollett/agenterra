@@ -1,0 +1,168 @@
+name: "mcp-rust-client"
+description: "A Model Context Protocol (MCP) Rust REPL CLI client supporting: stdio, SSE, and HTTP streaming"
+version: "0.1.0"
+protocol: mcp
+role: client
+language: "rust"
+
+files:
+  - source: "Cargo.toml.tera"
+    destination: "Cargo.toml"
+  
+  # Library structure
+  - source: "src/lib.rs.tera"
+    destination: "src/lib.rs"
+    
+  # Binary entry point
+  - source: "src/main.rs.tera"
+    destination: "src/main.rs"
+    
+  # Domain layer - Core business logic
+  - source: "src/domain/client.rs.tera"
+    destination: "src/domain/client.rs"
+    
+  - source: "src/domain/capabilities.rs.tera"
+    destination: "src/domain/capabilities.rs"
+    
+  - source: "src/domain/connection.rs.tera"
+    destination: "src/domain/connection.rs"
+    
+  - source: "src/domain/operations.rs.tera"
+    destination: "src/domain/operations.rs"
+    
+  - source: "src/domain/mod.rs.tera"
+    destination: "src/domain/mod.rs"
+    
+  # Infrastructure layer - External dependencies
+  - source: "src/infrastructure/mod.rs.tera"
+    destination: "src/infrastructure/mod.rs"
+    
+  - source: "src/infrastructure/error.rs.tera"
+    destination: "src/infrastructure/error.rs"
+    
+  - source: "src/infrastructure/transport.rs.tera"
+    destination: "src/infrastructure/transport.rs"
+    
+  - source: "src/infrastructure/database/mod.rs.tera"
+    destination: "src/infrastructure/database/mod.rs"
+    
+  - source: "src/infrastructure/database/manager.rs.tera"
+    destination: "src/infrastructure/database/manager.rs"
+    
+  - source: "src/infrastructure/database/migrations.rs.tera"
+    destination: "src/infrastructure/database/migrations.rs"
+    
+  - source: "src/infrastructure/cache/mod.rs.tera"
+    destination: "src/infrastructure/cache/mod.rs"
+    
+  - source: "src/infrastructure/cache/resource_cache.rs.tera"
+    destination: "src/infrastructure/cache/resource_cache.rs"
+    
+  # Application layer - Use cases and services
+  - source: "src/application/mod.rs.tera"
+    destination: "src/application/mod.rs"
+    
+  - source: "src/application/auth.rs.tera"
+    destination: "src/application/auth.rs"
+    
+  - source: "src/application/config.rs.tera"
+    destination: "src/application/config.rs"
+    
+  - source: "src/application/registry.rs.tera"
+    destination: "src/application/registry.rs"
+    
+  - source: "src/application/result.rs.tera"
+    destination: "src/application/result.rs"
+    
+  - source: "src/application/session_manager.rs.tera"
+    destination: "src/application/session_manager.rs"
+    
+  - source: "src/application/validation.rs.tera"
+    destination: "src/application/validation.rs"
+    
+  - source: "src/application/validation_config.rs.tera"
+    destination: "src/application/validation_config.rs"
+    
+  # API layer - DTOs and external interfaces
+  - source: "src/api/mod.rs.tera"
+    destination: "src/api/mod.rs"
+    
+  - source: "src/api/resource.rs.tera"
+    destination: "src/api/resource.rs"
+    
+  # UI layer - User interfaces
+  - source: "src/ui/mod.rs.tera"
+    destination: "src/ui/mod.rs"
+    
+  - source: "src/ui/headless.rs.tera"
+    destination: "src/ui/headless.rs"
+    
+  - source: "src/ui/repl.rs.tera"
+    destination: "src/ui/repl.rs"
+    
+  # CLI integration
+  - source: "src/cli/interactive.rs.tera"
+    destination: "src/cli/interactive.rs"
+    
+  # CLI submodules (if these still exist)
+  - source: "src/cli/mod.rs.tera"
+    destination: "src/cli/mod.rs"
+    
+  - source: "src/cli/args.rs.tera"
+    destination: "src/cli/args.rs"
+    
+  - source: "src/cli/auth.rs.tera"
+    destination: "src/cli/auth.rs"
+    
+  - source: "src/cli/config.rs.tera"
+    destination: "src/cli/config.rs"
+    
+  - source: "src/cli/headless.rs.tera"
+    destination: "src/cli/headless.rs"
+    
+  - source: "src/cli/runner.rs.tera"
+    destination: "src/cli/runner.rs"
+    
+  # Test utilities
+  - source: "src/test_utils/mod.rs.tera"
+    destination: "src/test_utils/mod.rs"
+    
+  - source: "src/test_utils/simple_mock.rs.tera"
+    destination: "src/test_utils/simple_mock.rs"
+    
+  # Tests
+  - source: "tests/test_with_mock_server.rs.tera"
+    destination: "tests/test_with_mock_server.rs"
+    
+  - source: "tests/sse_integration_tests.rs.tera"
+    destination: "tests/sse_integration_tests.rs"
+    
+  - source: "tests/README.md"
+    destination: "tests/README.md"
+    
+  - source: "README.md.tera"
+    destination: "README.md"
+    
+  - source: "LICENSE"
+    destination: "LICENSE"
+    
+  - source: "validation.toml.tera"
+    destination: "validation.toml.example"
+
+required_directories:
+  - "src"
+  - "src/api"
+  - "src/application"
+  - "src/cli"
+  - "src/domain"
+  - "src/infrastructure"
+  - "src/infrastructure/cache"
+  - "src/infrastructure/database"
+  - "src/test_utils"
+  - "src/ui"
+  - "tests"
+
+hooks:
+  post_generate:
+    - "cargo fmt"
+    - "cargo check"

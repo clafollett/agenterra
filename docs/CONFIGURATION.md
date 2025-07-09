@@ -39,7 +39,7 @@ agenterra scaffold mcp server --schema-path <SCHEMA_PATH> [OPTIONS]
 |--------|-------------|---------|
 | `--schema-path <SCHEMA_PATH>` | Path or URL to OpenAPI schema (YAML or JSON) | *required* |
 | `--project-name <PROJECT_NAME>` | Project name | `agenterra_mcp_server` |
-| `--template <TEMPLATE>` | Template to use for code generation | `rust_axum` |
+| `--template <TEMPLATE>` | Template to use for code generation | `rust` |
 | `--template-dir <TEMPLATE_DIR>` | Custom template directory | |
 | `--output-dir <OUTPUT_DIR>` | Output directory for generated code | |
 | `--log-file <LOG_FILE>` | Log file name without extension | `mcp-server` |
@@ -55,7 +55,7 @@ agenterra scaffold mcp client --project-name <PROJECT_NAME> [OPTIONS]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--project-name <PROJECT_NAME>` | Project name | `agenterra_mcp_client` |
-| `--template <TEMPLATE>` | Template to use for code generation | `rust_reqwest` |
+| `--template <TEMPLATE>` | Template to use for code generation | `rust` |
 | `--template-dir <TEMPLATE_DIR>` | Custom template directory | |
 | `--output-dir <OUTPUT_DIR>` | Output directory for generated code | |
 | `--timeout <TIMEOUT>` | Connection timeout in seconds | `10` |
@@ -74,7 +74,7 @@ export AGENTERRA_OUTPUT_DIR=generated-server
 export AGENTERRA_PROJECT_NAME=my_api_server
 
 # Template options
-export AGENTERRA_TEMPLATE=rust_axum
+export AGENTERRA_TEMPLATE=rust
 export AGENTERRA_TEMPLATE_DIR=./custom-templates/server
 
 # Server options
@@ -91,7 +91,7 @@ export AGENTERRA_OUTPUT_DIR=generated-client
 export AGENTERRA_PROJECT_NAME=my_api_client
 
 # Template options
-export AGENTERRA_TEMPLATE=rust_reqwest
+export AGENTERRA_TEMPLATE=rust
 export AGENTERRA_TEMPLATE_DIR=./custom-templates/client
 
 # Client options
@@ -110,7 +110,7 @@ agenterra scaffold mcp server --schema-path api/openapi.yaml
 agenterra scaffold mcp server \
   --schema-path api/openapi.yaml \
   --project-name petstore_mcp_server \
-  --template rust_axum \
+  --template rust \
   --output-dir petstore-server \
   --log-file petstore-server \
   --port 3000 \
@@ -126,7 +126,7 @@ agenterra scaffold mcp client --project-name my-client
 # Full client configuration with all options
 agenterra scaffold mcp client \
   --project-name petstore_mcp_client \
-  --template rust_reqwest \
+  --template rust \
   --output-dir petstore-client \
   --timeout 30
 ```
@@ -143,7 +143,7 @@ export AGENTERRA_TEMPLATE_DIR=~/my-custom-templates
 # Server generation using environment variables
 export AGENTERRA_SCHEMA_PATH=api/openapi.yaml
 export AGENTERRA_PROJECT_NAME=my_api_server
-export AGENTERRA_TEMPLATE=rust_axum
+export AGENTERRA_TEMPLATE=rust
 export AGENTERRA_PORT=3000
 export AGENTERRA_BASE_URL=https://api.example.com
 
@@ -151,7 +151,7 @@ agenterra scaffold mcp server
 
 # Client generation using environment variables
 export AGENTERRA_PROJECT_NAME=my_api_client
-export AGENTERRA_TEMPLATE=rust_reqwest
+export AGENTERRA_TEMPLATE=rust
 export AGENTERRA_TIMEOUT=30
 
 agenterra scaffold mcp client
