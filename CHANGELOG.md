@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/clafollett/agenterra/compare/agenterra-v0.2.0...agenterra-v0.2.1) - 2025-07-09
+
+### Added
+
+- Domain-Driven Design architecture with embedded templates ([#104](https://github.com/clafollett/agenterra/pull/104))
+
 ### Added
 
 - Embedded templates in binary for `cargo install` support ([#90](https://github.com/clafollett/agenterra/issues/90))
