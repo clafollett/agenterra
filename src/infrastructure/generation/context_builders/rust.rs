@@ -860,7 +860,7 @@ mod tests {
     }
 
     fn create_test_operation_with_both_params_and_body() -> crate::generation::Operation {
-        use crate::generation::{Operation, Parameter, ParameterLocation, RequestBody, Schema};
+        use crate::generation::{Operation, RequestBody};
         use serde_json::json;
 
         Operation {
