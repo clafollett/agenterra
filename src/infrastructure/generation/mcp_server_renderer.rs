@@ -95,57 +95,57 @@ impl McpServerTemplateRenderer {
             // Add basic metadata
             clean.insert("operationId".to_string(), json!(endpoint_name));
 
-            if let Some(summary) = endpoint.get("summary").and_then(|v| v.as_str()) {
-                if !summary.is_empty() {
-                    clean.insert("summary".to_string(), json!(summary));
-                }
+            if let Some(summary) = endpoint.get("summary").and_then(|v| v.as_str())
+                && !summary.is_empty()
+            {
+                clean.insert("summary".to_string(), json!(summary));
             }
 
-            if let Some(description) = endpoint.get("description").and_then(|v| v.as_str()) {
-                if !description.is_empty() {
-                    clean.insert("description".to_string(), json!(description));
-                }
+            if let Some(description) = endpoint.get("description").and_then(|v| v.as_str())
+                && !description.is_empty()
+            {
+                clean.insert("description".to_string(), json!(description));
             }
 
             if let Some(path) = endpoint.get("path").and_then(|v| v.as_str()) {
                 clean.insert("path".to_string(), json!(path));
             }
 
-            if let Some(tags) = endpoint.get("tags").and_then(|v| v.as_array()) {
-                if !tags.is_empty() {
-                    clean.insert("tags".to_string(), json!(tags));
-                }
+            if let Some(tags) = endpoint.get("tags").and_then(|v| v.as_array())
+                && !tags.is_empty()
+            {
+                clean.insert("tags".to_string(), json!(tags));
             }
 
             // Add parameters if present
-            if let Some(params) = endpoint.get("parameters").and_then(|v| v.as_array()) {
-                if !params.is_empty() {
-                    let clean_params: Vec<_> = params
-                        .iter()
-                        .filter_map(|p| {
-                            let mut param = serde_json::Map::new();
-                            if let Some(name) = p.get("name").and_then(|v| v.as_str()) {
-                                param.insert("name".to_string(), json!(name));
-                            }
-                            if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
-                                param.insert("description".to_string(), json!(desc));
-                            }
-                            if let Some(rust_type) = p.get("rust_type").and_then(|v| v.as_str()) {
-                                param.insert("type".to_string(), json!(rust_type));
-                            }
-                            if let Some(required) = p.get("required").and_then(|v| v.as_bool()) {
-                                param.insert("required".to_string(), json!(required));
-                            }
-                            if !param.is_empty() {
-                                Some(serde_json::Value::Object(param))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    if !clean_params.is_empty() {
-                        clean.insert("parameters".to_string(), json!(clean_params));
-                    }
+            if let Some(params) = endpoint.get("parameters").and_then(|v| v.as_array())
+                && !params.is_empty()
+            {
+                let clean_params: Vec<_> = params
+                    .iter()
+                    .filter_map(|p| {
+                        let mut param = serde_json::Map::new();
+                        if let Some(name) = p.get("name").and_then(|v| v.as_str()) {
+                            param.insert("name".to_string(), json!(name));
+                        }
+                        if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
+                            param.insert("description".to_string(), json!(desc));
+                        }
+                        if let Some(rust_type) = p.get("rust_type").and_then(|v| v.as_str()) {
+                            param.insert("type".to_string(), json!(rust_type));
+                        }
+                        if let Some(required) = p.get("required").and_then(|v| v.as_bool()) {
+                            param.insert("required".to_string(), json!(required));
+                        }
+                        if !param.is_empty() {
+                            Some(serde_json::Value::Object(param))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !clean_params.is_empty() {
+                    clean.insert("parameters".to_string(), json!(clean_params));
                 }
             }
 
@@ -173,10 +173,10 @@ impl McpServerTemplateRenderer {
                                 if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
                                     prop.insert("description".to_string(), json!(desc));
                                 }
-                                if let Some(example) = p.get("example") {
-                                    if !example.is_null() {
-                                        prop.insert("example".to_string(), example.clone());
-                                    }
+                                if let Some(example) = p.get("example")
+                                    && !example.is_null()
+                                {
+                                    prop.insert("example".to_string(), example.clone());
                                 }
                                 if !prop.is_empty() {
                                     Some(serde_json::Value::Object(prop))
@@ -361,16 +361,15 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
                 .files
                 .iter()
                 .find(|f| f.path.to_string_lossy() == manifest_file.source)
+                && matches!(manifest_file.file_type, TemplateFileType::Template { .. })
             {
-                if matches!(manifest_file.file_type, TemplateFileType::Template { .. }) {
-                    tera.add_raw_template(&manifest_file.source, &template_file.content)
-                        .map_err(|e| {
-                            GenerationError::RenderError(format!(
-                                "Failed to add template '{}': {}",
-                                manifest_file.source, e
-                            ))
-                        })?;
-                }
+                tera.add_raw_template(&manifest_file.source, &template_file.content)
+                    .map_err(|e| {
+                        GenerationError::RenderError(format!(
+                            "Failed to add template '{}': {}",
+                            manifest_file.source, e
+                        ))
+                    })?;
             }
         }
 

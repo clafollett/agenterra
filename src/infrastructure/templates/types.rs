@@ -294,10 +294,10 @@ fn is_configuration_file(source: &str) -> bool {
     }
 
     // Check extension
-    if let Some(ext) = Path::new(source).extension() {
-        if let Some(ext_str) = ext.to_str() {
-            return CONFIG_EXTENSIONS.contains(&ext_str);
-        }
+    if let Some(ext) = Path::new(source).extension()
+        && let Some(ext_str) = ext.to_str()
+    {
+        return CONFIG_EXTENSIONS.contains(&ext_str);
     }
 
     false

@@ -90,16 +90,16 @@ impl TemplateRepository for EmbeddedTemplateRepository {
         for file_path in EmbeddedTemplates::iter() {
             let path_str = file_path.as_ref();
 
-            if path_str.starts_with(&prefix) {
-                if let Some(embedded_file) = EmbeddedTemplates::get(path_str) {
-                    // Get relative path within the template
-                    let relative_path = path_str[prefix.len()..].to_string();
+            if path_str.starts_with(&prefix)
+                && let Some(embedded_file) = EmbeddedTemplates::get(path_str)
+            {
+                // Get relative path within the template
+                let relative_path = path_str[prefix.len()..].to_string();
 
-                    files.push(RawTemplateFile {
-                        relative_path,
-                        contents: embedded_file.data.to_vec(),
-                    });
-                }
+                files.push(RawTemplateFile {
+                    relative_path,
+                    contents: embedded_file.data.to_vec(),
+                });
             }
         }
 

@@ -18,7 +18,7 @@ use utoipa::ToSchema;
 /// Spec: {{ spec_file_name | default(value="") }}
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
 pub struct {{ parameters_type }} {
-{% if unified_parameters | length > 0 -%}
+    {% if unified_parameters | length > 0 -%}
     {% for p in unified_parameters -%}
     {% if p.description -%}
     #[schemars(description = r#"{{ p.description }}{% if p.source == "Query" %} (query param){% else %} (request body){% endif %}"#)]
@@ -27,7 +27,7 @@ pub struct {{ parameters_type }} {
     {% endif -%}
     pub {{ p.name }}: Option<{{ p.rust_type }}>,
     {% endfor -%}
-{% endif -%}
+    {% endif -%}
 }
 
 // Implement Endpoint for generic handler
@@ -37,7 +37,13 @@ impl Endpoint for {{ parameters_type }} {
     }
 
     fn get_params(&self) -> HashMap<String, String> {
-        {% if unified_parameters | length > 0 -%}
+        {% set has_query_params = false -%}
+        {% for p in unified_parameters -%}
+        {% if p.source == "Query" -%}
+        {% set_global has_query_params = true -%}
+        {% endif -%}
+        {% endfor -%}
+        {% if has_query_params -%}
         let mut params = HashMap::new();
         {% for p in unified_parameters -%}
         {% if p.source == "Query" -%}
@@ -52,7 +58,7 @@ impl Endpoint for {{ parameters_type }} {
             {%- endif %}
         }
         {% endif -%}
-        {% endfor %}
+        {% endfor -%}
         params
         {%- else -%}
         HashMap::new()
@@ -70,11 +76,11 @@ impl {{ parameters_type }} {
     /// Extract request body properties for REST API calls
     pub fn to_request_body(&self) -> {{ endpoint_cap }}RequestBody {
         {{ endpoint_cap }}RequestBody {
-        {% for p in unified_parameters -%}
-        {% if p.source == "Body" -%}
+            {% for p in unified_parameters -%}
+            {% if p.source == "Body" -%}
             {{ p.original_name }}: self.{{ p.name }}.clone(),
-        {% endif -%}
-        {% endfor %}
+            {% endif -%}
+            {% endfor -%}
         }
     }
 {% endif -%}
@@ -84,11 +90,11 @@ impl {{ parameters_type }} {
 /// Request body structure for REST API calls
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct {{ endpoint_cap }}RequestBody {
-{% for p in unified_parameters -%}
-{% if p.source == "Body" -%}
+    {% for p in unified_parameters -%}
+    {% if p.source == "Body" -%}
     pub {{ p.original_name }}: Option<{{ p.rust_type }}>,
-{% endif -%}
-{% endfor %}
+    {% endif -%}
+    {% endfor -%}
 }
 {% endif -%}
 
@@ -199,11 +205,11 @@ mod tests {
     #[test]
     fn test_parameters_struct_serialization() {
         let params = {{ parameters_type }} {
-        {% if parameters | length > 0 -%}
-            {% for p in parameters -%}
+            {% if unified_parameters | length > 0 -%}
+            {% for p in unified_parameters -%}
             {{ p.name }}: None,
             {% endfor -%}
-        {% endif -%}
+            {% endif -%}
         };
         let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");
     }

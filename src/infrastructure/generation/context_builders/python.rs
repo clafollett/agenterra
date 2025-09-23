@@ -185,14 +185,12 @@ fn map_schema_to_python_type(schema: &crate::generation::Schema) -> String {
 
 fn map_response_to_python_type(op: &Operation) -> String {
     for response in &op.responses {
-        if response.status_code.starts_with('2') {
-            if let Some(content) = response.content.as_ref() {
-                if let Some(json_content) = content.get("application/json") {
-                    if let Some(schema) = json_content.get("schema") {
-                        return map_json_to_python_type(schema);
-                    }
-                }
-            }
+        if response.status_code.starts_with('2')
+            && let Some(content) = response.content.as_ref()
+            && let Some(json_content) = content.get("application/json")
+            && let Some(schema) = json_content.get("schema")
+        {
+            return map_json_to_python_type(schema);
         }
     }
     "Dict[str, Any]".to_string()
