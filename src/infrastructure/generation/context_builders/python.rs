@@ -1,7 +1,6 @@
 //! Python-specific context builder for code generation
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
 use crate::generation::{
@@ -10,16 +9,6 @@ use crate::generation::{
     utils::{to_proper_case, to_snake_case},
 };
 use crate::infrastructure::Template;
-
-/// Python-specific property information
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PythonPropertyInfo {
-    pub name: String,
-    pub python_type: String,
-    pub type_hint: String,
-    pub description: Option<String>,
-    pub example: Option<JsonValue>,
-}
 
 /// Python-specific context builder
 pub struct PythonContextBuilder;

@@ -58,10 +58,63 @@ impl CommandExecutor for ShellCommandExecutor {
         command: &str,
         working_dir: &Path,
     ) -> Result<CommandResult, GenerationError> {
+        // For cargo commands, try to execute directly
+        if command.starts_with("cargo ") {
+            // Try finding cargo directly
+            let cargo_path = which::which("cargo")
+                .or_else(|_| {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| String::from("/tmp"));
+                    let cargo_bin = format!("{home}/.cargo/bin/cargo");
+                    if std::path::Path::new(&cargo_bin).exists() {
+                        Ok(std::path::PathBuf::from(cargo_bin))
+                    } else {
+                        Err(which::Error::CannotFindBinaryPath)
+                    }
+                })
+                .ok();
+
+            if let Some(cargo) = cargo_path {
+                // Parse the cargo command and arguments
+                let args: Vec<&str> = command.trim_start_matches("cargo ").split(' ').collect();
+
+                tracing::debug!(
+                    "Executing cargo directly: {:?} with args: {:?} in {:?}",
+                    cargo,
+                    args,
+                    working_dir
+                );
+
+                match Command::new(&cargo)
+                    .args(&args)
+                    .current_dir(working_dir)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                {
+                    Ok(output) => {
+                        tracing::debug!(
+                            "Cargo command executed with exit code: {}",
+                            output.status.code().unwrap_or(-1)
+                        );
+                        return Ok(CommandResult {
+                            exit_code: output.status.code().unwrap_or(-1),
+                            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to execute cargo directly: {:?}", e);
+                        // Fall through to shell execution
+                    }
+                }
+            }
+        }
+
         let shell = if cfg!(target_os = "windows") {
             "cmd"
         } else {
-            "sh"
+            "/bin/sh"
         };
 
         let shell_arg = if cfg!(target_os = "windows") {
@@ -70,19 +123,34 @@ impl CommandExecutor for ShellCommandExecutor {
             "-c"
         };
 
-        let output = Command::new(shell)
-            .arg(shell_arg)
+        // Ensure we get the full PATH environment variable, including cargo's location
+        let mut cmd = Command::new(shell);
+        cmd.arg(shell_arg)
             .arg(command)
             .current_dir(working_dir)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| {
-                GenerationError::PostProcessingError(format!(
-                    "Failed to execute command '{command}': {e:?}"
-                ))
-            })?;
+            .stderr(Stdio::piped());
+
+        // On Unix systems, ensure PATH includes common Rust/Cargo locations
+        #[cfg(unix)]
+        {
+            use std::env;
+            if let Ok(path) = env::var("PATH") {
+                // Add common cargo install locations if not present
+                let home = env::var("HOME").unwrap_or_else(|_| String::from("/tmp"));
+                let cargo_bin = format!("{home}/.cargo/bin");
+                if !path.contains(&cargo_bin) {
+                    let new_path = format!("{cargo_bin}:{path}");
+                    cmd.env("PATH", new_path);
+                }
+            }
+        }
+
+        let output = cmd.output().await.map_err(|e| {
+            GenerationError::PostProcessingError(format!(
+                "Failed to execute command '{command}': {e:?}"
+            ))
+        })?;
 
         Ok(CommandResult {
             exit_code: output.status.code().unwrap_or(-1),

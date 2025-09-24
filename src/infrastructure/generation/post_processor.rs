@@ -70,18 +70,22 @@ impl PostProcessor for CommandPostProcessor {
         context: &GenerationContext,
         post_generation_commands: &[String],
     ) -> Result<Vec<Artifact>, GenerationError> {
+        // Determine the working directory for commands
+        let working_dir = context
+            .output_dir
+            .as_deref()
+            .unwrap_or(std::path::Path::new("."));
+
         // Execute post-generation commands in the output directory
         for command in post_generation_commands {
             tracing::info!(
                 project_name = %context.metadata.project_name,
                 command = %command,
+                working_dir = ?working_dir,
                 "Executing post-generation command"
             );
 
-            let result = self
-                .executor
-                .execute(command, std::path::Path::new("."))
-                .await;
+            let result = self.executor.execute(command, working_dir).await;
 
             match result {
                 Ok(cmd_result) => {
@@ -112,11 +116,13 @@ impl PostProcessor for CommandPostProcessor {
                     }
                 }
                 Err(e) => {
-                    tracing::error!(
+                    // Log as warning instead of error since post-generation commands are optional
+                    // They may fail in test environments or CI where cargo isn't available
+                    tracing::warn!(
                         project_name = %context.metadata.project_name,
                         command = %command,
                         error = %e,
-                        "Failed to execute post-generation command"
+                        "Post-generation command could not be executed (this is optional and non-fatal)"
                     );
                 }
             }

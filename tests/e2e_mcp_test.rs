@@ -756,12 +756,11 @@ async fn test_mcp_client_server_scaffolding_and_communication() -> Result<()> {
     // Ensure standalone crates by appending minimal workspace footer
     for path in [&server_output, &client_output] {
         let cargo_toml = path.join("Cargo.toml");
-        if let Ok(contents) = fs::read_to_string(&cargo_toml) {
-            if !contents.contains("[workspace]") {
-                if let Ok(mut f) = OpenOptions::new().append(true).open(&cargo_toml) {
-                    writeln!(f, "\n[workspace]\n").ok();
-                }
-            }
+        if let Ok(contents) = fs::read_to_string(&cargo_toml)
+            && !contents.contains("[workspace]")
+            && let Ok(mut f) = OpenOptions::new().append(true).open(&cargo_toml)
+        {
+            writeln!(f, "\n[workspace]\n").ok();
         }
     }
 
@@ -1275,14 +1274,13 @@ async fn test_mcp_with_pty_client(
     for line in &tools_output {
         if line.contains("Available tools:") {
             in_tools_list = true;
-        } else if in_tools_list {
-            if let Some(captures) = tool_pattern.captures(line) {
-                if let Some(tool_name) = captures.get(1) {
-                    let tool = tool_name.as_str();
-                    if !tool.is_empty() && !tool.contains("No tools") {
-                        tool_names.push(tool.to_string());
-                    }
-                }
+        } else if in_tools_list
+            && let Some(captures) = tool_pattern.captures(line)
+            && let Some(tool_name) = captures.get(1)
+        {
+            let tool = tool_name.as_str();
+            if !tool.is_empty() && !tool.contains("No tools") {
+                tool_names.push(tool.to_string());
             }
         }
     }
@@ -1304,14 +1302,13 @@ async fn test_mcp_with_pty_client(
     for line in &resources_output {
         if line.contains("Available resources:") {
             in_resources_list = true;
-        } else if in_resources_list {
-            if let Some(captures) = resource_pattern.captures(line) {
-                if let Some(uri_match) = captures.get(1) {
-                    let uri = uri_match.as_str().trim();
-                    if !uri.is_empty() && !uri.contains("No resources") {
-                        resource_uris.push(uri.to_string());
-                    }
-                }
+        } else if in_resources_list
+            && let Some(captures) = resource_pattern.captures(line)
+            && let Some(uri_match) = captures.get(1)
+        {
+            let uri = uri_match.as_str().trim();
+            if !uri.is_empty() && !uri.contains("No resources") {
+                resource_uris.push(uri.to_string());
             }
         }
     }
@@ -1394,14 +1391,14 @@ async fn test_mcp_with_pty_client(
             for op in &db_operations {
                 if op.contains("Cache hit rate:") {
                     // Parse hit rate to calculate hits/misses
-                    if let Some(rate_str) = op.split(':').nth(1) {
-                        if let Ok(rate) = rate_str.trim().trim_end_matches('%').parse::<f64>() {
-                            let hit_rate = rate / 100.0;
-                            // Assuming we made resource_count requests
-                            let total_requests = resource_count as f64;
-                            diagnostics.cache_hits = (total_requests * hit_rate) as usize;
-                            diagnostics.cache_misses = (total_requests * (1.0 - hit_rate)) as usize;
-                        }
+                    if let Some(rate_str) = op.split(':').nth(1)
+                        && let Ok(rate) = rate_str.trim().trim_end_matches('%').parse::<f64>()
+                    {
+                        let hit_rate = rate / 100.0;
+                        // Assuming we made resource_count requests
+                        let total_requests = resource_count as f64;
+                        diagnostics.cache_hits = (total_requests * hit_rate) as usize;
+                        diagnostics.cache_misses = (total_requests * (1.0 - hit_rate)) as usize;
                     }
                 }
             }

@@ -15,7 +15,7 @@ use utoipa::ToSchema;
 
 /// Auto-generated unified parameters struct for `/{{ endpoint }}` endpoint.
 /// Combines query parameters and request body properties into a single MCP interface.
-/// Spec: {{ spec_file_name | default(value="") }}
+/// Spec:{% if spec_file_name %} {{ spec_file_name }}{% endif %}
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
 pub struct {{ parameters_type }} {
     {% if unified_parameters | length > 0 -%}
@@ -67,10 +67,18 @@ impl Endpoint for {{ parameters_type }} {
 }
 
 impl {{ parameters_type }} {
+    {% set has_query_params = false -%}
+    {% for p in unified_parameters -%}
+    {% if p.source == "Query" -%}
+    {% set_global has_query_params = true -%}
+    {% endif -%}
+    {% endfor -%}
+    {% if has_query_params -%}
     /// Extract query parameters for REST API calls
     pub fn to_query_params(&self) -> HashMap<String, String> {
         self.get_params()
     }
+    {% endif -%}
 
 {% if has_body_properties -%}
     /// Extract request body properties for REST API calls
@@ -97,18 +105,6 @@ pub struct {{ endpoint_cap }}RequestBody {
     {% endfor -%}
 }
 {% endif -%}
-
-/// Auto-generated properties struct for `/{{ endpoint }}` endpoint.
-/// Spec: {{ spec_file_name | default(value="") }}
-#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
-pub struct {{ properties_type }} {
-{% if properties | length > 0 -%}
-    {% for prop in properties -%}
-    #[schemars(description = r#"{{ prop.title }} - {{ prop.description }}"#)]
-    pub {{ prop.name }}: Option<{{ prop.rust_type }}>,
-    {% endfor -%}
-{% endif -%}
-}
 
 {%- if response_is_array %}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, ToSchema)]
@@ -166,7 +162,7 @@ pub async fn {{ endpoint }}_handler(
         target = "handler",
         event = "incoming_request",
         endpoint = "{{ endpoint }}",
-        method = "GET",
+        method = "{{ http_method }}",
         path = "{{ path }}",
         params = serde_json::to_string(params).unwrap_or_else(|e| {
             warn!("Failed to serialize request params: {e}");
@@ -178,7 +174,13 @@ pub async fn {{ endpoint }}_handler(
         event = "before_api_call",
         endpoint = "{{ endpoint }}"
     );
-    let resp = get_endpoint_response::<_, {{ response_type }}>(config, params).await;
+    {% if has_body_properties -%}
+    let request_body = serde_json::to_value(params.to_request_body()).ok();
+    {%- else -%}
+    let request_body = None;
+    {%- endif %}
+    let resp =
+        get_endpoint_response::<_, {{ response_type }}>(config, params, "{{ http_method }}", request_body).await;
 
     match &resp {
         Ok(r) => {
@@ -214,15 +216,4 @@ mod tests {
         let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");
     }
 
-    #[test]
-    fn test_properties_struct_serialization() {
-        let props = {{ properties_type }} {
-        {% if properties | length > 0 -%}
-            {% for prop in properties -%}
-            {{ prop.name | lower }}: None,
-            {% endfor -%}
-        {% endif -%}
-        };
-        let _ = serde_json::to_string(&props).expect("Serializing test properties should not fail");
-    }
 }

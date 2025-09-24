@@ -58,6 +58,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 url = { version = "2.5", features = ["serde"] }
 uuid = { version = "1.17", features = ["v4"] }
+which = "6.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"

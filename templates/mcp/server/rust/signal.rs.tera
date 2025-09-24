@@ -2,10 +2,13 @@
 //
 // Handles SIGHUP (reload config/env) and SIGTERM/SIGINT (graceful shutdown)
 // using idiomatic async Rust patterns with Tokio and signal-hook.
-use tokio::signal::unix::{signal, SignalKind};
 use std::sync::Arc;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::{Mutex, Notify};
 use tracing::info;
+
+// Type alias to simplify complex type
+type SharedSignalEvent = Arc<Mutex<Option<SignalEvent>>>;
 
 /// Represents a signal event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,7 +25,7 @@ pub enum SignalEvent {
 /// # Arguments
 /// * `notify`: An `Arc<Notify>` used to trigger reload/shutdown logic elsewhere in your app.
 /// * `event`: A `tokio::sync::Mutex<Option<SignalEvent>>` to communicate the event type.
-pub async fn spawn_signal_listener(notify: Arc<Notify>, event: Arc<Mutex<Option<SignalEvent>>>) {
+pub async fn spawn_signal_listener(notify: Arc<Notify>, event: SharedSignalEvent) {
     // Create Unix signal streams for SIGHUP, SIGTERM, and SIGINT
     let mut sighup = signal(SignalKind::hangup()).expect("Failed to register SIGHUP");
     let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM");

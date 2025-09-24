@@ -16,6 +16,7 @@ pub struct GenerationContext {
     pub variables: HashMap<String, JsonValue>,
     pub metadata: GenerationMetadata,
     pub protocol_context: Option<ProtocolContext>,
+    pub output_dir: Option<std::path::PathBuf>,
 }
 
 /// Metadata about the generation
@@ -39,6 +40,7 @@ impl GenerationContext {
             variables: HashMap::new(),
             metadata: GenerationMetadata::default(),
             protocol_context: None,
+            output_dir: None,
         }
     }
 

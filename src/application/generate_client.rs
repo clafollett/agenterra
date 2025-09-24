@@ -55,7 +55,10 @@ impl GenerateClientUseCase {
         };
 
         // 4. Build generation context
-        let context = handler.prepare_context(input).await?;
+        let mut context = handler.prepare_context(input).await?;
+
+        // Set the output directory in context for post-processors to use
+        context.output_dir = Some(request.output_dir.clone());
 
         // 5. Generate code
         let result = self.generation_orchestrator.generate(context).await?;

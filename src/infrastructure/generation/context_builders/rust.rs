@@ -70,6 +70,7 @@ pub struct RustEndpointContext {
     // NEW: Unified parameter support for Issue #106
     pub unified_parameters: Vec<UnifiedParameter>,
     pub has_body_properties: bool,
+    pub http_method: String,
 }
 
 /// Rust-specific context builder
@@ -244,6 +245,7 @@ fn build_rust_endpoint_context(op: &Operation) -> Result<RustEndpointContext, Ge
         // NEW: Unified parameter support for Issue #106
         unified_parameters,
         has_body_properties,
+        http_method: op.method.to_uppercase(),
     })
 }
 
