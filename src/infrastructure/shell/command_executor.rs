@@ -63,7 +63,11 @@ impl CommandExecutor for ShellCommandExecutor {
             // Try finding cargo directly
             let cargo_path = which::which("cargo")
                 .or_else(|_| {
-                    let home = std::env::var("HOME").unwrap_or_else(|_| String::from("/tmp"));
+                    // Try to find cargo in user's home directory
+                    // Support both Unix (HOME) and Windows (USERPROFILE)
+                    let home = std::env::var("HOME")
+                        .or_else(|_| std::env::var("USERPROFILE"))
+                        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
                     let cargo_bin = format!("{home}/.cargo/bin/cargo");
                     if std::path::Path::new(&cargo_bin).exists() {
                         Ok(std::path::PathBuf::from(cargo_bin))

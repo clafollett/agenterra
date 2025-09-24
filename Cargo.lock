@@ -29,6 +29,7 @@ dependencies = [
  "clap",
  "dirs",
  "futures",
+ "indexmap",
  "lazy_static",
  "log",
  "once_cell",

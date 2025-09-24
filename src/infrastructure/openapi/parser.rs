@@ -461,7 +461,7 @@ impl OpenApiParser {
         // Parse properties recursively to resolve any nested schemas
         let properties = if let Some(props) = schema.get("properties") {
             if let Some(props_obj) = props.as_object() {
-                let mut parsed_props = std::collections::HashMap::new();
+                let mut parsed_props = indexmap::IndexMap::new();
                 for (key, value) in props_obj {
                     let parsed_schema = self.parse_schema(value)?;
                     parsed_props.insert(key.clone(), parsed_schema);

@@ -175,7 +175,23 @@ pub async fn {{ endpoint }}_handler(
         endpoint = "{{ endpoint }}"
     );
     {% if has_body_properties -%}
-    let request_body = serde_json::to_value(params.to_request_body()).ok();
+    let request_body = match serde_json::to_value(params.to_request_body()) {
+        Ok(val) => Some(val),
+        Err(e) => {
+            error!(
+                target = "handler",
+                event = "serialization_error",
+                endpoint = "{{ endpoint }}",
+                error = ?e,
+                "Failed to serialize request body"
+            );
+            return Err(agenterra_rmcp::Error::from(agenterra_rmcp::model::ErrorData::new(
+                agenterra_rmcp::model::ErrorCode::INVALID_PARAMS,
+                format!("Failed to serialize request body: {}", e),
+                None,
+            )));
+        }
+    };
     {%- else -%}
     let request_body = None;
     {%- endif %}

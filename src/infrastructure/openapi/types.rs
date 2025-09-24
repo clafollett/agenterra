@@ -84,7 +84,7 @@ pub struct Schema {
     pub schema_type: Option<String>,
     pub format: Option<String>,
     pub items: Option<Box<Schema>>,
-    pub properties: Option<std::collections::HashMap<String, Schema>>,
+    pub properties: Option<indexmap::IndexMap<String, Schema>>,
     pub required: Option<Vec<String>>,
     // Additional OpenAPI schema fields
     pub description: Option<String>,
