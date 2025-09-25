@@ -13,18 +13,21 @@ use std::collections::HashMap;
 use tracing::{debug, error, info, warn};
 use utoipa::ToSchema;
 
-/// Auto-generated parameters struct for `/{{ endpoint }}` endpoint.
-/// Spec: {{ spec_file_name | default(value="") }}
+/// Auto-generated unified parameters struct for `/{{ endpoint }}` endpoint.
+/// Combines query parameters and request body properties into a single MCP interface.
+/// Spec:{% if spec_file_name %} {{ spec_file_name }}{% endif %}
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
 pub struct {{ parameters_type }} {
-{% if parameters | length > 0 -%}
-    {% for p in parameters -%}
+    {% if unified_parameters | length > 0 -%}
+    {% for p in unified_parameters -%}
     {% if p.description -%}
-    #[schemars(description = r#"{{ p.description }}"#)]
+    #[schemars(description = r#"{{ p.description }}{% if p.source == "Query" %} (query param){% else %} (request body){% endif %}"#)]
+    {% else -%}
+    #[schemars(description = r#"{% if p.source == "Query" %}Query parameter{% else %}Request body property{% endif %}"#)]
     {% endif -%}
-    pub {{ p.name }}: Option<{{ p.target_type }}>,
+    pub {{ p.name }}: Option<{{ p.rust_type }}>,
     {% endfor -%}
-{% endif -%}
+    {% endif -%}
 }
 
 // Implement Endpoint for generic handler
@@ -34,20 +37,28 @@ impl Endpoint for {{ parameters_type }} {
     }
 
     fn get_params(&self) -> HashMap<String, String> {
-        {% if parameters | length > 0 -%}
+        {% set has_query_params = false -%}
+        {% for p in unified_parameters -%}
+        {% if p.source == "Query" -%}
+        {% set_global has_query_params = true -%}
+        {% endif -%}
+        {% endfor -%}
+        {% if has_query_params -%}
         let mut params = HashMap::new();
-        {% for p in parameters %}
+        {% for p in unified_parameters -%}
+        {% if p.source == "Query" -%}
         if let Some(val) = &self.{{ p.name }} {
-            {% if p.target_type is containing("Vec") -%}
+            {% if p.rust_type is containing("Vec") -%}
             // Handle array parameters by joining values with commas
             // This creates query strings like: ?tags=tag1,tag2,tag3
             // Server must split by comma to reconstruct the array
-            params.insert("{{ p.name }}".to_string(), val.join(","));
+            params.insert("{{ p.original_name }}".to_string(), val.join(","));
             {%- else -%}
-            params.insert("{{ p.name }}".to_string(), val.to_string());
+            params.insert("{{ p.original_name }}".to_string(), val.to_string());
             {%- endif %}
         }
-        {% endfor %}
+        {% endif -%}
+        {% endfor -%}
         params
         {%- else -%}
         HashMap::new()
@@ -55,17 +66,45 @@ impl Endpoint for {{ parameters_type }} {
     }
 }
 
-/// Auto-generated properties struct for `/{{ endpoint }}` endpoint.
-/// Spec: {{ spec_file_name | default(value="") }}
-#[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema, ToSchema)]
-pub struct {{ properties_type }} {
-{% if properties | length > 0 -%}
-    {% for prop in properties -%}
-    #[schemars(description = r#"{{ prop.title }} - {{ prop.description }}"#)]
-    pub {{ prop.name }}: Option<{{ prop.rust_type }}>,
+impl {{ parameters_type }} {
+    {% set has_query_params = false -%}
+    {% for p in unified_parameters -%}
+    {% if p.source == "Query" -%}
+    {% set_global has_query_params = true -%}
+    {% endif -%}
     {% endfor -%}
+    {% if has_query_params -%}
+    /// Extract query parameters for REST API calls
+    pub fn to_query_params(&self) -> HashMap<String, String> {
+        self.get_params()
+    }
+    {% endif -%}
+
+{% if has_body_properties -%}
+    /// Extract request body properties for REST API calls
+    pub fn to_request_body(&self) -> {{ endpoint_cap }}RequestBody {
+        {{ endpoint_cap }}RequestBody {
+            {% for p in unified_parameters -%}
+            {% if p.source == "Body" -%}
+            {{ p.original_name }}: self.{{ p.name }}.clone(),
+            {% endif -%}
+            {% endfor -%}
+        }
+    }
 {% endif -%}
 }
+
+{% if has_body_properties -%}
+/// Request body structure for REST API calls
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct {{ endpoint_cap }}RequestBody {
+    {% for p in unified_parameters -%}
+    {% if p.source == "Body" -%}
+    pub {{ p.original_name }}: Option<{{ p.rust_type }}>,
+    {% endif -%}
+    {% endfor -%}
+}
+{% endif -%}
 
 {%- if response_is_array %}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, ToSchema)]
@@ -123,7 +162,7 @@ pub async fn {{ endpoint }}_handler(
         target = "handler",
         event = "incoming_request",
         endpoint = "{{ endpoint }}",
-        method = "GET",
+        method = "{{ http_method }}",
         path = "{{ path }}",
         params = serde_json::to_string(params).unwrap_or_else(|e| {
             warn!("Failed to serialize request params: {e}");
@@ -135,7 +174,29 @@ pub async fn {{ endpoint }}_handler(
         event = "before_api_call",
         endpoint = "{{ endpoint }}"
     );
-    let resp = get_endpoint_response::<_, {{ response_type }}>(config, params).await;
+    {% if has_body_properties -%}
+    let request_body = match serde_json::to_value(params.to_request_body()) {
+        Ok(val) => Some(val),
+        Err(e) => {
+            error!(
+                target = "handler",
+                event = "serialization_error",
+                endpoint = "{{ endpoint }}",
+                error = ?e,
+                "Failed to serialize request body"
+            );
+            return Err(agenterra_rmcp::Error::from(agenterra_rmcp::model::ErrorData::new(
+                agenterra_rmcp::model::ErrorCode::INVALID_PARAMS,
+                format!("Failed to serialize request body: {}", e),
+                None,
+            )));
+        }
+    };
+    {%- else -%}
+    let request_body = None;
+    {%- endif %}
+    let resp =
+        get_endpoint_response::<_, {{ response_type }}>(config, params, "{{ http_method }}", request_body).await;
 
     match &resp {
         Ok(r) => {
@@ -162,24 +223,13 @@ mod tests {
     #[test]
     fn test_parameters_struct_serialization() {
         let params = {{ parameters_type }} {
-        {% if parameters | length > 0 -%}
-            {% for p in parameters -%}
+            {% if unified_parameters | length > 0 -%}
+            {% for p in unified_parameters -%}
             {{ p.name }}: None,
             {% endfor -%}
-        {% endif -%}
+            {% endif -%}
         };
         let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");
     }
 
-    #[test]
-    fn test_properties_struct_serialization() {
-        let props = {{ properties_type }} {
-        {% if properties | length > 0 -%}
-            {% for prop in properties -%}
-            {{ prop.name | lower }}: None,
-            {% endfor -%}
-        {% endif -%}
-        };
-        let _ = serde_json::to_string(&props).expect("Serializing test properties should not fail");
-    }
 }

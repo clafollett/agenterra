@@ -60,6 +60,7 @@ fn default_sse_keep_alive() -> Duration {
     Duration::from_secs(30)
 }
 
+#[allow(clippy::type_complexity)]
 fn deserialize_duration_secs<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
     D: serde::Deserializer<'de>,

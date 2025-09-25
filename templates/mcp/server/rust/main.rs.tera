@@ -52,8 +52,11 @@ struct Args {
     config_file: Option<String>,
 }
 
+// Type alias to simplify return type
+type BoxError = Box<dyn std::error::Error>;
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), BoxError> {
     debug!("[{{ project_name }} MCP] main() reached ===");
 
     // Parse command line arguments

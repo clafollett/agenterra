@@ -156,15 +156,15 @@ impl ProtocolHandler for McpProtocolHandler {
         }
 
         // Validate MCP-specific options if present
-        if let Some(transport) = config.options.get("transport") {
-            if let Some(transport_str) = transport.as_str() {
-                match transport_str {
-                    "stdio" | "http" | "websocket" => {}
-                    _ => {
-                        return Err(ProtocolError::InvalidConfiguration(format!(
-                            "Invalid transport type: {transport_str}. Must be one of: stdio, http, websocket"
-                        )));
-                    }
+        if let Some(transport) = config.options.get("transport")
+            && let Some(transport_str) = transport.as_str()
+        {
+            match transport_str {
+                "stdio" | "http" | "websocket" => {}
+                _ => {
+                    return Err(ProtocolError::InvalidConfiguration(format!(
+                        "Invalid transport type: {transport_str}. Must be one of: stdio, http, websocket"
+                    )));
                 }
             }
         }

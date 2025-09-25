@@ -4,6 +4,7 @@ use crate::application::{
     ApplicationError, GenerateClientRequest, GenerateClientResponse, OutputService,
 };
 use crate::generation::GenerationOrchestrator;
+use crate::infrastructure::shell::CommandExecutor;
 use crate::protocols::{ProtocolConfig, ProtocolError, ProtocolInput, ProtocolRegistry, Role};
 use std::sync::Arc;
 
@@ -55,7 +56,10 @@ impl GenerateClientUseCase {
         };
 
         // 4. Build generation context
-        let context = handler.prepare_context(input).await?;
+        let mut context = handler.prepare_context(input).await?;
+
+        // Set the output directory in context for post-processors to use
+        context.output_dir = Some(request.output_dir.clone());
 
         // 5. Generate code
         let result = self.generation_orchestrator.generate(context).await?;
@@ -76,6 +80,47 @@ impl GenerateClientUseCase {
         self.output_service
             .write_artifacts(&output_artifacts)
             .await?;
+
+        // Execute post-generation commands after files are written
+        if !result.post_generation_commands.is_empty() {
+            let command_executor = crate::infrastructure::ShellCommandExecutor::new();
+            for command in &result.post_generation_commands {
+                tracing::info!(
+                    project_name = %result.metadata.project_name,
+                    command = %command,
+                    working_dir = ?request.output_dir,
+                    "Executing post-generation command after file write"
+                );
+
+                match command_executor.execute(command, &request.output_dir).await {
+                    Ok(cmd_result) => {
+                        if cmd_result.is_success() {
+                            tracing::debug!(
+                                project_name = %result.metadata.project_name,
+                                command = %command,
+                                "Post-generation command completed successfully"
+                            );
+                        } else {
+                            tracing::error!(
+                                project_name = %result.metadata.project_name,
+                                command = %command,
+                                exit_code = cmd_result.exit_code,
+                                stderr = %cmd_result.stderr,
+                                "Post-generation command failed"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            project_name = %result.metadata.project_name,
+                            command = %command,
+                            error = %e,
+                            "Post-generation command could not be executed (this is optional and non-fatal)"
+                        );
+                    }
+                }
+            }
+        }
 
         Ok(GenerateClientResponse {
             artifacts_count,

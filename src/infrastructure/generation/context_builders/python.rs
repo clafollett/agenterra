@@ -1,7 +1,6 @@
 //! Python-specific context builder for code generation
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 
 use crate::generation::{
@@ -10,16 +9,6 @@ use crate::generation::{
     utils::{to_proper_case, to_snake_case},
 };
 use crate::infrastructure::Template;
-
-/// Python-specific property information
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PythonPropertyInfo {
-    pub name: String,
-    pub python_type: String,
-    pub type_hint: String,
-    pub description: Option<String>,
-    pub example: Option<JsonValue>,
-}
 
 /// Python-specific context builder
 pub struct PythonContextBuilder;
@@ -185,14 +174,12 @@ fn map_schema_to_python_type(schema: &crate::generation::Schema) -> String {
 
 fn map_response_to_python_type(op: &Operation) -> String {
     for response in &op.responses {
-        if response.status_code.starts_with('2') {
-            if let Some(content) = response.content.as_ref() {
-                if let Some(json_content) = content.get("application/json") {
-                    if let Some(schema) = json_content.get("schema") {
-                        return map_json_to_python_type(schema);
-                    }
-                }
-            }
+        if response.status_code.starts_with('2')
+            && let Some(content) = response.content.as_ref()
+            && let Some(json_content) = content.get("application/json")
+            && let Some(schema) = json_content.get("schema")
+        {
+            return map_json_to_python_type(schema);
         }
     }
     "Dict[str, Any]".to_string()

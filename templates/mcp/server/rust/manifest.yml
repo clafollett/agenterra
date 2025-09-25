@@ -41,5 +41,7 @@ required_directories:
 hooks:
   # pre_generate: "echo 'Running pre-generation tasks...'"
   post_generate:
-    - "cargo fmt"
-    - "cargo check"
+    - "echo 'Post-generation commands running in:' && pwd"
+    - "cargo check --all-targets"
+    - "cargo clippy --all-targets --fix --allow-dirty --allow-staged --allow-no-vcs -- -D warnings -W clippy::uninlined_format_args"
+    - "cargo fmt --all"
