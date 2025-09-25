@@ -67,16 +67,17 @@ impl GenerationOrchestrator {
             .render(&template, &render_context, &context)
             .await?;
 
-        // 5. Post-process artifacts and execute post-generation commands
+        // 5. Post-process artifacts (permissions only, not commands)
         let processed_artifacts = self
             .post_processor
-            .process(artifacts, &context, &template.manifest.post_generate_hooks)
+            .process(artifacts, &context, &[]) // Empty commands - we'll run them later
             .await?;
 
-        // 6. Return result
+        // 6. Return result with post-generation commands
         Ok(GenerationResult {
             artifacts: processed_artifacts,
             metadata: context.metadata,
+            post_generation_commands: template.manifest.post_generate_hooks,
         })
     }
 }

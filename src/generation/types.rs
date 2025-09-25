@@ -98,6 +98,7 @@ pub struct Artifact {
 pub struct GenerationResult {
     pub artifacts: Vec<Artifact>,
     pub metadata: crate::generation::GenerationMetadata,
+    pub post_generation_commands: Vec<String>,
 }
 
 // Re-export OpenAPI types from infrastructure module
