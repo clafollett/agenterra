@@ -155,6 +155,7 @@ mod tests {
         let result = GenerationResult {
             artifacts: artifacts.clone(),
             metadata: metadata.clone(),
+            post_generation_commands: vec![],
         };
 
         assert_eq!(result.artifacts.len(), 1);
