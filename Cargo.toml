@@ -60,10 +60,10 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 url = { version = "2.5", features = ["serde"] }
 uuid = { version = "1.17", features = ["v4"] }
 which = "6.0"
+lazy_static = "1.5.0" # Moved from dev-dependencies
 
 [dev-dependencies]
 assert_cmd = "2.0"
-lazy_static = "1.5.0"
 portable-pty = "0.8"
 predicates = "3.1"
 reqwest = { version = "0.12", features = ["json", "stream"] }

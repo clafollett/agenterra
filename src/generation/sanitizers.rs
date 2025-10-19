@@ -3,7 +3,35 @@
 //! This module provides utilities to sanitize various strings used in code generation
 //! to ensure they are valid for their intended use across all target languages.
 
+use lazy_static::lazy_static;
 use regex::Regex;
+use std::collections::HashSet;
+
+lazy_static! {
+    /// A set of all Rust 2018 keywords.
+    ///
+    /// This list includes keywords that cannot be used as identifiers without
+    /// a raw identifier prefix (`r#`).
+    static ref RUST_KEYWORDS: HashSet<&'static str> = {
+        let keywords = vec![
+            // Keywords that are currently in use
+            "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false",
+            "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut",
+            "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait",
+            "true", "type", "union", "unsafe", "use", "where", "while",
+            // Keywords reserved for future use
+            "async", "await", "dyn",
+            // Weak keywords (contextual) - generally safe as identifiers but good to escape for consistency
+            // "union" is already in the main list
+            // "static" is already in the main list
+            // "dyn" is already in the main list
+            // Keywords that are not yet in use but are reserved
+            "abstract", "become", "box", "do", "final", "macro", "override", "priv",
+            "typeof", "unsized", "virtual", "yield", "try",
+        ];
+        keywords.into_iter().collect()
+    };
+}
 
 /// Sanitizes Markdown for use in code documentation across all languages
 ///
@@ -64,6 +92,33 @@ pub fn sanitize_markdown(input: &str) -> String {
         .join(" ")
 }
 
+/// Sanitizes a string to be a valid Rust identifier, escaping keywords if necessary.
+///
+/// If the input string is a Rust keyword, it will be prefixed with `r#` to
+/// create a raw identifier. Otherwise, the string is returned as is.
+///
+/// # Arguments
+/// * `name` - The string to sanitize.
+///
+/// # Returns
+/// A `String` that is a valid Rust identifier.
+///
+/// # Examples
+/// ```
+/// use agenterra::generation::sanitizers::sanitize_rust_identifier;
+///
+/// assert_eq!(sanitize_rust_identifier("type"), "r#type");
+/// assert_eq!(sanitize_rust_identifier("name"), "name");
+/// assert_eq!(sanitize_rust_identifier("for"), "r#for");
+/// ```
+pub fn sanitize_rust_identifier(name: &str) -> String {
+    if RUST_KEYWORDS.contains(name) {
+        format!("r#{}", name)
+    } else {
+        name.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +149,21 @@ mod tests {
         let input = "Path\\to\\file";
         let output = sanitize_markdown(input);
         assert_eq!(output, "Path\\\\to\\\\file");
+    }
+
+    #[test]
+    fn test_sanitize_rust_identifier() {
+        // Test with Rust keywords
+        assert_eq!(sanitize_rust_identifier("type"), "r#type");
+        assert_eq!(sanitize_rust_identifier("for"), "r#for");
+        assert_eq!(sanitize_rust_identifier("fn"), "r#fn");
+        assert_eq!(sanitize_rust_identifier("async"), "r#async");
+        assert_eq!(sanitize_rust_identifier("union"), "r#union");
+
+        // Test with non-keywords
+        assert_eq!(sanitize_rust_identifier("name"), "name");
+        assert_eq!(sanitize_rust_identifier("id"), "id");
+        assert_eq!(sanitize_rust_identifier("description"), "description");
+        assert_eq!(sanitize_rust_identifier("my_variable"), "my_variable");
     }
 }

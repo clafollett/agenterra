@@ -15,6 +15,7 @@ use crate::generation::{
     ApiInfo, Components, GenerationError, OpenApiContext, Operation, Parameter, ParameterLocation,
     RequestBody, Response, Schema, Server,
 };
+use crate::generation::sanitizers::sanitize_rust_identifier;
 
 /// HTTP methods supported by OpenAPI (copied from core)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,7 +207,10 @@ impl OpenApiParser {
                     method,
                     path.trim_start_matches('/').replace('/', "_")
                 )
-            });
+            })
+            .to_string(); // Ensure it's a String before sanitizing
+
+        let operation_id = sanitize_rust_identifier(&operation_id);
 
         let summary = method_item
             .get("summary")
@@ -297,10 +301,11 @@ impl OpenApiParser {
 
     /// Parse a single parameter
     fn parse_parameter(&self, param: &JsonValue) -> Result<Parameter, GenerationError> {
-        let name = param["name"]
+        let name_raw = param["name"]
             .as_str()
             .ok_or_else(|| GenerationError::ValidationError("Parameter missing name".to_string()))?
             .to_string();
+        let name = sanitize_rust_identifier(&name_raw);
 
         let location = match param["in"].as_str() {
             Some("path") => ParameterLocation::Path,
@@ -463,8 +468,9 @@ impl OpenApiParser {
             if let Some(props_obj) = props.as_object() {
                 let mut parsed_props = indexmap::IndexMap::new();
                 for (key, value) in props_obj {
+                    let sanitized_key = sanitize_rust_identifier(key);
                     let parsed_schema = self.parse_schema(value)?;
-                    parsed_props.insert(key.clone(), parsed_schema);
+                    parsed_props.insert(sanitized_key, parsed_schema);
                 }
                 Some(parsed_props)
             } else {
