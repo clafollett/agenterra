@@ -173,6 +173,9 @@ async fn main() -> anyhow::Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .with_target(true)
+        .with_line_number(true)
+        .with_file(true)
         .init();
 
     info!("Starting Agenterra CLI");
@@ -223,7 +226,7 @@ async fn handle_mcp_command(role: &McpCommands) -> anyhow::Result<()> {
             template,
             template_dir,
             output_dir,
-            log_file,
+            log_file, // Keep log_file argument for potential future use, but not for direct setup here
             port,
             base_url,
         } => {
@@ -234,7 +237,7 @@ async fn handle_mcp_command(role: &McpCommands) -> anyhow::Result<()> {
                 template_dir: template_dir.clone(),
                 output_dir: output_dir.clone(),
                 port: *port,
-                log_file: log_file.clone(),
+                log_file: log_file.clone(), // Pass it through, but it won't be used by current logging setup
                 base_url: base_url.clone(),
             };
 

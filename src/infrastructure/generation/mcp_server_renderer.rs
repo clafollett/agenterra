@@ -3,12 +3,13 @@
 use async_trait::async_trait;
 use serde_json::json;
 use std::path::PathBuf;
-use tera::{Context as TeraContext, Tera};
+use tera::{Context as TeraContext, Tera, Result as TeraResult, Value as TeraValue, from_value};
 
 use crate::generation::{
     Artifact, GenerationContext, GenerationError, RenderContext, TemplateRenderingStrategy,
     utils::to_snake_case,
 };
+use crate::generation::sanitizers::sanitize_rust_identifier; // Import the sanitizer
 use crate::infrastructure::{Template, TemplateFileType};
 use crate::protocols::{Protocol, Role};
 
@@ -57,22 +58,23 @@ impl McpServerTemplateRenderer {
             let schema_filename = to_snake_case(endpoint_name);
             let schema_path = PathBuf::from(format!("schemas/{schema_filename}.json"));
 
-            // Helper function to clean OpenAPI schema by removing null values
+            // Helper function to clean OpenAPI schema by removing null values and handling recursive references
             fn clean_schema(value: &serde_json::Value) -> serde_json::Value {
                 match value {
                     serde_json::Value::Object(map) => {
                         let mut cleaned = serde_json::Map::new();
                         for (k, v) in map {
+                            // Preserve description for recursive references
+                            if k == "description" && v.as_str().map_or(false, |s| s.starts_with("Recursive reference to")) {
+                                cleaned.insert(k.clone(), v.clone());
+                                continue;
+                            }
                             if !v.is_null() {
                                 let cleaned_value = clean_schema(v);
-                                // Only include non-empty objects and arrays
+                                // Only include non-empty objects and arrays, and non-null values
                                 match &cleaned_value {
-                                    serde_json::Value::Object(m) if !m.is_empty() => {
-                                        cleaned.insert(k.clone(), cleaned_value);
-                                    }
-                                    serde_json::Value::Array(a) if !a.is_empty() => {
-                                        cleaned.insert(k.clone(), cleaned_value);
-                                    }
+                                    serde_json::Value::Object(m) if m.is_empty() => {}
+                                    serde_json::Value::Array(a) if a.is_empty() => {}
                                     serde_json::Value::Null => {}
                                     _ => {
                                         cleaned.insert(k.clone(), cleaned_value);
@@ -89,6 +91,7 @@ impl McpServerTemplateRenderer {
                 }
             }
 
+            tracing::debug!("McpServerTemplateRenderer: Generating schema artifact for endpoint: {}", endpoint_name);
             // Create a clean schema object for LLM consumption
             let mut clean = serde_json::Map::new();
 
@@ -100,6 +103,7 @@ impl McpServerTemplateRenderer {
             {
                 clean.insert("summary".to_string(), json!(summary));
             }
+            tracing::debug!("McpServerTemplateRenderer: Initial clean schema for {}: {:?}", endpoint_name, clean);
 
             if let Some(description) = endpoint.get("description").and_then(|v| v.as_str())
                 && !description.is_empty()
@@ -131,8 +135,9 @@ impl McpServerTemplateRenderer {
                         if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
                             param.insert("description".to_string(), json!(desc));
                         }
-                        if let Some(rust_type) = p.get("rust_type").and_then(|v| v.as_str()) {
-                            param.insert("type".to_string(), json!(rust_type));
+                        // Use the original OpenAPI schema type for the JSON schema
+                        if let Some(schema_type) = p.get("schema").and_then(|s| s.get("schema_type")).and_then(|v| v.as_str()) {
+                            param.insert("type".to_string(), json!(schema_type));
                         }
                         if let Some(required) = p.get("required").and_then(|v| v.as_bool()) {
                             param.insert("required".to_string(), json!(required));
@@ -152,11 +157,13 @@ impl McpServerTemplateRenderer {
             // Add request body schema
             if let Some(props_schema) = endpoint.get("properties_schema") {
                 let cleaned_schema = clean_schema(props_schema);
-                if !cleaned_schema
-                    .as_object()
-                    .map(|o| o.is_empty())
-                    .unwrap_or(true)
+                if !cleaned_schema.is_null()
+                    && !cleaned_schema
+                        .as_object()
+                        .map(|o| o.is_empty())
+                        .unwrap_or(true)
                 {
+                    tracing::debug!("McpServerTemplateRenderer: Adding request body schema for {}", endpoint_name);
                     let mut request_body = serde_json::Map::new();
                     request_body.insert("schema".to_string(), cleaned_schema);
 
@@ -194,24 +201,31 @@ impl McpServerTemplateRenderer {
                         "requestBody".to_string(),
                         serde_json::Value::Object(request_body),
                     );
+                } else {
+                    tracing::debug!("McpServerTemplateRenderer: Request body schema for {} is empty or null.", endpoint_name);
                 }
             }
 
             // Add response schema
             if let Some(resp_schema) = endpoint.get("response_schema") {
                 let cleaned_schema = clean_schema(resp_schema);
-                if !cleaned_schema
-                    .as_object()
-                    .map(|o| o.is_empty())
-                    .unwrap_or(true)
+                if !cleaned_schema.is_null()
+                    && !cleaned_schema
+                        .as_object()
+                        .map(|o| o.is_empty())
+                        .unwrap_or(true)
                 {
+                    tracing::debug!("McpServerTemplateRenderer: Adding response schema for {}", endpoint_name);
                     let mut response = serde_json::Map::new();
                     response.insert("schema".to_string(), cleaned_schema);
                     clean.insert("response".to_string(), serde_json::Value::Object(response));
+                } else {
+                    tracing::debug!("McpServerTemplateRenderer: Response schema for {} is empty or null.", endpoint_name);
                 }
             }
 
             let clean_schema = serde_json::Value::Object(clean);
+            tracing::debug!("McpServerTemplateRenderer: Final clean schema for {}: {:?}", endpoint_name, clean_schema);
 
             let schema_json = serde_json::to_string_pretty(&clean_schema).map_err(|e| {
                 GenerationError::RenderError(format!(
@@ -278,12 +292,22 @@ impl McpServerTemplateRenderer {
 
             // Add endpoint fields to context at top level for template access
             if let Some(obj) = endpoint.as_object() {
-                for (key, value) in obj {
-                    tera_context.insert(key, value);
+                // Deep clone and clean the endpoint object before inserting into TeraContext
+                let cleaned_endpoint_obj = Self::deep_clean_json_value(&serde_json::Value::Object(obj.clone()));
+                if let Some(cleaned_obj_map) = cleaned_endpoint_obj.as_object() {
+                    for (key, value) in cleaned_obj_map {
+                        tera_context.insert(key, value);
+                    }
+                } else {
+                    tracing::warn!("McpServerTemplateRenderer: Failed to clean endpoint object for '{}'. Inserting raw endpoint.", endpoint_name);
+                    for (key, value) in obj {
+                        tera_context.insert(key, value);
+                    }
                 }
+
                 // Debug logging
                 tracing::debug!(
-                    "Endpoint context for '{}': properties count = {}, parameters count = {}",
+                    "McpServerTemplateRenderer: Endpoint context for '{}' (after cleaning): properties count = {}, parameters count = {}",
                     endpoint_name,
                     obj.get("properties")
                         .and_then(|v| v.as_array())
@@ -294,6 +318,7 @@ impl McpServerTemplateRenderer {
                         .map(|a| a.len())
                         .unwrap_or(0)
                 );
+                tracing::debug!("McpServerTemplateRenderer: Full TeraContext for '{}' before rendering: {:?}", endpoint_name, tera_context);
 
                 // Additional debug: check specific fields that template expects
                 tracing::debug!(
@@ -335,6 +360,58 @@ impl McpServerTemplateRenderer {
 
         Ok(artifacts)
     }
+
+    // Helper function to deep clean JsonValue for Tera context
+    fn deep_clean_json_value(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut cleaned_map = serde_json::Map::new();
+                for (k, v) in map {
+                    if k == "unresolved_ref" && v.is_string() {
+                        // If it's an unresolved_ref, replace the entire object with a placeholder
+                        tracing::debug!("Deep clean: Detected unresolved_ref for key '{}'. Replacing with placeholder.", k);
+                        return json!({
+                            "type": "object",
+                            "description": format!("Recursive reference to {}", v.as_str().unwrap_or("unknown"))
+                        });
+                    }
+                    if !v.is_null() {
+                        let cleaned_value = Self::deep_clean_json_value(v);
+                        // Only include non-empty objects and arrays, and non-null values
+                        match &cleaned_value {
+                            serde_json::Value::Object(m) if m.is_empty() => {}
+                            serde_json::Value::Array(a) if a.is_empty() => {}
+                            serde_json::Value::Null => {}
+                            _ => {
+                                cleaned_map.insert(k.clone(), cleaned_value);
+                            }
+                        }
+                    }
+                }
+                serde_json::Value::Object(cleaned_map)
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(Self::deep_clean_json_value).collect())
+            }
+            _ => value.clone(),
+        }
+    }
+}
+
+/// Tera filter to escape Rust keywords with `r#` prefix.
+///
+/// Usage in templates: `{{ my_variable | rust_escape_keyword }}`
+fn rust_escape_keyword_filter(value: &TeraValue, _args: &std::collections::HashMap<String, TeraValue>) -> TeraResult<TeraValue> {
+    let s = from_value::<String>(value.clone())?;
+    Ok(TeraValue::String(sanitize_rust_identifier(&s, false)))
+}
+
+/// Tera filter to preserve Rust keywords (no `r#` prefix).
+///
+/// Usage in templates: `{{ my_variable | rust_preserve_keyword }}`
+fn rust_preserve_keyword_filter(value: &TeraValue, _args: &std::collections::HashMap<String, TeraValue>) -> TeraResult<TeraValue> {
+    let s = from_value::<String>(value.clone())?;
+    Ok(TeraValue::String(sanitize_rust_identifier(&s, true)))
 }
 
 #[async_trait]
@@ -354,6 +431,10 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
 
         let mut artifacts = Vec::new();
         let mut tera = Tera::default();
+
+        // Register custom filters for Rust keyword handling
+        tera.register_filter("rust_escape_keyword", rust_escape_keyword_filter);
+        tera.register_filter("rust_preserve_keyword", rust_preserve_keyword_filter);
 
         // Add template files to Tera, indexed by their manifest source names
         for manifest_file in &template.manifest.files {
@@ -444,7 +525,9 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
         }
 
         // Generate schema files for MCP servers
+        tracing::info!("McpServerTemplateRenderer: Generating schema artifacts.");
         artifacts.extend(self.generate_schema_artifacts(context)?);
+        tracing::info!("McpServerTemplateRenderer: Finished generating schema artifacts.");
 
         Ok(artifacts)
     }

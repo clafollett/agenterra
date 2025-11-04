@@ -242,6 +242,47 @@ OpenAPI Spec (local file or URL)
 Generated Rust MCP Server (Axum, etc.)
 ```
 
+**Internal Architecture**
+```mermaid
+graph TD
+    A[Agenterra] --> B[Application]
+    A --> C[Generation]
+    A --> D[Infrastructure]
+    A --> E[Protocols]
+    A --> F[Integration]
+
+    B --> B1[Commands]
+    B --> B2[Generate Client]
+    B --> B3[Generate Server]
+    B --> B4[Template Management]
+
+    C --> C1[Context]
+    C --> C2[Orchestrator]
+    C --> C3[Rules]
+    C --> C4[Adapters]
+
+    D --> D1[Generation]
+    D --> D2[OpenAPI]
+    D --> D3[Output]
+    D --> D4[Templates]
+
+    D2 --> D2.1[Parser]
+    D2 --> D2.2[Loaders]
+    D2.2 --> D2.2.1[File Loader]
+    D2.2 --> D2.2.2[HTTP Loader]
+    D2.2 --> D2.2.3[Composite Loader]
+
+    E --> E1[Registry]
+    E --> E2[Handlers]
+    E --> E3[Types]
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333
+    style C fill:#bbf,stroke:#333
+    style D fill:#bbf,stroke:#333
+    style E fill:#bbf,stroke:#333
+```
+
 - The generated servers support both **STDIO** and **SSE (Server-Sent Events)** transports for MCP protocol
 - All code is idiomatic Rust, ready for further customization and production deployment
 
@@ -437,3 +478,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [RMCP](https://github.com/windsurf-eng/rmcp) - Rust MCP implementation  
 - [Axum](https://github.com/tokio-rs/axum) - Web framework for Rust
 - [Tera](https://tera.netlify.app/) - Template engine for Rust
+
+

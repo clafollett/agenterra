@@ -94,28 +94,43 @@ pub fn sanitize_markdown(input: &str) -> String {
 
 /// Sanitizes a string to be a valid Rust identifier, escaping keywords if necessary.
 ///
-/// If the input string is a Rust keyword, it will be prefixed with `r#` to
-/// create a raw identifier. Otherwise, the string is returned as is.
+/// If the input string is a Rust keyword, behavior depends on context:
+/// - In code context: the keyword is prefixed with `r#` to create a raw identifier
+/// - In string context: the keyword is returned as-is for use in strings, JSON, etc.
 ///
 /// # Arguments
 /// * `name` - The string to sanitize.
+/// * `is_string_context` - If true, preserves keywords as-is for string usage.
+///                         If false, escapes keywords for Rust code usage.
 ///
 /// # Returns
-/// A `String` that is a valid Rust identifier.
+/// A `String` that is suitable for the specified context.
 ///
 /// # Examples
 /// ```
 /// use agenterra::generation::sanitizers::sanitize_rust_identifier;
 ///
-/// assert_eq!(sanitize_rust_identifier("type"), "r#type");
-/// assert_eq!(sanitize_rust_identifier("name"), "name");
-/// assert_eq!(sanitize_rust_identifier("for"), "r#for");
+/// // In code context, keywords are escaped
+/// assert_eq!(sanitize_rust_identifier("type", false), "r#type");
+/// assert_eq!(sanitize_rust_identifier("name", false), "name");
+/// assert_eq!(sanitize_rust_identifier("for", false), "r#for");
+///
+/// // In string context, keywords are preserved
+/// assert_eq!(sanitize_rust_identifier("type", true), "type");
+/// assert_eq!(sanitize_rust_identifier("name", true), "name");
+/// assert_eq!(sanitize_rust_identifier("for", true), "for");
 /// ```
-pub fn sanitize_rust_identifier(name: &str) -> String {
-    if RUST_KEYWORDS.contains(name) {
-        format!("r#{}", name)
-    } else {
+pub fn sanitize_rust_identifier(name: &str, is_string_context: bool) -> String {
+    if is_string_context {
+        // In string contexts (JSON schemas, query params, etc.), preserve keywords as-is
         name.to_string()
+    } else {
+        // In code contexts, escape Rust keywords with raw identifier prefix
+        if RUST_KEYWORDS.contains(name) {
+            format!("r#{}", name)
+        } else {
+            name.to_string()
+        }
     }
 }
 
@@ -153,17 +168,30 @@ mod tests {
 
     #[test]
     fn test_sanitize_rust_identifier() {
-        // Test with Rust keywords
-        assert_eq!(sanitize_rust_identifier("type"), "r#type");
-        assert_eq!(sanitize_rust_identifier("for"), "r#for");
-        assert_eq!(sanitize_rust_identifier("fn"), "r#fn");
-        assert_eq!(sanitize_rust_identifier("async"), "r#async");
-        assert_eq!(sanitize_rust_identifier("union"), "r#union");
+        // Test code context with Rust keywords (should be escaped)
+        assert_eq!(sanitize_rust_identifier("type", false), "r#type");
+        assert_eq!(sanitize_rust_identifier("for", false), "r#for");
+        assert_eq!(sanitize_rust_identifier("fn", false), "r#fn");
+        assert_eq!(sanitize_rust_identifier("async", false), "r#async");
+        assert_eq!(sanitize_rust_identifier("union", false), "r#union");
 
-        // Test with non-keywords
-        assert_eq!(sanitize_rust_identifier("name"), "name");
-        assert_eq!(sanitize_rust_identifier("id"), "id");
-        assert_eq!(sanitize_rust_identifier("description"), "description");
-        assert_eq!(sanitize_rust_identifier("my_variable"), "my_variable");
+        // Test code context with non-keywords (should be unchanged)
+        assert_eq!(sanitize_rust_identifier("name", false), "name");
+        assert_eq!(sanitize_rust_identifier("id", false), "id");
+        assert_eq!(sanitize_rust_identifier("description", false), "description");
+        assert_eq!(sanitize_rust_identifier("my_variable", false), "my_variable");
+
+        // Test string context with keywords (should be preserved)
+        assert_eq!(sanitize_rust_identifier("type", true), "type");
+        assert_eq!(sanitize_rust_identifier("for", true), "for");
+        assert_eq!(sanitize_rust_identifier("fn", true), "fn");
+        assert_eq!(sanitize_rust_identifier("async", true), "async");
+        assert_eq!(sanitize_rust_identifier("union", true), "union");
+
+        // Test string context with non-keywords (should be unchanged)
+        assert_eq!(sanitize_rust_identifier("name", true), "name");
+        assert_eq!(sanitize_rust_identifier("id", true), "id");
+        assert_eq!(sanitize_rust_identifier("description", true), "description");
+        assert_eq!(sanitize_rust_identifier("my_variable", true), "my_variable");
     }
 }

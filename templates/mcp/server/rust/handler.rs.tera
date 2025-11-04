@@ -25,7 +25,7 @@ pub struct {{ parameters_type }} {
     {% else -%}
     #[schemars(description = r#"{% if p.source == "Query" %}Query parameter{% else %}Request body property{% endif %}"#)]
     {% endif -%}
-    pub {{ p.name }}: Option<{{ p.rust_type }}>,
+    pub {{ p.name | rust_escape_keyword }}: Option<{{ p.rust_type }}>,
     {% endfor -%}
     {% endif -%}
 }
@@ -47,7 +47,7 @@ impl Endpoint for {{ parameters_type }} {
         let mut params = HashMap::new();
         {% for p in unified_parameters -%}
         {% if p.source == "Query" -%}
-        if let Some(val) = &self.{{ p.name }} {
+        if let Some(val) = &self.{{ p.name | rust_escape_keyword }} {
             {% if p.rust_type is containing("Vec") -%}
             // Handle array parameters by joining values with commas
             // This creates query strings like: ?tags=tag1,tag2,tag3
@@ -82,29 +82,23 @@ impl {{ parameters_type }} {
 
 {% if has_body_properties -%}
     /// Extract request body properties for REST API calls
-    pub fn to_request_body(&self) -> {{ endpoint_cap }}RequestBody {
-        {{ endpoint_cap }}RequestBody {
-            {% for p in unified_parameters -%}
-            {% if p.source == "Body" -%}
-            {{ p.original_name }}: self.{{ p.name }}.clone(),
-            {% endif -%}
-            {% endfor -%}
+    /// Returns a serde_json::Value::Object with original OpenAPI property names as keys.
+    pub fn to_request_body_json(&self) -> serde_json::Value {
+        let mut body_map = serde_json::Map::new();
+        {% for p in unified_parameters -%}
+        {% if p.source == "Body" -%}
+        if let Some(val) = &self.{{ p.name | rust_escape_keyword }} {
+            body_map.insert("{{ p.original_name }}".to_string(), serde_json::to_value(val).unwrap_or_default());
         }
+        {% endif -%}
+        {% endfor -%}
+        serde_json::Value::Object(body_map)
     }
 {% endif -%}
 }
 
-{% if has_body_properties -%}
-/// Request body structure for REST API calls
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct {{ endpoint_cap }}RequestBody {
-    {% for p in unified_parameters -%}
-    {% if p.source == "Body" -%}
-    pub {{ p.original_name }}: Option<{{ p.rust_type }}>,
-    {% endif -%}
-    {% endfor -%}
-}
-{% endif -%}
+// Removed {{ endpoint_cap }}RequestBody struct as it's no longer needed.
+// The request body is now constructed directly as a JSON object using original names.
 
 {%- if response_is_array %}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, ToSchema)]
@@ -114,7 +108,7 @@ pub struct {{ endpoint_cap }}Response(pub Vec<{{ response_item_type }}>);
 pub struct {{ response_type }} {
 {%- for prop in response_properties %}
     #[schemars(description = r#"{{ prop.title }} - {{ prop.description }}"#)]
-    pub {{ prop.name }}: Option<{{ prop.rust_type }}>,
+    pub {{ prop.name | rust_escape_keyword }}: Option<{{ prop.rust_type }}>,
 {%- endfor %}
 }
 {%- elif response_is_primitive %}
@@ -175,23 +169,7 @@ pub async fn {{ endpoint }}_handler(
         endpoint = "{{ endpoint }}"
     );
     {% if has_body_properties -%}
-    let request_body = match serde_json::to_value(params.to_request_body()) {
-        Ok(val) => Some(val),
-        Err(e) => {
-            error!(
-                target = "handler",
-                event = "serialization_error",
-                endpoint = "{{ endpoint }}",
-                error = ?e,
-                "Failed to serialize request body"
-            );
-            return Err(agenterra_rmcp::Error::from(agenterra_rmcp::model::ErrorData::new(
-                agenterra_rmcp::model::ErrorCode::INVALID_PARAMS,
-                format!("Failed to serialize request body: {}", e),
-                None,
-            )));
-        }
-    };
+    let request_body = Some(params.to_request_body_json());
     {%- else -%}
     let request_body = None;
     {%- endif %}
@@ -225,11 +203,42 @@ mod tests {
         let params = {{ parameters_type }} {
             {% if unified_parameters | length > 0 -%}
             {% for p in unified_parameters -%}
-            {{ p.name }}: None,
+            {{ p.name | rust_escape_keyword }}: None,
             {% endfor -%}
             {% endif -%}
         };
         let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");
     }
 
+    {% if has_body_properties -%}
+    #[test]
+    fn test_to_request_body_json() {
+        // Assuming 'type' is a body property and a Rust keyword
+        let params = {{ parameters_type }} {
+            {% for p in unified_parameters -%}
+            {% if p.source == "Body" -%}
+            {% if p.original_name == "type" -%}
+            r#type: Some("some_type_value".to_string()),
+            {% else -%}
+            {{ p.name | rust_escape_keyword }}: Some("some_value".to_string()),
+            {% endif -%}
+            {% else -%}
+            {{ p.name | rust_escape_keyword }}: None,
+            {% endif -%}
+            {% endfor -%}
+        };
+
+        let body_json = params.to_request_body_json();
+        // Check that the original name 'type' is used as the JSON key, not 'r#type'
+        {% for p in unified_parameters -%}
+        {% if p.source == "Body" -%}
+        {% if p.original_name == "type" -%}
+        assert_eq!(body_json["type"], "some_type_value");
+        {% else -%}
+        assert_eq!(body_json["{{ p.original_name }}"], "some_value");
+        {% endif -%}
+        {% endif -%}
+        {% endfor -%}
+    }
+    {% endif -%}
 }
