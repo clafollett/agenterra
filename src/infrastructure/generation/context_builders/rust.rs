@@ -7,14 +7,15 @@ use serde_json::{Map as JsonMap, Value as JsonValue, json};
 use crate::generation::{
     ContextBuilder, GenerationContext, GenerationError, Language, Operation, RenderContext,
     sanitizers::sanitize_markdown,
-    utils::{sanitize_rust_field_name, to_proper_case, to_snake_case},
+    utils::{to_proper_case, to_snake_case, sanitize_rust_field_name},
 };
 use crate::infrastructure::Template;
 
 /// Rust-specific property information with type mapping
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RustPropertyInfo {
-    pub name: String,
+    pub name: String, // Sanitized Rust identifier
+    pub original_name: String, // Original name from OpenAPI spec
     pub rust_type: String,
     pub title: Option<String>,
     pub description: Option<String>,
@@ -89,8 +90,19 @@ impl ContextBuilder for RustContextBuilder {
         context: &GenerationContext,
         template: &Template,
     ) -> Result<RenderContext, GenerationError> {
+        tracing::info!(
+            "RustContextBuilder: Building render context for protocol {:?}, role {:?}, language {:?} with template {}",
+            context.protocol,
+            context.role,
+            context.language,
+            template.source
+        );
         // Ensure this is for Rust
         if context.language != Language::Rust {
+            tracing::error!(
+                "RustContextBuilder: Invalid language {:?} for RustContextBuilder. Expected Rust.",
+                context.language
+            );
             return Err(GenerationError::InvalidConfiguration(format!(
                 "RustContextBuilder can only build contexts for Rust, got {:?}",
                 context.language
@@ -148,32 +160,19 @@ impl ContextBuilder for RustContextBuilder {
                     }
 
                     // Process operations into Rust endpoint contexts
-                    tracing::debug!(
-                        "Rust context builder processing {} MCP endpoints from OpenAPI operations",
-                        operations.len()
-                    );
+                    tracing::info!("RustContextBuilder: Starting to process {} operations.", operations.len());
                     for operation in operations {
+                        tracing::info!("RustContextBuilder: Processing operation ID: {}", operation.id);
                         let endpoint_context = build_rust_endpoint_context(operation)?;
                         endpoints.push(serde_json::to_value(endpoint_context)?);
                     }
+                    tracing::info!("RustContextBuilder: Finished processing operations.");
                 }
             }
         }
-        tracing::debug!(
-            "Rust context builder created {} endpoint contexts",
-            endpoints.len()
-        );
         // Add both "endpoints" and "endpoint" for compatibility
         render_context.add_variable("endpoints", json!(endpoints.clone()));
         render_context.add_variable("endpoint", json!(endpoints));
-
-        // Debug: Print first endpoint to see parameter structure
-        if let Some(first_endpoint) = endpoints.first() {
-            tracing::debug!(
-                "First endpoint structure: {}",
-                serde_json::to_string_pretty(first_endpoint).unwrap_or_default()
-            );
-        }
 
         // Add all custom variables from context
         for (key, value) in &context.variables {
@@ -194,11 +193,13 @@ impl ContextBuilder for RustContextBuilder {
             render_context.add_variable("template_description", json!(description));
         }
 
+        tracing::info!("RustContextBuilder: Render context built successfully.");
         Ok(render_context)
     }
 }
 
 fn build_rust_endpoint_context(op: &Operation) -> Result<RustEndpointContext, GenerationError> {
+    tracing::info!("build_rust_endpoint_context: Starting for operation ID: {}", op.id);
     let endpoint_id = to_snake_case(&op.id);
 
     // Extract parameters and properties for unified handling
@@ -252,13 +253,9 @@ fn build_rust_endpoint_context(op: &Operation) -> Result<RustEndpointContext, Ge
 fn extract_envelope_properties(op: &Operation) -> JsonValue {
     for response in &op.responses {
         if response.status_code.starts_with('2')
-            && let Some(content) = response.content.as_ref()
-            && let Some(json_content) = content.get("application/json")
-            && let Some(schema_json) = json_content.get("schema")
-            && let Ok(schema) =
-                serde_json::from_value::<crate::generation::Schema>(schema_json.clone())
+            && let Some(schema) = response.content_schema.as_ref()
         {
-            return extract_typed_envelope_properties(&schema);
+            return extract_typed_envelope_properties(schema);
         }
     }
     json!({})
@@ -269,33 +266,29 @@ fn extract_response_properties(op: &Operation) -> Vec<RustPropertyInfo> {
 
     for response in &op.responses {
         if response.status_code.starts_with('2')
-            && let Some(content) = response.content.as_ref()
-            && let Some(json_content) = content.get("application/json")
-            && let Some(schema_json) = json_content.get("schema")
-            && let Ok(schema) =
-                serde_json::from_value::<crate::generation::Schema>(schema_json.clone())
+            && let Some(schema) = response.content_schema.as_ref()
         {
-            properties.extend(extract_typed_schema_properties(&schema));
+            properties.extend(extract_typed_schema_properties(schema));
         }
     }
-
     properties
 }
 
 fn extract_handler_properties(op: &Operation) -> Vec<String> {
-    extract_request_body_properties(op)
+    let handler_props: Vec<String> = extract_request_body_properties(op)
         .into_iter()
         .map(|prop| prop.name)
-        .collect()
+        .collect();
+    handler_props
 }
 
 fn extract_parameters(op: &Operation) -> Vec<JsonValue> {
-    op.parameters
+    let params: Vec<JsonValue> = op.parameters
         .iter()
         .map(|p| {
             json!({
-                "name": to_snake_case(&p.name),
-                "rust_name": to_snake_case(&p.name),
+                "name": p.original_name.clone(), // Use original_name for OpenAPI JSON
+                "rust_name": to_snake_case(&p.name), // Keep sanitized name for Rust-specific context
                 "target_type": map_schema_to_rust_type(&p.schema),
                 "rust_type": map_schema_to_rust_type(&p.schema),  // Template expects rust_type
                 "in": format!("{:?}", p.location).to_lowercase(),
@@ -304,45 +297,94 @@ fn extract_parameters(op: &Operation) -> Vec<JsonValue> {
                 "example": serde_json::Value::Null
             })
         })
-        .collect()
+        .collect();
+    params
 }
 
 fn extract_typed_envelope_properties(schema: &crate::generation::Schema) -> JsonValue {
+    let mut json_props = serde_json::Map::new();
+
     if let Some(properties) = &schema.properties {
-        // Convert HashMap<String, Schema> back to JsonValue for compatibility
-        let mut json_props = serde_json::Map::new();
-        for (key, value) in properties {
-            if let Ok(json_val) = serde_json::to_value(value) {
+        for (key, schema_prop) in properties {
+            if schema_prop.schema.unresolved_ref.is_some() {
+                tracing::warn!(
+                    "RustContextBuilder: Detected recursive reference in property '{}' for schema with title {:?}. Skipping property in envelope.",
+                    key, schema.title
+                );
+                continue;
+            }
+            if let Ok(json_val) = serde_json::to_value(&schema_prop) {
                 json_props.insert(key.clone(), json_val);
             }
         }
-        return JsonValue::Object(json_props);
+    }
+
+    // NEW: Handle additionalProperties with recursive reference detection
+    if let Some(additional_properties_wrapper) = &schema.additional_properties {
+        // AdditionalProperties can be a boolean or a Schema
+        match additional_properties_wrapper.as_ref() {
+            crate::infrastructure::openapi::types::AdditionalProperties::Schema(additional_properties_schema) => {
+                if additional_properties_schema.unresolved_ref.is_some() {
+                    tracing::warn!(
+                        "RustContextBuilder: Detected recursive reference in additionalProperties for schema with title {:?}. Replacing with placeholder in envelope.",
+                        schema.title
+                    );
+                    // Replace with a simplified placeholder to prevent infinite recursion in Tera
+                    json_props.insert(
+                        "additionalProperties".to_string(),
+                        json!({
+                            "type": "object",
+                            "description": format!("Recursive reference to {}", additional_properties_schema.unresolved_ref.as_ref().unwrap_or(&"unknown".to_string()))
+                        }),
+                    );
+                } else {
+                    // If not recursive, include additionalProperties in the schema map
+                    if let Ok(json_val) = serde_json::to_value(additional_properties_schema) {
+                        json_props.insert("additionalProperties".to_string(), json_val);
+                    }
+                }
+            },
+            crate::infrastructure::openapi::types::AdditionalProperties::Boolean(true) => {
+                // If additionalProperties is true, it means any additional properties are allowed.
+                // We can represent this as an empty object or a generic value in the context.
+                json_props.insert("additionalProperties".to_string(), json!({ "type": "object" }));
+            },
+            crate::infrastructure::openapi::types::AdditionalProperties::Boolean(false) => {
+                // If additionalProperties is false, no additional properties are allowed.
+                // We don't need to add anything to the context for this.
+            },
+        }
     }
 
     if schema.schema_type.as_deref() == Some("array")
         && let Some(items) = &schema.items
     {
-        return extract_typed_envelope_properties(items);
+        // Recursively get properties from array items if it's an array
+        let item_envelope_props = extract_typed_envelope_properties(items);
+        if let Some(map) = item_envelope_props.as_object() {
+            json_props.extend(map.clone());
+        }
     }
-
-    json!({})
+    JsonValue::Object(json_props)
 }
 
 fn extract_typed_schema_properties(schema: &crate::generation::Schema) -> Vec<RustPropertyInfo> {
     let mut rust_properties = Vec::new();
 
     if let Some(properties) = &schema.properties {
-        for (prop_name, prop_schema) in properties {
-            let rust_type = map_schema_to_rust_type(prop_schema);
-            let title = prop_schema.title.clone();
-            let description = prop_schema
+        for (prop_name, schema_prop) in properties {
+            let rust_type = map_schema_to_rust_type(&schema_prop.schema);
+            let title = schema_prop.schema.title.clone();
+            let description = schema_prop
+                .schema
                 .description
                 .as_ref()
                 .map(|d| sanitize_markdown(d));
-            let example = prop_schema.example.clone();
+            let example = schema_prop.schema.example.clone();
 
             rust_properties.push(RustPropertyInfo {
                 name: sanitize_rust_field_name(prop_name),
+                original_name: prop_name.clone(), // Populate original_name
                 rust_type,
                 title,
                 description,
@@ -356,11 +398,20 @@ fn extract_typed_schema_properties(schema: &crate::generation::Schema) -> Vec<Ru
     {
         rust_properties.extend(extract_typed_schema_properties(items));
     }
-
     rust_properties
 }
 
 fn map_schema_to_rust_type(schema: &crate::generation::Schema) -> String {
+    // If this schema is a placeholder for an unresolved recursive reference,
+    // return a generic type to prevent infinite recursion during code generation.
+    if schema.unresolved_ref.is_some() {
+        tracing::warn!(
+            "RustContextBuilder: Encountered unresolved recursive reference: {}. Mapping to serde_json::Value.",
+            schema.unresolved_ref.as_ref().unwrap()
+        );
+        return "serde_json::Value".to_string();
+    }
+
     if let Some(typ) = &schema.schema_type {
         match typ.as_str() {
             "string" => "String".to_string(),
@@ -386,11 +437,8 @@ fn map_schema_to_rust_type(schema: &crate::generation::Schema) -> String {
 
 fn extract_properties_schema(op: &Operation) -> JsonMap<String, JsonValue> {
     if let Some(request_body) = &op.request_body
-        && let Some(content) = request_body.content.as_object()
-        && let Some(json_content) = content.get("application/json")
-        && let Some(schema_json) = json_content.get("schema")
-        && let Ok(schema) = serde_json::from_value::<crate::generation::Schema>(schema_json.clone())
-        && let Some(properties) = extract_typed_properties_map(&schema)
+        && let Some(schema) = request_body.content_schema.as_ref()
+        && let Some(properties) = extract_typed_properties_map(schema)
     {
         return properties;
     }
@@ -400,103 +448,153 @@ fn extract_properties_schema(op: &Operation) -> JsonMap<String, JsonValue> {
 fn extract_response_schema(op: &Operation) -> JsonValue {
     for response in &op.responses {
         if response.status_code.starts_with('2')
-            && let Some(content) = response.content.as_ref()
-            && let Some(json_content) = content.get("application/json")
-            && let Some(schema) = json_content.get("schema")
+            && let Some(schema) = response.content_schema.as_ref()
         {
-            return schema.clone();
+            // Convert the parsed Schema back to JsonValue for the template context
+            return serde_json::to_value(schema).unwrap_or_default();
         }
     }
     json!({})
 }
 
 fn extract_valid_fields(op: &Operation) -> Vec<String> {
-    extract_response_properties(op)
+    let valid_fields: Vec<String> = extract_response_properties(op)
         .into_iter()
         .map(|prop| prop.name)
-        .collect()
+        .collect();
+    valid_fields
 }
 
 fn extract_typed_properties_map(
     schema: &crate::generation::Schema,
 ) -> Option<JsonMap<String, JsonValue>> {
+    let mut json_map = JsonMap::new();
+
     if let Some(properties) = &schema.properties {
-        // Convert HashMap<String, Schema> back to JsonMap<String, JsonValue> for compatibility
-        let mut json_map = JsonMap::new();
-        for (key, value) in properties {
-            if let Ok(json_val) = serde_json::to_value(value) {
+        for (key, schema_prop) in properties {
+            if schema_prop.schema.unresolved_ref.is_some() {
+                tracing::warn!(
+                    "RustContextBuilder: Detected recursive reference in property '{}' for schema with title {:?}. Skipping property in map.",
+                    key, schema.title
+                );
+                continue;
+            }
+            if let Ok(json_val) = serde_json::to_value(&schema_prop) {
                 json_map.insert(key.clone(), json_val);
             }
         }
-        return Some(json_map);
+    }
+
+    // NEW: Handle additionalProperties with recursive reference detection
+    if let Some(additional_properties_wrapper) = &schema.additional_properties {
+        // AdditionalProperties can be a boolean or a Schema
+        match additional_properties_wrapper.as_ref() {
+            crate::infrastructure::openapi::types::AdditionalProperties::Schema(additional_properties_schema) => {
+                if additional_properties_schema.unresolved_ref.is_some() {
+                    tracing::warn!(
+                        "RustContextBuilder: Detected recursive reference in additionalProperties for schema with title {:?}. Replacing with placeholder in map.",
+                        schema.title
+                    );
+                    // Replace with a simplified placeholder to prevent infinite recursion in Tera
+                    json_map.insert(
+                        "additionalProperties".to_string(),
+                        json!({
+                            "type": "object",
+                            "description": format!("Recursive reference to {}", additional_properties_schema.unresolved_ref.as_ref().unwrap_or(&"unknown".to_string()))
+                        }),
+                    );
+                } else {
+                    // If not recursive, include additionalProperties in the schema map
+                    if let Ok(json_val) = serde_json::to_value(additional_properties_schema) {
+                        json_map.insert("additionalProperties".to_string(), json_val);
+                    }
+                }
+            },
+            crate::infrastructure::openapi::types::AdditionalProperties::Boolean(true) => {
+                json_map.insert("additionalProperties".to_string(), json!({ "type": "object" }));
+            },
+            crate::infrastructure::openapi::types::AdditionalProperties::Boolean(false) => {
+                // Do nothing
+            },
+        }
     }
 
     if schema.schema_type.as_deref() == Some("array")
         && let Some(items) = &schema.items
     {
-        return extract_typed_properties_map(items);
+        // Recursively get properties from array items if it's an array
+        if let Some(item_props) = extract_typed_properties_map(items) {
+            json_map.extend(item_props);
+        }
     }
 
-    None
+    if json_map.is_empty() {
+        None
+    } else {
+        Some(json_map)
+    }
 }
 
 fn is_array_response(op: &Operation) -> bool {
-    if let Some(schema) = get_typed_response_schema(op) {
+    let is_arr = if let Some(schema) = get_typed_response_schema(op) {
         schema.schema_type.as_deref() == Some("array")
     } else {
         false
-    }
+    };
+    is_arr
 }
 
 fn is_object_response(op: &Operation) -> bool {
-    if let Some(schema) = get_typed_response_schema(op) {
+    let is_obj = if let Some(schema) = get_typed_response_schema(op) {
         schema.schema_type.as_deref() == Some("object") || schema.properties.is_some()
     } else {
         false
-    }
+    };
+    is_obj
 }
 
 fn is_primitive_response(op: &Operation) -> bool {
-    if let Some(schema) = get_typed_response_schema(op) {
+    let is_prim = if let Some(schema) = get_typed_response_schema(op) {
         matches!(
             schema.schema_type.as_deref(),
             Some("string") | Some("integer") | Some("number") | Some("boolean")
         )
     } else {
         false
-    }
+    };
+    is_prim
 }
 
 fn get_array_item_type(op: &Operation) -> String {
-    if is_array_response(op)
+    let item_type = if is_array_response(op)
         && let Some(schema) = get_typed_response_schema(op)
         && let Some(items) = &schema.items
     {
-        return map_schema_to_rust_type(items);
-    }
-    "serde_json::Value".to_string()
+        map_schema_to_rust_type(items)
+    } else {
+        "serde_json::Value".to_string()
+    };
+    item_type
 }
 
 fn get_primitive_type(op: &Operation) -> String {
-    if is_primitive_response(op)
+    let prim_type = if is_primitive_response(op)
         && let Some(schema) = get_typed_response_schema(op)
     {
-        return map_schema_to_rust_type(&schema);
-    }
-    "serde_json::Value".to_string()
+        map_schema_to_rust_type(&schema)
+    } else {
+        "serde_json::Value".to_string()
+    };
+    prim_type
 }
 fn extract_request_body_properties(op: &Operation) -> Vec<RustPropertyInfo> {
     let mut properties = Vec::new();
 
     if let Some(request_body) = &op.request_body
-        && let Some(content) = request_body.content.as_object()
-        && let Some(json_content) = content.get("application/json")
-        && let Some(schema_json) = json_content.get("schema")
-        && let Ok(schema) = serde_json::from_value::<crate::generation::Schema>(schema_json.clone())
+        && let Some(schema) = request_body.content_schema.as_ref()
     {
-        properties.extend(extract_typed_schema_properties(&schema));
+        properties.extend(extract_typed_schema_properties(schema));
     }
-
     properties
 }
 
@@ -504,13 +602,9 @@ fn get_typed_response_schema(op: &Operation) -> Option<crate::generation::Schema
     // Look for successful response
     for response in &op.responses {
         if response.status_code.starts_with('2')
-            && let Some(content) = response.content.as_ref()
-            && let Some(json_content) = content.get("application/json")
-            && let Some(schema_json) = json_content.get("schema")
-            && let Ok(schema) =
-                serde_json::from_value::<crate::generation::Schema>(schema_json.clone())
+            && let Some(schema) = response.content_schema.as_ref()
         {
-            return Some(schema);
+            return Some(schema.clone());
         }
     }
     None
@@ -547,7 +641,7 @@ fn build_unified_parameters(
 
         unified.push(UnifiedParameter {
             name: to_snake_case(&final_name),
-            original_name: param.name.clone(),
+            original_name: param.original_name.clone(), // Use param.original_name for query parameters
             source: ParameterSource::Query,
             rust_type: map_schema_to_rust_type(&param.schema),
             description: param.description.clone(),
@@ -563,15 +657,15 @@ fn build_unified_parameters(
 
         unified.push(UnifiedParameter {
             name: to_snake_case(&final_name),
-            original_name: prop.name.clone(),
+            original_name: prop.original_name.clone(), // Use original_name from RustPropertyInfo
             source: ParameterSource::Body,
             rust_type: prop.rust_type.clone(),
             description: prop.description.clone(),
         });
     }
-
     unified
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -813,6 +907,7 @@ mod tests {
         use crate::infrastructure::openapi::types::Schema;
         Parameter {
             name: name.to_string(),
+            original_name: name.to_string(), // Added original_name
             location: ParameterLocation::Query,
             required: false,
             schema: Schema {
@@ -846,6 +941,7 @@ mod tests {
                 external_docs: None,
                 deprecated: None,
                 nullable: None,
+                unresolved_ref: None,
             },
             description: None,
         }
@@ -853,7 +949,8 @@ mod tests {
 
     fn create_test_property(name: &str, rust_type: &str) -> RustPropertyInfo {
         RustPropertyInfo {
-            name: name.to_string(),
+            name: sanitize_rust_field_name(name), // Sanitized name
+            original_name: name.to_string(), // Original name
             rust_type: rust_type.to_string(),
             title: None,
             description: None,
@@ -863,7 +960,6 @@ mod tests {
 
     fn create_test_operation_with_both_params_and_body() -> crate::generation::Operation {
         use crate::generation::{Operation, RequestBody};
-        use serde_json::json;
 
         Operation {
             id: "testOp".to_string(),
@@ -876,15 +972,19 @@ mod tests {
             parameters: vec![create_test_parameter("limit", "integer")],
             request_body: Some(RequestBody {
                 description: None,
-                content: json!({
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "query": {"type": "string"}
+                content_schema: Some(crate::infrastructure::openapi::Schema { // Use content_schema
+                    schema_type: Some("object".to_string()),
+                    properties: Some(indexmap::IndexMap::from([
+                        ("query".to_string(), crate::infrastructure::openapi::SchemaProperty {
+                            name: "query".to_string(),
+                            original_name: "query".to_string(),
+                            schema: crate::infrastructure::openapi::Schema {
+                                schema_type: Some("string".to_string()),
+                                ..Default::default()
                             }
-                        }
-                    }
+                        })
+                    ])),
+                    ..Default::default()
                 }),
                 required: true,
             }),
@@ -921,7 +1021,6 @@ mod tests {
 
     fn create_test_operation_body_only() -> crate::generation::Operation {
         use crate::generation::{Operation, RequestBody};
-        use serde_json::json;
 
         Operation {
             id: "postOp".to_string(),
@@ -934,15 +1033,19 @@ mod tests {
             parameters: vec![],
             request_body: Some(RequestBody {
                 description: None,
-                content: json!({
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "query": {"type": "string"}
+                content_schema: Some(crate::infrastructure::openapi::Schema { // Use content_schema
+                    schema_type: Some("object".to_string()),
+                    properties: Some(indexmap::IndexMap::from([
+                        ("query".to_string(), crate::infrastructure::openapi::SchemaProperty {
+                            name: "query".to_string(),
+                            original_name: "query".to_string(),
+                            schema: crate::infrastructure::openapi::Schema {
+                                schema_type: Some("string".to_string()),
+                                ..Default::default()
                             }
-                        }
-                    }
+                        })
+                    ])),
+                    ..Default::default()
                 }),
                 required: true,
             }),
@@ -953,5 +1056,79 @@ mod tests {
             servers: None,
             vendor_extensions: Default::default(),
         }
+    }
+
+    fn create_recursive_property_schema() -> crate::infrastructure::openapi::Schema {
+        use crate::infrastructure::openapi::Schema;
+        // This simulates a recursive reference to Property itself
+        // The actual resolution happens earlier, setting `unresolved_ref`
+        Schema {
+            schema_type: Some("object".to_string()),
+            title: Some("Property".to_string()),
+            unresolved_ref: Some("#/components/schemas/Property".to_string()), // This is the key
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_extract_typed_properties_map_with_recursive_additional_properties() {
+        // GIVEN: A schema with recursive additionalProperties
+        let recursive_additional_props_schema = create_recursive_property_schema();
+        let schema_with_recursive_additional_props = crate::infrastructure::openapi::Schema {
+            schema_type: Some("object".to_string()),
+            properties: Some(indexmap::IndexMap::from([
+                ("id".to_string(), crate::infrastructure::openapi::SchemaProperty {
+                    name: "id".to_string(),
+                    original_name: "id".to_string(),
+                    schema: crate::infrastructure::openapi::Schema {
+                        schema_type: Some("string".to_string()),
+                        ..Default::default()
+                    }
+                })
+            ])),
+            additional_properties: Some(Box::new(crate::infrastructure::openapi::types::AdditionalProperties::Schema(Box::new(recursive_additional_props_schema)))),
+            title: Some("TestSchemaWithRecursiveAdditionalProps".to_string()),
+            ..Default::default()
+        };
+
+        // WHEN: extract_typed_properties_map is called
+        let result = extract_typed_properties_map(&schema_with_recursive_additional_props);
+
+        // THEN: additionalProperties should NOT be in the resulting map
+        assert!(result.is_some());
+        let json_map = result.unwrap();
+        assert!(json_map.contains_key("id"));
+        assert!(!json_map.contains_key("additionalProperties"));
+    }
+
+    #[test]
+    fn test_extract_typed_envelope_properties_with_recursive_additional_properties() {
+        // GIVEN: A schema with recursive additionalProperties
+        let recursive_additional_props_schema = create_recursive_property_schema();
+        let schema_with_recursive_additional_props = crate::infrastructure::openapi::Schema {
+            schema_type: Some("object".to_string()),
+            properties: Some(indexmap::IndexMap::from([
+                ("id".to_string(), crate::infrastructure::openapi::SchemaProperty {
+                    name: "id".to_string(),
+                    original_name: "id".to_string(),
+                    schema: crate::infrastructure::openapi::Schema {
+                        schema_type: Some("string".to_string()),
+                        ..Default::default()
+                    }
+                })
+            ])),
+            additional_properties: Some(Box::new(crate::infrastructure::openapi::types::AdditionalProperties::Schema(Box::new(recursive_additional_props_schema)))),
+            title: Some("TestSchemaWithRecursiveAdditionalProps".to_string()),
+            ..Default::default()
+        };
+
+        // WHEN: extract_typed_envelope_properties is called
+        let result = extract_typed_envelope_properties(&schema_with_recursive_additional_props);
+
+        // THEN: additionalProperties should NOT be in the resulting JsonValue
+        assert!(result.is_object());
+        let json_obj = result.as_object().unwrap();
+        assert!(json_obj.contains_key("id"));
+        assert!(!json_obj.contains_key("additionalProperties"));
     }
 }

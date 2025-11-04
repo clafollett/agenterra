@@ -20,33 +20,39 @@ impl FileOpenApiLoader {
 #[async_trait]
 impl OpenApiLoader for FileOpenApiLoader {
     async fn load(&self, source: &str) -> Result<OpenApiContext, GenerationError> {
-        // Log the path being loaded
-        tracing::debug!("FileOpenApiLoader: Attempting to load from path: {source}");
+        tracing::info!("FileOpenApiLoader: Starting to load OpenAPI spec from path: {source}");
 
-        // Read file content
         let content = fs::read_to_string(source).await.map_err(|e| {
             tracing::error!("FileOpenApiLoader: Failed to read file '{source}': {e}");
             GenerationError::IoError(e)
         })?;
+        tracing::debug!("FileOpenApiLoader: Successfully read content from {source}");
+
 
         // Parse content as JSON or YAML
         let spec_value = if source.ends_with(".json") {
+            tracing::debug!("FileOpenApiLoader: Attempting to parse as JSON.");
             serde_json::from_str(&content).map_err(GenerationError::SerializationError)?
         } else if source.ends_with(".yaml") || source.ends_with(".yml") {
+            tracing::debug!("FileOpenApiLoader: Attempting to parse as YAML.");
             serde_yaml::from_str(&content)
                 .map_err(|e| GenerationError::LoadError(format!("Failed to parse YAML: {e}")))?
         } else {
             // Try JSON first, then YAML
+            tracing::debug!("FileOpenApiLoader: File extension unknown, trying JSON then YAML.");
             serde_json::from_str(&content)
                 .or_else(|_| serde_yaml::from_str(&content))
                 .map_err(|e| {
                     GenerationError::LoadError(format!("Failed to parse OpenAPI spec: {e}"))
                 })?
         };
+        tracing::info!("FileOpenApiLoader: Successfully parsed OpenAPI spec from {source}");
 
-        // Use the dedicated parser to parse the complete specification
-        let parser = OpenApiParser::new(spec_value);
-        parser.parse().await
+        let mut parser = OpenApiParser::new(spec_value);
+        tracing::debug!("FileOpenApiLoader: Calling OpenApiParser to parse the spec.");
+        let context = parser.parse().await?;
+        tracing::info!("FileOpenApiLoader: Successfully loaded and parsed OpenAPI spec.");
+        Ok(context)
     }
 }
 

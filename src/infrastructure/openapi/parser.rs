@@ -9,6 +9,7 @@
 //! - Security definitions
 //! - Callbacks and vendor extensions
 
+use std::collections::HashMap;
 use serde_json::Value as JsonValue;
 
 use crate::generation::{
@@ -63,17 +64,26 @@ impl std::fmt::Display for HttpMethod {
 pub struct OpenApiParser {
     /// The raw JSON value of the OpenAPI spec
     pub json: JsonValue,
+    /// A cache for resolved schemas to prevent infinite recursion and redundant parsing
+    resolved_schemas: HashMap<String, Schema>,
+    /// A stack to detect currently resolving schemas and prevent infinite recursion
+    resolving_stack: Vec<String>,
 }
 
 impl OpenApiParser {
     /// Create a new parser from JSON content
     pub fn new(json: JsonValue) -> Self {
-        Self { json }
+        Self {
+            json,
+            resolved_schemas: HashMap::new(),
+            resolving_stack: Vec::new(),
+        }
     }
 
     /// Parse the complete OpenAPI specification to our domain model
-    pub async fn parse(&self) -> Result<OpenApiContext, GenerationError> {
-        // Extract version
+    pub async fn parse(&mut self) -> Result<OpenApiContext, GenerationError> {
+        tracing::info!("OpenApiParser: Starting to parse OpenAPI specification.");
+
         let version = self
             .json
             .get("openapi")
@@ -81,8 +91,8 @@ impl OpenApiParser {
             .and_then(|v| v.as_str())
             .ok_or_else(|| GenerationError::ValidationError("Missing OpenAPI version".to_string()))?
             .to_string();
+        tracing::debug!("OpenApiParser: OpenAPI version detected: {}", version);
 
-        // Extract info
         let info = ApiInfo {
             title: self
                 .title()
@@ -101,9 +111,9 @@ impl OpenApiParser {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
         };
+        tracing::debug!("OpenApiParser: API Info - Title: {}, Version: {}", info.title, info.version);
 
-        // Extract servers
-        let servers = self
+        let servers: Vec<Server> = self
             .json
             .get("servers")
             .and_then(|v| v.as_array())
@@ -121,12 +131,11 @@ impl OpenApiParser {
                     .collect()
             })
             .unwrap_or_default();
+        tracing::debug!("OpenApiParser: Found {} servers.", servers.len());
 
-        // Parse operations using the comprehensive implementation
         let operations = self.parse_operations().await?;
-        tracing::debug!("OpenAPI parser found {} operations", operations.len());
+        tracing::info!("OpenApiParser: Found {} operations.", operations.len());
 
-        // Extract components if present
         let components = self
             .json
             .get("components")
@@ -135,7 +144,9 @@ impl OpenApiParser {
             .map(|schemas| Components {
                 schemas: schemas.clone(),
             });
+        tracing::debug!("OpenApiParser: Components (schemas) extracted: {}", components.is_some());
 
+        tracing::info!("OpenApiParser: Successfully parsed OpenAPI specification.");
         Ok(OpenApiContext {
             version,
             info,
@@ -157,7 +168,7 @@ impl OpenApiParser {
 
     /// Parse all endpoints into structured contexts for template rendering
     /// This is a complete port from core::openapi::OpenApiContext::parse_operations
-    pub async fn parse_operations(&self) -> Result<Vec<Operation>, GenerationError> {
+    pub async fn parse_operations(&mut self) -> Result<Vec<Operation>, GenerationError> {
         // Get paths object
         let paths = self
             .json
@@ -167,37 +178,48 @@ impl OpenApiParser {
                 GenerationError::ValidationError("Missing 'paths' object".to_string())
             })?;
 
-        // Use iterator combinators to flatten and map operations
-        let operations = paths
-            .iter()
-            .flat_map(|(path, path_item)| {
-                HttpMethod::all()
-                    .iter()
-                    .filter_map(|method| {
-                        path_item
-                            .get(method.to_string())
-                            .and_then(JsonValue::as_object)
-                            .map(|method_item| (path, method, path_item, method_item))
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .map(|(path, method, path_item, method_item)| {
-                self.build_operation(path, method, path_item, method_item)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        // Collect all operation data first to avoid mutable/immutable borrow conflicts
+        let mut all_operation_data: Vec<(String, HttpMethod, JsonValue, serde_json::Map<String, JsonValue>)> = Vec::new();
+        for (path_str, path_item) in paths {
+            for method in HttpMethod::all() {
+                if let Some(method_item) = path_item
+                    .get(method.to_string())
+                    .and_then(JsonValue::as_object)
+                {
+                    all_operation_data.push((
+                        path_str.clone(), // Clone path string
+                        method.clone(), // Clone HttpMethod
+                        path_item.clone(), // Clone JsonValue
+                        method_item.clone(), // Clone JsonValue map
+                    ));
+                }
+            }
+        }
+
+        // Now process the collected operation data
+        let mut operations = Vec::new();
+        for (path, method, path_item, method_item) in all_operation_data {
+            tracing::debug!("OpenApiParser: Building operation for path: {} method: {}", path, method);
+            operations.push(self.build_operation(
+                &path, // Pass reference to owned String
+                &method,
+                &path_item, // Pass reference to owned JsonValue
+                &method_item, // Pass reference to owned Map
+            )?);
+        }
 
         Ok(operations)
     }
 
     /// Build an Operation from path, method, and method item
     fn build_operation(
-        &self,
+        &mut self,
         path: &str,
         method: &HttpMethod,
         path_item: &JsonValue,
         method_item: &serde_json::Map<String, JsonValue>,
     ) -> Result<Operation, GenerationError> {
-        let operation_id = method_item
+        let operation_id_raw = method_item
             .get("operationId")
             .and_then(JsonValue::as_str)
             .map(String::from)
@@ -210,7 +232,8 @@ impl OpenApiParser {
             })
             .to_string(); // Ensure it's a String before sanitizing
 
-        let operation_id = sanitize_rust_identifier(&operation_id);
+        let operation_id = sanitize_rust_identifier(operation_id_raw.trim(), false);
+        tracing::debug!("OpenApiParser: Operation ID: {} (sanitized from {})", operation_id, operation_id_raw);
 
         let summary = method_item
             .get("summary")
@@ -223,20 +246,24 @@ impl OpenApiParser {
         let external_docs = method_item.get("externalDocs").cloned();
 
         // Extract typed parameters - merge path-level and method-level parameters
+        tracing::debug!("OpenApiParser: Extracting parameters for operation {}.", operation_id);
         let mut parameters = self.extract_parameters(path_item).unwrap_or_default();
         let method_params = self
             .extract_parameters(&JsonValue::Object(method_item.clone()))
             .unwrap_or_default();
         parameters.extend(method_params);
+        tracing::debug!("OpenApiParser: Found {} parameters for operation {}.", parameters.len(), operation_id);
 
         // Extract typed request body
         let request_body = method_item
             .get("requestBody")
             .map(|rb| self.parse_request_body(rb))
             .transpose()?;
+        tracing::debug!("OpenApiParser: Request body found for operation {}: {}", operation_id, request_body.is_some());
 
         // Extract typed responses
         let responses = self.extract_responses(method_item)?;
+        tracing::debug!("OpenApiParser: Found {} responses for operation {}.", responses.len(), operation_id);
 
         let callbacks = method_item.get("callbacks").cloned();
         let deprecated = method_item.get("deprecated").and_then(JsonValue::as_bool);
@@ -280,32 +307,39 @@ impl OpenApiParser {
 
     /// Extracts parameters from an OpenAPI path item, resolving any $ref references
     /// This is a complete port from core::openapi::OpenApiContext::extract_parameters
-    fn extract_parameters(&self, path_item: &JsonValue) -> Option<Vec<Parameter>> {
-        path_item
+    fn extract_parameters(&mut self, path_item: &JsonValue) -> Option<Vec<Parameter>> {
+        let raw_parameters = path_item
             .get("parameters")
-            .and_then(JsonValue::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|param| {
-                        if let Some(ref_str) = param.get("$ref").and_then(JsonValue::as_str) {
-                            self.json
-                                .pointer(&ref_str[1..])
-                                .and_then(|p| self.parse_parameter(p).ok())
-                        } else {
-                            self.parse_parameter(param).ok()
-                        }
-                    })
-                    .collect::<Vec<Parameter>>()
+            .and_then(JsonValue::as_array)?
+            .iter()
+            .map(|param| {
+                if let Some(ref_str) = param.get("$ref").and_then(JsonValue::as_str) {
+                    self.resolve_ref(ref_str).cloned() // Clone the resolved JSON value
+                } else {
+                    Ok(param.clone()) // Clone the parameter JSON value
+                }
             })
+            .collect::<Result<Vec<JsonValue>, GenerationError>>()
+            .ok()?; // Convert Result<Vec<JsonValue>, GenerationError> to Option<Vec<JsonValue>>
+
+        let mut parameters = Vec::new();
+        for param_value in raw_parameters {
+            tracing::debug!("OpenApiParser: Parsing parameter: {}", param_value.to_string());
+            if let Ok(parsed_param) = self.parse_parameter(&param_value) {
+                parameters.push(parsed_param);
+            }
+        }
+        Some(parameters)
     }
 
     /// Parse a single parameter
-    fn parse_parameter(&self, param: &JsonValue) -> Result<Parameter, GenerationError> {
-        let name_raw = param["name"]
+    fn parse_parameter(&mut self, param: &JsonValue) -> Result<Parameter, GenerationError> {
+        let original_name = param["name"]
             .as_str()
             .ok_or_else(|| GenerationError::ValidationError("Parameter missing name".to_string()))?
             .to_string();
-        let name = sanitize_rust_identifier(&name_raw);
+        let name = sanitize_rust_identifier(original_name.trim(), false); // Sanitized name for Rust code
+        tracing::debug!("OpenApiParser: Parameter name: {} (sanitized from {})", name, original_name);
 
         let location = match param["in"].as_str() {
             Some("path") => ParameterLocation::Path,
@@ -313,11 +347,13 @@ impl OpenApiParser {
             Some("header") => ParameterLocation::Header,
             Some("cookie") => ParameterLocation::Cookie,
             _ => {
+                tracing::error!("OpenApiParser: Invalid parameter location for parameter: {}", name);
                 return Err(GenerationError::ValidationError(
                     "Invalid parameter location".to_string(),
                 ));
             }
         };
+        tracing::debug!("OpenApiParser: Parameter location: {:?}", location);
 
         let required = param
             .get("required")
@@ -331,6 +367,7 @@ impl OpenApiParser {
 
         Ok(Parameter {
             name,
+            original_name,
             location,
             required,
             schema,
@@ -341,7 +378,7 @@ impl OpenApiParser {
     /// Extracts response definitions from an OpenAPI operation
     /// This is a complete port from core::openapi::OpenApiContext::extract_responses
     fn extract_responses(
-        &self,
+        &mut self,
         method_item: &serde_json::Map<String, JsonValue>,
     ) -> Result<Vec<Response>, GenerationError> {
         let responses = method_item
@@ -359,78 +396,77 @@ impl OpenApiParser {
 
     /// Parse a single response
     fn parse_response(
-        &self,
+        &mut self,
         status_code: &str,
         response: &JsonValue,
     ) -> Result<Response, GenerationError> {
+        tracing::debug!("OpenApiParser: Parsing response for status code: {}", status_code);
         // Check if this is a $ref
-        let resolved_response = if let Some(ref_str) = response.get("$ref").and_then(|v| v.as_str())
+        let resolved_response_owned: JsonValue = if let Some(ref_str) = response.get("$ref").and_then(|v| v.as_str())
         {
-            self.resolve_ref(ref_str)?
+            tracing::debug!("OpenApiParser: Resolving response reference: {}", ref_str);
+            self.resolve_ref(ref_str)?.clone() // Clone the resolved reference to break lifetime dependency
         } else {
-            response.clone()
+            response.clone() // Clone the original response if not a ref
         };
 
-        // Process content to resolve any $ref in schemas
-        let content = if let Some(content_value) = resolved_response.get("content") {
-            if let Some(content_obj) = content_value.as_object() {
-                let mut resolved_content = serde_json::Map::new();
-                for (media_type, media_value) in content_obj {
-                    if let Some(media_obj) = media_value.as_object() {
-                        let mut resolved_media = media_obj.clone();
-                        // Check if there's a schema to resolve
-                        if let Some(schema) = media_obj.get("schema") {
-                            let resolved_schema = self.resolve_schema_refs(schema)?;
-                            resolved_media.insert("schema".to_string(), resolved_schema);
-                        }
-                        resolved_content
-                            .insert(media_type.clone(), JsonValue::Object(resolved_media));
-                    } else {
-                        resolved_content.insert(media_type.clone(), media_value.clone());
-                    }
-                }
-                Some(JsonValue::Object(resolved_content))
-            } else {
-                Some(content_value.clone())
-            }
+        // Process content to resolve any $ref in schemas and extract the main schema
+        let content_schema = if let Some(content_value) = resolved_response_owned.get("content") {
+            tracing::debug!("OpenApiParser: Extracting schema from response content.");
+            content_value
+                .as_object()
+                .and_then(|obj| obj.get("application/json"))
+                .and_then(|json_content| json_content.get("schema"))
+                .map(|schema_json| self.parse_schema(schema_json))
+                .transpose()?
         } else {
             None
         };
+        tracing::debug!("OpenApiParser: Response content schema found: {}", content_schema.is_some());
 
         Ok(Response {
             status_code: status_code.to_string(),
-            description: resolved_response
+            description: resolved_response_owned // Use the owned value here
                 .get("description")
                 .and_then(|v| v.as_str())
                 .unwrap_or("No description")
                 .to_string(),
-            content,
+            content_schema,
         })
     }
 
     /// Parse a request body
-    fn parse_request_body(&self, body: &JsonValue) -> Result<RequestBody, GenerationError> {
+    fn parse_request_body(&mut self, body: &JsonValue) -> Result<RequestBody, GenerationError> {
+        tracing::debug!("OpenApiParser: Parsing request body.");
         // Check if this is a $ref
-        let resolved_body = if let Some(ref_str) = body.get("$ref").and_then(|v| v.as_str()) {
-            self.resolve_ref(ref_str)?
+        let resolved_body_owned: JsonValue = if let Some(ref_str) = body.get("$ref").and_then(|v| v.as_str()) {
+            tracing::debug!("OpenApiParser: Resolving request body reference: {}", ref_str);
+            self.resolve_ref(ref_str)?.clone() // Clone the resolved reference
         } else {
-            body.clone()
+            body.clone() // Clone the original body if not a ref
         };
 
-        // Process content to resolve any $ref in schemas
-        let content = if let Some(content_value) = resolved_body.get("content") {
-            self.resolve_schema_refs(content_value)?
+        // Process content to resolve any $ref in schemas and extract the main schema
+        let content_schema = if let Some(content_value) = resolved_body_owned.get("content") {
+            tracing::debug!("OpenApiParser: Extracting schema from request body content.");
+            content_value
+                .as_object()
+                .and_then(|obj| obj.get("application/json"))
+                .and_then(|json_content| json_content.get("schema"))
+                .map(|schema_json| self.parse_schema(schema_json))
+                .transpose()?
         } else {
-            JsonValue::Null
+            None
         };
+        tracing::debug!("OpenApiParser: Request body content schema found: {}", content_schema.is_some());
 
         Ok(RequestBody {
-            required: resolved_body
+            required: resolved_body_owned // Use the owned value here
                 .get("required")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
-            content,
-            description: resolved_body
+            content_schema,
+            description: resolved_body_owned // Use the owned value here
                 .get("description")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
@@ -439,13 +475,85 @@ impl OpenApiParser {
 
     /// Parse a schema object
     #[allow(clippy::only_used_in_recursion)]
-    fn parse_schema(&self, schema: &JsonValue) -> Result<Schema, GenerationError> {
+    fn parse_schema<'a>(&mut self, schema: &'a JsonValue) -> Result<Schema, GenerationError> {
+        tracing::debug!(schema = %serde_json::to_string(schema).unwrap_or_default(), "OpenApiParser: Parsing schema");
         // First check if this is a $ref
         if let Some(ref_str) = schema.get("$ref").and_then(|v| v.as_str()) {
-            // Resolve the reference
-            let resolved_schema = self.resolve_ref(ref_str)?;
-            // Parse the resolved schema
-            return self.parse_schema(&resolved_schema);
+            tracing::debug!("OpenApiParser: Schema is a reference: {}", ref_str);
+            // Check if already resolved
+            if let Some(cached_schema) = self.resolved_schemas.get(ref_str) {
+                tracing::debug!("OpenApiParser: Returning cached schema for reference: {}", ref_str);
+                return Ok(cached_schema.clone());
+            }
+
+            // If already in resolving stack, it's a recursive reference.
+            // We return a minimal schema to break the immediate cycle,
+            // but the full schema will be populated by the outer call.
+            if self.resolving_stack.contains(&ref_str.to_string()) {
+                tracing::warn!(
+                    "OpenApiParser: Detected recursive reference: {}. Resolving stack: {:?}. Returning minimal schema to break immediate loop.",
+                    ref_str,
+                    self.resolving_stack
+                );
+                // Return a minimal schema. The actual properties will be filled in when the parent call returns.
+                // We can try to extract 'type' and 'format' from the resolved reference if available,
+                // Return a placeholder schema with the unresolved_ref set.
+                // This will be resolved in a post-processing step.
+                return Ok(Schema {
+                    schema_type: None,
+                    format: None,
+                    items: None,
+                    properties: None,
+                    required: None,
+                    description: Some(format!("Placeholder for recursive reference to {ref_str}")),
+                    title: None,
+                    default: None,
+                    example: None,
+                    enum_values: None,
+                    minimum: None,
+                    maximum: None,
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    min_items: None,
+                    max_items: None,
+                    unique_items: None,
+                    additional_properties: None,
+                    all_of: None,
+                    one_of: None,
+                    any_of: None,
+                    not: None,
+                    discriminator: None,
+                    read_only: None,
+                    write_only: None,
+                    xml: None,
+                    external_docs: None,
+                    deprecated: None,
+                    nullable: None,
+                    unresolved_ref: Some(ref_str.to_string()), // Store the reference for deferred resolution
+                });
+            }
+
+            // Push to resolving stack
+            self.resolving_stack.push(ref_str.to_string());
+            tracing::debug!("OpenApiParser: Pushed {} to resolving stack. Stack is now: {:?}", ref_str, self.resolving_stack);
+
+            // Resolve the reference to its JSON value and clone it to break the immutable borrow
+            let resolved_schema_json_owned = self.resolve_ref(ref_str)?.clone();
+
+            // Parse the resolved schema. This recursive call will handle nested references.
+            let resolved_schema = self.parse_schema(&resolved_schema_json_owned)?;
+
+            // Pop from resolving stack
+            self.resolving_stack.pop();
+            tracing::debug!("OpenApiParser: Popped {} from resolving stack. Stack is now: {:?}", ref_str, self.resolving_stack);
+
+            // Cache the fully resolved schema
+            self.resolved_schemas
+                .insert(ref_str.to_string(), resolved_schema.clone());
+            tracing::debug!("OpenApiParser: Cached fully resolved schema for reference: {}", ref_str);
+
+            return Ok(resolved_schema);
         }
 
         let schema_type = schema
@@ -465,12 +573,19 @@ impl OpenApiParser {
 
         // Parse properties recursively to resolve any nested schemas
         let properties = if let Some(props) = schema.get("properties") {
+            tracing::debug!("OpenApiParser: Parsing properties for schema.");
             if let Some(props_obj) = props.as_object() {
                 let mut parsed_props = indexmap::IndexMap::new();
-                for (key, value) in props_obj {
-                    let sanitized_key = sanitize_rust_identifier(key);
+                for (original_key, value) in props_obj {
+                    let sanitized_key = sanitize_rust_identifier(original_key.trim(), false);
+                    tracing::debug!(parent_schema_type = ?schema.get("type").and_then(|v| v.as_str()), property_name = original_key, "OpenApiParser: Parsing property");
                     let parsed_schema = self.parse_schema(value)?;
-                    parsed_props.insert(sanitized_key, parsed_schema);
+                    let schema_property = crate::infrastructure::openapi::SchemaProperty {
+                        name: sanitized_key.clone(), // Sanitized name for Rust code
+                        original_name: original_key.clone(), // Original name from OpenAPI spec
+                        schema: parsed_schema,
+                    };
+                    parsed_props.insert(sanitized_key, schema_property);
                 }
                 Some(parsed_props)
             } else {
@@ -488,6 +603,7 @@ impl OpenApiParser {
                     .map(|s| s.to_string())
                     .collect()
             });
+        tracing::debug!("OpenApiParser: Required fields: {:?}", required);
 
         // Extract all additional schema fields
         let description = schema
@@ -658,49 +774,22 @@ impl OpenApiParser {
             external_docs,
             deprecated,
             nullable,
+            unresolved_ref: None,
         })
     }
 
-    /// Recursively resolve all $ref in a JSON value
-    fn resolve_schema_refs(&self, value: &JsonValue) -> Result<JsonValue, GenerationError> {
-        match value {
-            JsonValue::Object(obj) => {
-                // Check if this object has a $ref
-                if let Some(ref_str) = obj.get("$ref").and_then(|v| v.as_str()) {
-                    // Resolve the reference and recursively resolve any nested refs
-                    let resolved = self.resolve_ref(ref_str)?;
-                    return self.resolve_schema_refs(&resolved);
-                }
-
-                // Otherwise, recursively process all fields
-                let mut resolved_obj = serde_json::Map::new();
-                for (key, val) in obj {
-                    resolved_obj.insert(key.clone(), self.resolve_schema_refs(val)?);
-                }
-                Ok(JsonValue::Object(resolved_obj))
-            }
-            JsonValue::Array(arr) => {
-                // Recursively process array elements
-                let resolved_arr: Result<Vec<_>, _> = arr
-                    .iter()
-                    .map(|elem| self.resolve_schema_refs(elem))
-                    .collect();
-                Ok(JsonValue::Array(resolved_arr?))
-            }
-            // Primitive values are returned as-is
-            _ => Ok(value.clone()),
-        }
-    }
-
     /// Resolve a $ref reference
-    fn resolve_ref(&self, ref_str: &str) -> Result<JsonValue, GenerationError> {
+    fn resolve_ref<'a>(&'a self, ref_str: &str) -> Result<&'a JsonValue, GenerationError> {
+        tracing::debug!("OpenApiParser: Attempting to resolve reference: {}", ref_str);
         // Handle JSON pointer references (e.g., "#/components/schemas/Pet")
         if let Some(pointer) = ref_str.strip_prefix('#') {
-            self.json.pointer(pointer).cloned().ok_or_else(|| {
+            self.json.pointer(pointer).ok_or_else(|| {
+                tracing::error!("OpenApiParser: Failed to resolve internal reference: {}", ref_str);
                 GenerationError::ValidationError(format!("Unable to resolve reference: {ref_str}"))
             })
         } else {
             // External references not supported yet
+            tracing::error!("OpenApiParser: External references not supported: {}", ref_str);
             Err(GenerationError::ValidationError(format!(
                 "External references not supported: {ref_str}"
             )))
@@ -792,7 +881,7 @@ mod tests {
             }
         });
 
-        let parser = OpenApiParser::new(spec_json);
+        let mut parser = OpenApiParser::new(spec_json);
         let spec = parser.parse().await.unwrap();
 
         // Check that we have one operation
@@ -814,17 +903,15 @@ mod tests {
         assert_eq!(operation.responses.len(), 1);
         let response = &operation.responses[0];
         assert_eq!(response.description, "A pet");
-        assert!(response.content.is_some());
+        assert!(response.content_schema.is_some()); // Changed from content to content_schema
 
         // Check that nested $ref in Pet schema was resolved
-        let response_content = response.content.as_ref().unwrap();
-        let json_content = response_content.get("application/json").unwrap();
-        let schema_value = json_content.get("schema").unwrap();
+        let schema_value = serde_json::to_value(response.content_schema.as_ref().unwrap()).unwrap(); // Convert Schema to JsonValue
 
         // Debug print to see what we have
         println!(
             "Response schema: {}",
-            serde_json::to_string_pretty(schema_value).unwrap()
+            serde_json::to_string_pretty(&schema_value).unwrap() // Added & for borrowing
         );
 
         // The schema should be fully resolved with no $ref
@@ -856,7 +943,7 @@ mod tests {
             include_str!("../../../tests/fixtures/openapi/petstore.openapi.v3.json");
         let spec_json: JsonValue = serde_json::from_str(petstore_json).unwrap();
 
-        let parser = OpenApiParser::new(spec_json);
+        let mut parser = OpenApiParser::new(spec_json);
         let spec = parser.parse().await.unwrap();
 
         // Check basic metadata

@@ -88,7 +88,7 @@ impl OpenApiLoader for HttpOpenApiLoader {
         };
 
         // Use the dedicated parser to parse the complete specification
-        let parser = super::parser::OpenApiParser::new(spec_value);
+        let mut parser = super::parser::OpenApiParser::new(spec_value);
         parser.parse().await
     }
 }

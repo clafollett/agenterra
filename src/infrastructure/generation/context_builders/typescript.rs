@@ -154,11 +154,10 @@ fn build_typescript_parameters(op: &crate::generation::Operation) -> Vec<JsonVal
 fn map_response_to_typescript_type(op: &crate::generation::Operation) -> String {
     for response in &op.responses {
         if response.status_code.starts_with('2')
-            && let Some(content) = response.content.as_ref()
-            && let Some(json_content) = content.get("application/json")
-            && let Some(schema) = json_content.get("schema")
+            && let Some(schema) = response.content_schema.as_ref()
         {
-            return map_json_to_typescript_type(schema);
+            // Convert the parsed Schema to JsonValue for mapping to TypeScript type
+            return map_json_to_typescript_type(&serde_json::to_value(schema).unwrap_or_default());
         }
     }
     "Record<string, any>".to_string()

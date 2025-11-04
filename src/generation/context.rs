@@ -33,6 +33,7 @@ pub struct GenerationMetadata {
 impl GenerationContext {
     /// Create a new generation context
     pub fn new(protocol: Protocol, role: Role, language: Language) -> Self {
+        tracing::info!("GenerationContext: Creating new context for protocol: {:?}, role: {:?}, language: {:?}", protocol, role, language);
         Self {
             protocol,
             role,
@@ -46,13 +47,16 @@ impl GenerationContext {
 
     /// Add a variable to the context
     pub fn add_variable(&mut self, key: String, value: JsonValue) {
+        tracing::debug!("GenerationContext: Adding variable: {} = {}", key, value);
         self.variables.insert(key, value);
     }
 
     /// Validate the context has all required data
     pub fn validate(&self) -> Result<(), crate::generation::GenerationError> {
+        tracing::info!("GenerationContext: Validating context.");
         // Validate metadata
         if self.metadata.project_name.is_empty() {
+            tracing::error!("GenerationContext: Validation failed - Project name is required.");
             return Err(crate::generation::GenerationError::ValidationError(
                 "Project name is required".to_string(),
             ));
@@ -60,13 +64,14 @@ impl GenerationContext {
 
         // Validate role is supported by protocol
         self.protocol.validate_role(&self.role).map_err(|e| {
+            tracing::error!("GenerationContext: Validation failed - Invalid role for protocol: {e}");
             crate::generation::GenerationError::ValidationError(format!(
                 "Invalid role for protocol: {e}"
             ))
         })?;
 
         // Additional validation can be added here
-
+        tracing::info!("GenerationContext: Context validated successfully.");
         Ok(())
     }
 }
@@ -102,6 +107,7 @@ impl RenderContext {
 
     /// Add a variable to the render context
     pub fn add_variable(&mut self, key: &str, value: JsonValue) {
+        tracing::debug!("RenderContext: Adding variable: {} = {}", key, value);
         self.variables.insert(key.to_string(), value.clone());
 
         // Also add to data for backward compatibility
