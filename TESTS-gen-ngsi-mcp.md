@@ -38,7 +38,7 @@ help: escape `type` to use it as an identifier
 83 |         if let Some(val) = &self.r#type {
 ```
 
-   fixé le souci avec cline !: [cline fix task export summary](/Users/alaingaldemas/Documents/mcp/agenterra/cline-task-fix-#109-agenterra.md)
+   fixé le souci avec cline & gemini
 
 
 ## for ngsi-ld
@@ -50,9 +50,11 @@ agenterra scaffold mcp server --schema-path ./ngsi-mcp-servers/ngsi-ld-api.yaml 
 
 cd agenterra && cargo run --release -- scaffold mcp server --schema-path ../ngsi-mcp-servers/ngsi-ld-api.json --project-name ngsi-ld-mcp --port 3400 --base-url http://localhost:1026 --output-dir ../ngsi-ld-mcp
 
-cd agenterra &&
-RUST_LOG=debug RUST_BACKTRACE=1 cargo run -- scaffold mcp server --schema-path ../ng
-si-mcp-servers/ngsi-ld-api.yaml --project-name ngsi-ld-mcp-yml --port 3400 --base-url http://localhost:1026 > agenterra_debug_output.log 2>&1
+cd /Users/alaingaldemas/Documents/mcp-openapi/agenterra
+
+RUST_LOG=debug RUST_BACKTRACE=1 cargo run -- scaffold mcp server --schema-path ../ngsi-mcp-servers/ngsi-ld-api.yaml --project-name ngsi-ld-mcp-yml --port 3400 --base-url http://localhost:1026 > agenterra_debug_output.log 2>&1
+
+
 
 ```mermaid
 graph TD
@@ -81,3 +83,9 @@ with the modifications we add to fix #109 issue from agenterra
 
 
 cd /Users/alaingaldemas/Documents/mcp-openapi/agenterra && cargo run --release -- scaffold mcp server --schema-path ../ngsi-mcp-servers/ngsi-ld-api-simple.yaml --project-name ngsi-ld-mcp --port 3400 --base-url http://localhost:1026 --output-dir ../
+
+
+cd /Users/alaingaldemas/Documents/mcp-openapi/agenterra && RUST_LOG=debug RUST_BACKTRACE=1 cargo run -- scaffold mcp server --schema-path ../ngsi-mcp-servers/ngsi-ld-api.yaml --project-name ngsi-ld-mcp-full --port 3400 --base-url http://localhost:1026 > agenterra_debug_output_new.log 2>&1
+
+
+cd /Users/alaingaldemas/Documents/mcp-openapi/agenterra && RUST_LOG=debug RUST_BACKTRACE=1 cargo run -- scaffold mcp server --schema-path ../ngsi-mcp-servers/ngsi-ld-api-simple.yaml --project-name ngsi-ld-mcp --port 3400 --base-url http://localhost:1026/ngsi-ld/v1 --output-dir ../ > agenterra_debug_output_new.log 2>&1

@@ -20,13 +20,19 @@ use utoipa::ToSchema;
 pub struct {{ parameters_type }} {
     {% if unified_parameters | length > 0 -%}
     {% for p in unified_parameters -%}
+    {% if p.source == "Query" -%}
     {% if p.description -%}
-    #[schemars(description = r#"{{ p.description }}{% if p.source == "Query" %} (query param){% else %} (request body){% endif %}"#)]
+    #[schemars(description = r#"{{ p.description }} (query param)"#)]
     {% else -%}
-    #[schemars(description = r#"{% if p.source == "Query" %}Query parameter{% else %}Request body property{% endif %}"#)]
+    #[schemars(description = r#"Query parameter"#)]
     {% endif -%}
     pub {{ p.name | rust_escape_keyword }}: Option<{{ p.rust_type }}>,
+    {% endif -%}
     {% endfor -%}
+    {% endif -%}
+    {% if http_method == "POST" -%}
+    /// The request body data (no validation - context broker will handle it)
+    pub data: Option<serde_json::Value>,
     {% endif -%}
 }
 
@@ -83,16 +89,16 @@ impl {{ parameters_type }} {
 {% if has_body_properties -%}
     /// Extract request body properties for REST API calls
     /// Returns a serde_json::Value::Object with original OpenAPI property names as keys.
-    pub fn to_request_body_json(&self) -> serde_json::Value {
+    pub fn to_request_body_json(&self) -> Result<serde_json::Value, serde_json::Error> {
         let mut body_map = serde_json::Map::new();
         {% for p in unified_parameters -%}
         {% if p.source == "Body" -%}
         if let Some(val) = &self.{{ p.name | rust_escape_keyword }} {
-            body_map.insert("{{ p.original_name }}".to_string(), serde_json::to_value(val).unwrap_or_default());
+            body_map.insert("{{ p.original_name }}".to_string(), serde_json::to_value(val)?);
         }
         {% endif -%}
         {% endfor -%}
-        serde_json::Value::Object(body_map)
+        Ok(serde_json::Value::Object(body_map))
     }
 {% endif -%}
 }
@@ -151,6 +157,16 @@ pub async fn {{ endpoint }}_handler(
     config: &Config,
     params: &{{ parameters_type }},
 ) -> Result<CallToolResult, agenterra_rmcp::Error> {
+    // Log incoming MCP request details for debugging
+    tracing::info!(
+        target = "mcp_request",
+        event = "incoming_mcp_request",
+        endpoint = "{{ endpoint }}",
+        method = "{{ http_method }}",
+        path = "{{ path }}",
+        params = ?params
+    );
+
     // Log incoming request parameters and request details as structured JSON
     info!(
         target = "handler",
@@ -168,8 +184,13 @@ pub async fn {{ endpoint }}_handler(
         event = "before_api_call",
         endpoint = "{{ endpoint }}"
     );
-    {% if has_body_properties -%}
-    let request_body = Some(params.to_request_body_json());
+    {% if http_method == "POST" -%}
+    let request_body = params.data.clone();
+    {%- elif has_body_properties -%}
+    let request_body = Some(params.to_request_body_json().map_err(|e| {
+        error!("Failed to serialize request body: {}", e);
+        agenterra_rmcp::Error::internal(format!("Serialization failed: {}", e))
+    })?);
     {%- else -%}
     let request_body = None;
     {%- endif %}
@@ -205,6 +226,9 @@ mod tests {
             {% for p in unified_parameters -%}
             {{ p.name | rust_escape_keyword }}: None,
             {% endfor -%}
+            {% endif -%}
+            {% if http_method == "POST" -%}
+            data: None,
             {% endif -%}
         };
         let _ = serde_json::to_string(&params).expect("Serializing test params should not fail");

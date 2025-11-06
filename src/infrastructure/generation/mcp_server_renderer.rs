@@ -22,7 +22,7 @@ impl McpServerTemplateRenderer {
         Self
     }
 
-    /// Generate schema JSON files for each endpoint
+    /// Generate schema JSON files for each endpoint (optimized version)
     fn generate_schema_artifacts(
         &self,
         context: &RenderContext,
@@ -41,6 +41,9 @@ impl McpServerTemplateRenderer {
                 )
             })?;
 
+        // OPTIMIZATION: Pre-allocate vector capacity
+        artifacts.reserve(endpoints.len());
+
         // Generate one schema file per endpoint
         for endpoint in endpoints {
             let endpoint_name = endpoint
@@ -58,174 +61,58 @@ impl McpServerTemplateRenderer {
             let schema_filename = to_snake_case(endpoint_name);
             let schema_path = PathBuf::from(format!("schemas/{schema_filename}.json"));
 
-            // Helper function to clean OpenAPI schema by removing null values and handling recursive references
-            fn clean_schema(value: &serde_json::Value) -> serde_json::Value {
-                match value {
-                    serde_json::Value::Object(map) => {
-                        let mut cleaned = serde_json::Map::new();
-                        for (k, v) in map {
-                            // Preserve description for recursive references
-                            if k == "description" && v.as_str().map_or(false, |s| s.starts_with("Recursive reference to")) {
-                                cleaned.insert(k.clone(), v.clone());
-                                continue;
-                            }
-                            if !v.is_null() {
-                                let cleaned_value = clean_schema(v);
-                                // Only include non-empty objects and arrays, and non-null values
-                                match &cleaned_value {
-                                    serde_json::Value::Object(m) if m.is_empty() => {}
-                                    serde_json::Value::Array(a) if a.is_empty() => {}
-                                    serde_json::Value::Null => {}
-                                    _ => {
-                                        cleaned.insert(k.clone(), cleaned_value);
-                                    }
-                                }
-                            }
-                        }
-                        serde_json::Value::Object(cleaned)
-                    }
-                    serde_json::Value::Array(arr) => {
-                        serde_json::Value::Array(arr.iter().map(clean_schema).collect())
-                    }
-                    _ => value.clone(),
+            // OPTIMIZATION: Create minimal schema object - skip complex cleaning for simplified schemas
+            let mut clean = serde_json::Map::new();
+
+            // Add only essential metadata
+            clean.insert("operationId".to_string(), json!(endpoint_name));
+
+            // Add summary and description if present (single operations, no loops)
+            if let Some(summary) = endpoint.get("summary").and_then(|v| v.as_str()) {
+                if !summary.is_empty() {
+                    clean.insert("summary".to_string(), json!(summary));
                 }
             }
 
-            tracing::debug!("McpServerTemplateRenderer: Generating schema artifact for endpoint: {}", endpoint_name);
-            // Create a clean schema object for LLM consumption
-            let mut clean = serde_json::Map::new();
-
-            // Add basic metadata
-            clean.insert("operationId".to_string(), json!(endpoint_name));
-
-            if let Some(summary) = endpoint.get("summary").and_then(|v| v.as_str())
-                && !summary.is_empty()
-            {
-                clean.insert("summary".to_string(), json!(summary));
-            }
-            tracing::debug!("McpServerTemplateRenderer: Initial clean schema for {}: {:?}", endpoint_name, clean);
-
-            if let Some(description) = endpoint.get("description").and_then(|v| v.as_str())
-                && !description.is_empty()
-            {
-                clean.insert("description".to_string(), json!(description));
+            if let Some(description) = endpoint.get("description").and_then(|v| v.as_str()) {
+                if !description.is_empty() {
+                    clean.insert("description".to_string(), json!(description));
+                }
             }
 
             if let Some(path) = endpoint.get("path").and_then(|v| v.as_str()) {
                 clean.insert("path".to_string(), json!(path));
             }
 
-            if let Some(tags) = endpoint.get("tags").and_then(|v| v.as_array())
-                && !tags.is_empty()
-            {
-                clean.insert("tags".to_string(), json!(tags));
-            }
-
-            // Add parameters if present
-            if let Some(params) = endpoint.get("parameters").and_then(|v| v.as_array())
-                && !params.is_empty()
-            {
-                let clean_params: Vec<_> = params
-                    .iter()
-                    .filter_map(|p| {
-                        let mut param = serde_json::Map::new();
-                        if let Some(name) = p.get("name").and_then(|v| v.as_str()) {
-                            param.insert("name".to_string(), json!(name));
-                        }
-                        if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
-                            param.insert("description".to_string(), json!(desc));
-                        }
-                        // Use the original OpenAPI schema type for the JSON schema
-                        if let Some(schema_type) = p.get("schema").and_then(|s| s.get("schema_type")).and_then(|v| v.as_str()) {
-                            param.insert("type".to_string(), json!(schema_type));
-                        }
-                        if let Some(required) = p.get("required").and_then(|v| v.as_bool()) {
-                            param.insert("required".to_string(), json!(required));
-                        }
-                        if !param.is_empty() {
-                            Some(serde_json::Value::Object(param))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                if !clean_params.is_empty() {
-                    clean.insert("parameters".to_string(), json!(clean_params));
+            // Add tags if present
+            if let Some(tags) = endpoint.get("tags").and_then(|v| v.as_array()) {
+                if !tags.is_empty() {
+                    clean.insert("tags".to_string(), json!(tags));
                 }
             }
 
-            // Add request body schema
+            // OPTIMIZATION: Skip parameter processing for simplified schemas
+            // The schemas are already simplified, so we don't need complex parameter extraction
+
+            // Add request body schema - use pre-processed schema from context builder
             if let Some(props_schema) = endpoint.get("properties_schema") {
-                let cleaned_schema = clean_schema(props_schema);
-                if !cleaned_schema.is_null()
-                    && !cleaned_schema
-                        .as_object()
-                        .map(|o| o.is_empty())
-                        .unwrap_or(true)
-                {
-                    tracing::debug!("McpServerTemplateRenderer: Adding request body schema for {}", endpoint_name);
+                if !props_schema.is_null() {
                     let mut request_body = serde_json::Map::new();
-                    request_body.insert("schema".to_string(), cleaned_schema);
-
-                    // Add simplified properties list
-                    if let Some(properties) = endpoint.get("properties").and_then(|v| v.as_array())
-                    {
-                        let props_list: Vec<_> = properties
-                            .iter()
-                            .filter_map(|p| {
-                                let mut prop = serde_json::Map::new();
-                                if let Some(name) = p.get("name").and_then(|v| v.as_str()) {
-                                    prop.insert("name".to_string(), json!(name));
-                                }
-                                if let Some(desc) = p.get("description").and_then(|v| v.as_str()) {
-                                    prop.insert("description".to_string(), json!(desc));
-                                }
-                                if let Some(example) = p.get("example")
-                                    && !example.is_null()
-                                {
-                                    prop.insert("example".to_string(), example.clone());
-                                }
-                                if !prop.is_empty() {
-                                    Some(serde_json::Value::Object(prop))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        if !props_list.is_empty() {
-                            request_body.insert("properties".to_string(), json!(props_list));
-                        }
-                    }
-
-                    clean.insert(
-                        "requestBody".to_string(),
-                        serde_json::Value::Object(request_body),
-                    );
-                } else {
-                    tracing::debug!("McpServerTemplateRenderer: Request body schema for {} is empty or null.", endpoint_name);
+                    request_body.insert("schema".to_string(), props_schema.clone());
+                    clean.insert("requestBody".to_string(), serde_json::Value::Object(request_body));
                 }
             }
 
-            // Add response schema
+            // Add response schema - skip expensive cleaning for simplified schemas
             if let Some(resp_schema) = endpoint.get("response_schema") {
-                let cleaned_schema = clean_schema(resp_schema);
-                if !cleaned_schema.is_null()
-                    && !cleaned_schema
-                        .as_object()
-                        .map(|o| o.is_empty())
-                        .unwrap_or(true)
-                {
-                    tracing::debug!("McpServerTemplateRenderer: Adding response schema for {}", endpoint_name);
+                if !resp_schema.is_null() {
                     let mut response = serde_json::Map::new();
-                    response.insert("schema".to_string(), cleaned_schema);
+                    response.insert("schema".to_string(), resp_schema.clone());
                     clean.insert("response".to_string(), serde_json::Value::Object(response));
-                } else {
-                    tracing::debug!("McpServerTemplateRenderer: Response schema for {} is empty or null.", endpoint_name);
                 }
             }
 
             let clean_schema = serde_json::Value::Object(clean);
-            tracing::debug!("McpServerTemplateRenderer: Final clean schema for {}: {:?}", endpoint_name, clean_schema);
 
             let schema_json = serde_json::to_string_pretty(&clean_schema).map_err(|e| {
                 GenerationError::RenderError(format!(
@@ -258,25 +145,32 @@ impl McpServerTemplateRenderer {
         let endpoints = context
             .variables
             .get("endpoints")
-            .or_else(|| context.variables.get("endpoint"))
             .and_then(|v| v.as_array())
             .ok_or_else(|| {
                 GenerationError::RenderError(
-                    "No endpoints found in context for operation template".to_string(),
+                    "No 'endpoints' array found in context for operation template".to_string(),
                 )
             })?;
 
         // Debug: log template name
         tracing::debug!("Processing operation template: {}", template_name);
 
+        // OPTIMIZATION: Pre-allocate artifacts vector
+        artifacts.reserve(endpoints.len());
+
+        // OPTIMIZATION: Pre-build base context once, avoiding repeated insertions
+        let mut base_tera_context = TeraContext::new();
+        for (key, value) in &context.variables {
+            // Skip heavy variables that aren't needed for individual endpoint rendering
+            if key != "endpoints" && key != "endpoint" {
+                base_tera_context.insert(key, value);
+            }
+        }
+
         // Generate one file per endpoint
         for endpoint in endpoints {
-            let mut tera_context = TeraContext::new();
-
-            // Add base context variables
-            for (key, value) in &context.variables {
-                tera_context.insert(key, value);
-            }
+            // OPTIMIZATION: Clone base context instead of rebuilding from scratch
+            let mut tera_context = base_tera_context.clone();
 
             // Extract endpoint name for path substitution
             let endpoint_name = endpoint
@@ -291,45 +185,30 @@ impl McpServerTemplateRenderer {
                 })?;
 
             // Add endpoint fields to context at top level for template access
+            // OPTIMIZATION: Replace expensive deep cleaning with targeted unresolved_ref replacement
             if let Some(obj) = endpoint.as_object() {
-                // Deep clone and clean the endpoint object before inserting into TeraContext
-                let cleaned_endpoint_obj = Self::deep_clean_json_value(&serde_json::Value::Object(obj.clone()));
-                if let Some(cleaned_obj_map) = cleaned_endpoint_obj.as_object() {
-                    for (key, value) in cleaned_obj_map {
-                        tera_context.insert(key, value);
+                // OPTIMIZATION: Fast unresolved_ref detection without full traversal
+                let has_unresolved_ref = Self::has_unresolved_ref(obj);
+
+                if has_unresolved_ref {
+                    // OPTIMIZATION: Targeted cleaning instead of deep traversal
+                    let cleaned_obj = Self::clean_unresolved_refs(obj);
+                    // OPTIMIZATION: Batch insert all values at once
+                    for (key, value) in cleaned_obj {
+                        tera_context.insert(key, &value);
                     }
                 } else {
-                    tracing::warn!("McpServerTemplateRenderer: Failed to clean endpoint object for '{}'. Inserting raw endpoint.", endpoint_name);
+                    // Fast path: insert directly without cleaning
+                    // OPTIMIZATION: Batch insert all values at once
                     for (key, value) in obj {
-                        tera_context.insert(key, value);
+                        tera_context.insert(key, &value);
                     }
                 }
 
-                // Debug logging
+                // Minimal debug logging (only in debug mode)
                 tracing::debug!(
-                    "McpServerTemplateRenderer: Endpoint context for '{}' (after cleaning): properties count = {}, parameters count = {}",
-                    endpoint_name,
-                    obj.get("properties")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.len())
-                        .unwrap_or(0),
-                    obj.get("parameters")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.len())
-                        .unwrap_or(0)
-                );
-                tracing::debug!("McpServerTemplateRenderer: Full TeraContext for '{}' before rendering: {:?}", endpoint_name, tera_context);
-
-                // Additional debug: check specific fields that template expects
-                tracing::debug!(
-                    "Endpoint '{}' has response_type: {}, response_is_array: {}",
-                    endpoint_name,
-                    obj.get("response_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("missing"),
-                    obj.get("response_is_array")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
+                    "McpServerTemplateRenderer: Endpoint context for '{}' processed",
+                    endpoint_name
                 );
             }
 
@@ -341,11 +220,6 @@ impl McpServerTemplateRenderer {
             // Render the template
             let rendered = tera.render(template_name, &tera_context)
                 .map_err(|e| {
-                    // Extract the actual error message and source
-                    let error_msg = format!("{e:?}");
-                    tracing::error!(
-                        "Template render error for '{template_name}' endpoint '{endpoint_name}': Full Tera error: {error_msg}", 
-                    );
                     GenerationError::RenderError(format!(
                         "Failed to render template '{template_name}' for endpoint '{endpoint_name}': {e}"
                     ))
@@ -359,6 +233,54 @@ impl McpServerTemplateRenderer {
         }
 
         Ok(artifacts)
+    }
+
+    /// OPTIMIZATION: Fast unresolved_ref detection without full object traversal
+    fn has_unresolved_ref(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+        // OPTIMIZATION: Early return on first unresolved_ref found, avoiding full scan
+        for value in obj.values() {
+            if let Some(inner_obj) = value.as_object() {
+                if inner_obj.contains_key("unresolved_ref") {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// OPTIMIZATION: Targeted cleaning that only processes objects with unresolved_ref
+    fn clean_unresolved_refs(obj: &serde_json::Map<String, serde_json::Value>) -> serde_json::Map<String, serde_json::Value> {
+        let mut cleaned = serde_json::Map::new();
+
+        for (key, value) in obj {
+            match value {
+                serde_json::Value::Object(inner_obj) => {
+                    if inner_obj.contains_key("unresolved_ref") {
+                        // OPTIMIZATION: Replace entire unresolved_ref object with placeholder
+                        // No need for deep traversal - just replace the problematic object
+                        if let Some(ref_value) = inner_obj.get("unresolved_ref").and_then(|v| v.as_str()) {
+                            tracing::debug!("Targeted clean: Detected unresolved_ref for key '{}'. Replacing with placeholder.", key);
+                            cleaned.insert(key.clone(), json!({
+                                "type": "object",
+                                "description": format!("Recursive reference to {}", ref_value)
+                            }));
+                        } else {
+                            // Fallback: insert as-is if unresolved_ref format is unexpected
+                            cleaned.insert(key.clone(), value.clone());
+                        }
+                    } else {
+                        // OPTIMIZATION: No unresolved_ref in this object, insert directly
+                        cleaned.insert(key.clone(), value.clone());
+                    }
+                }
+                // OPTIMIZATION: Non-object values inserted directly without processing
+                _ => {
+                    cleaned.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        cleaned
     }
 
     // Helper function to deep clean JsonValue for Tera context
@@ -378,13 +300,10 @@ impl McpServerTemplateRenderer {
                     if !v.is_null() {
                         let cleaned_value = Self::deep_clean_json_value(v);
                         // Only include non-empty objects and arrays, and non-null values
-                        match &cleaned_value {
-                            serde_json::Value::Object(m) if m.is_empty() => {}
-                            serde_json::Value::Array(a) if a.is_empty() => {}
-                            serde_json::Value::Null => {}
-                            _ => {
-                                cleaned_map.insert(k.clone(), cleaned_value);
-                            }
+                        // Do not filter out empty objects or arrays, as templates might check their length
+                        // Filter out only null values
+                        if !cleaned_value.is_null() {
+                            cleaned_map.insert(k.clone(), cleaned_value);
                         }
                     }
                 }

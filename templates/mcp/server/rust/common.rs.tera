@@ -65,21 +65,21 @@ where
         "POST" => {
             let mut req = client.post(&url).query(&params);
             if let Some(body) = request_body {
-                req = req.json(&body);
+                req = req.header("Content-Type", "application/ld+json").json(&body);
             }
             req
         }
         "PUT" => {
             let mut req = client.put(&url).query(&params);
             if let Some(body) = request_body {
-                req = req.json(&body);
+                req = req.header("Content-Type", "application/ld+json").json(&body);
             }
             req
         }
         "PATCH" => {
             let mut req = client.patch(&url).query(&params);
             if let Some(body) = request_body {
-                req = req.json(&body);
+                req = req.header("Content-Type", "application/ld+json").json(&body);
             }
             req
         }

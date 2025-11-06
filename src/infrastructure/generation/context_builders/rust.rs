@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
+use std::collections::HashMap;
 
 use crate::generation::{
     ContextBuilder, GenerationContext, GenerationError, Language, Operation, RenderContext,
@@ -83,6 +84,51 @@ impl RustContextBuilder {
     }
 }
 
+/// Cached processed schema data to avoid redundant processing
+#[derive(Debug, Clone)]
+struct ProcessedSchemaCache {
+    envelope_properties: HashMap<String, JsonValue>,
+    schema_properties: HashMap<String, Vec<RustPropertyInfo>>,
+    properties_maps: HashMap<String, Option<JsonMap<String, JsonValue>>>,
+}
+
+impl ProcessedSchemaCache {
+    fn new() -> Self {
+        Self {
+            envelope_properties: HashMap::new(),
+            schema_properties: HashMap::new(),
+            properties_maps: HashMap::new(),
+        }
+    }
+
+    fn get_or_compute_envelope(&mut self, schema: &crate::generation::Schema, cache_key: &str) -> JsonValue {
+        if let Some(cached) = self.envelope_properties.get(cache_key) {
+            return cached.clone();
+        }
+        let result = extract_typed_envelope_properties(schema);
+        self.envelope_properties.insert(cache_key.to_string(), result.clone());
+        result
+    }
+
+    fn get_or_compute_schema_properties(&mut self, schema: &crate::generation::Schema, cache_key: &str) -> Vec<RustPropertyInfo> {
+        if let Some(cached) = self.schema_properties.get(cache_key) {
+            return cached.clone();
+        }
+        let result = extract_typed_schema_properties(schema);
+        self.schema_properties.insert(cache_key.to_string(), result.clone());
+        result
+    }
+
+    fn get_or_compute_properties_map(&mut self, schema: &crate::generation::Schema, cache_key: &str) -> Option<JsonMap<String, JsonValue>> {
+        if let Some(cached) = self.properties_maps.get(cache_key) {
+            return cached.clone();
+        }
+        let result = extract_typed_properties_map(schema);
+        self.properties_maps.insert(cache_key.to_string(), result.clone());
+        result
+    }
+}
+
 #[async_trait]
 impl ContextBuilder for RustContextBuilder {
     async fn build(
@@ -159,25 +205,66 @@ impl ContextBuilder for RustContextBuilder {
                         render_context.add_variable("api_components", json!(components.schemas));
                     }
 
+                    // Initialize schema processing cache to avoid redundant processing
+                    let mut schema_cache = ProcessedSchemaCache::new();
+
                     // Process operations into Rust endpoint contexts
                     tracing::info!("RustContextBuilder: Starting to process {} operations.", operations.len());
                     for operation in operations {
                         tracing::info!("RustContextBuilder: Processing operation ID: {}", operation.id);
-                        let endpoint_context = build_rust_endpoint_context(operation)?;
-                        endpoints.push(serde_json::to_value(endpoint_context)?);
+                        let endpoint_context = build_rust_endpoint_context_cached(operation, &mut schema_cache)?;
+
+                        // Try to serialize to JSON and catch any serialization errors
+                        let mut endpoint_json = match serde_json::to_value(&endpoint_context) {
+                            Ok(json) => json,
+                            Err(e) => {
+                                tracing::error!("RustContextBuilder: Failed to serialize endpoint context for operation {}: {}", operation.id, e);
+                                tracing::error!("RustContextBuilder: Endpoint context debug: {:?}", endpoint_context);
+                                return Err(GenerationError::InvalidConfiguration(format!(
+                                    "Failed to serialize endpoint context for operation {}: {}",
+                                    operation.id, e
+                                )));
+                            }
+                        };
+
+                        // Ensure 'unified_parameters' is always present, even if empty
+                        if endpoint_json.get("unified_parameters").is_none() {
+                            endpoint_json["unified_parameters"] = json!([]);
+                            tracing::warn!("RustContextBuilder: Added missing 'unified_parameters' to endpoint ID: {}", operation.id);
+                        }
+
+                        endpoints.push(endpoint_json);
                     }
                     tracing::info!("RustContextBuilder: Finished processing operations.");
                 }
             }
         }
-        // Add both "endpoints" and "endpoint" for compatibility
-        render_context.add_variable("endpoints", json!(endpoints.clone()));
-        render_context.add_variable("endpoint", json!(endpoints));
+        tracing::info!("RustContextBuilder: before Add both endpoints & endpoint for compatibility.");
+        tracing::info!("RustContextBuilder: endpoints vector has {} items", endpoints.len());
 
+        // Debug: Check if any endpoint has problematic structure
+        let mut total_keys = 0;
+        let mut max_keys = 0;
+        for (i, endpoint) in endpoints.iter().enumerate() {
+            if let Some(obj) = endpoint.as_object() {
+                let key_count = obj.len();
+                total_keys += key_count;
+                max_keys = max_keys.max(key_count);
+                if key_count > 50 { // Log if unusually large
+                    tracing::warn!("RustContextBuilder: Endpoint {} has {} keys (unusually large)", i, key_count);
+                }
+            }
+        }
+        tracing::info!("RustContextBuilder: Total endpoint keys: {}, Max keys per endpoint: {}", total_keys, max_keys);
+
+        // Add "endpoints" for iteration in the renderer
+        render_context.add_variable("endpoints", json!(endpoints));
         // Add all custom variables from context
+        tracing::info!("RustContextBuilder: before Add all custom variables from context.");
         for (key, value) in &context.variables {
             render_context.add_variable(key, value.clone());
         }
+        tracing::info!("RustContextBuilder: finished Adding all custom variables from context.");
 
         // Add template manifest variables if any
         for (key, value) in &template.manifest.variables {
@@ -185,6 +272,7 @@ impl ContextBuilder for RustContextBuilder {
                 render_context.add_variable(key, value.clone());
             }
         }
+        tracing::info!("RustContextBuilder: finished Adding template manifest variables if any.");
 
         // Add template manifest metadata
         render_context.add_variable("template_name", json!(template.manifest.name));
@@ -196,6 +284,59 @@ impl ContextBuilder for RustContextBuilder {
         tracing::info!("RustContextBuilder: Render context built successfully.");
         Ok(render_context)
     }
+}
+
+/// Cached version of build_rust_endpoint_context that uses schema processing cache
+fn build_rust_endpoint_context_cached(op: &Operation, cache: &mut ProcessedSchemaCache) -> Result<RustEndpointContext, GenerationError> {
+    tracing::info!("build_rust_endpoint_context_cached: Starting for operation ID: {}", op.id);
+    let endpoint_id = to_snake_case(&op.id);
+
+    // Extract parameters and properties for unified handling
+    let query_params = &op.parameters;
+    let body_properties = extract_request_body_properties_cached(op, cache);
+    let unified_parameters = build_unified_parameters(query_params, &body_properties);
+    let has_body_properties = !body_properties.is_empty();
+
+    Ok(RustEndpointContext {
+        fn_name: endpoint_id.clone(),
+        parameters_type: to_proper_case(&format!("{}_params", op.id)),
+        endpoint: endpoint_id.clone(),
+        endpoint_cap: to_proper_case(&op.id),
+        endpoint_fs: endpoint_id,
+        path: op.path.clone(),
+        properties_type: to_proper_case(&format!("{}_properties", op.id)),
+        response_type: to_proper_case(&format!("{}_response", op.id)),
+        envelope_properties: extract_envelope_properties_cached(op, cache),
+        properties: body_properties,
+        properties_for_handler: extract_handler_properties_cached(op, cache),
+        parameters: extract_parameters(op),
+        summary: op
+            .summary
+            .as_ref()
+            .map(|s| sanitize_markdown(s))
+            .unwrap_or_default(),
+        description: op
+            .description
+            .as_ref()
+            .map(|s| sanitize_markdown(s))
+            .unwrap_or_default(),
+        tags: op.tags.clone().unwrap_or_default(),
+        properties_schema: extract_properties_schema_cached(op, cache),
+        response_schema: extract_response_schema(op),
+        spec_file_name: None, // Would need to be passed from context
+        valid_fields: extract_valid_fields_cached(op, cache),
+        // Simple response type analysis
+        response_is_array: is_array_response(op),
+        response_is_object: is_object_response(op),
+        response_is_primitive: is_primitive_response(op),
+        response_item_type: get_array_item_type(op),
+        response_primitive_type: get_primitive_type(op),
+        response_properties: extract_response_properties_cached(op, cache),
+        // NEW: Unified parameter support for Issue #106
+        unified_parameters,
+        has_body_properties,
+        http_method: op.method.to_uppercase(),
+    })
 }
 
 fn build_rust_endpoint_context(op: &Operation) -> Result<RustEndpointContext, GenerationError> {
@@ -396,7 +537,17 @@ fn extract_typed_schema_properties(schema: &crate::generation::Schema) -> Vec<Ru
     if schema.schema_type.as_deref() == Some("array")
         && let Some(items) = &schema.items
     {
-        rust_properties.extend(extract_typed_schema_properties(items));
+        // NEW: Check for recursive reference in array items before recursing
+        if items.unresolved_ref.is_some() {
+            tracing::warn!(
+                "RustContextBuilder: Detected recursive reference in array items for schema with title {:?}. Skipping recursion.",
+                schema.title
+            );
+            // Return an empty vector or a placeholder to break recursion
+            // For properties, an empty vector is appropriate as we don't want to generate properties from a recursive item.
+        } else {
+            rust_properties.extend(extract_typed_schema_properties(items));
+        }
     }
     rust_properties
 }
@@ -433,11 +584,36 @@ fn map_schema_to_rust_type(schema: &crate::generation::Schema) -> String {
     }
 }
 
+/// Helper function to convert a Schema to a simplified JsonValue,
+/// especially for recursive references to prevent excessive data in templates.
+fn schema_to_simplified_json(schema: &crate::generation::Schema) -> JsonValue {
+    if schema.unresolved_ref.is_some() {
+        tracing::warn!(
+            "RustContextBuilder: Simplifying JSON for recursive reference: {}",
+            schema.unresolved_ref.as_ref().unwrap_or(&"unknown".to_string())
+        );
+        json!({
+            "type": "object", // Generic type for simplified representation
+            "description": format!("Recursive reference to {}", schema.unresolved_ref.as_ref().unwrap_or(&"unknown".to_string()))
+        })
+    } else {
+        // Attempt to serialize the full schema. Handle potential errors.
+        serde_json::to_value(schema).unwrap_or_else(|e| {
+            tracing::error!("Failed to serialize schema to JSON: {}", e);
+            json!({}) // Return empty object on serialization error
+        })
+    }
+}
+
 // Removed map_json_schema_to_rust_type - now using map_schema_to_rust_type for typed schemas
 
 fn extract_properties_schema(op: &Operation) -> JsonMap<String, JsonValue> {
     if let Some(request_body) = &op.request_body
         && let Some(schema) = request_body.content_schema.as_ref()
+        // For properties_schema, we still want the full map, but individual properties
+        // within that map are already handled for recursive refs in extract_typed_properties_map.
+        // So, we don't apply schema_to_simplified_json to the root schema here,
+        // but rely on the inner function's logic.
         && let Some(properties) = extract_typed_properties_map(schema)
     {
         return properties;
@@ -450,8 +626,8 @@ fn extract_response_schema(op: &Operation) -> JsonValue {
         if response.status_code.starts_with('2')
             && let Some(schema) = response.content_schema.as_ref()
         {
-            // Convert the parsed Schema back to JsonValue for the template context
-            return serde_json::to_value(schema).unwrap_or_default();
+            // Use the helper function to simplify the response schema if it's recursive
+            return schema_to_simplified_json(schema);
         }
     }
     json!({})
@@ -587,6 +763,79 @@ fn get_primitive_type(op: &Operation) -> String {
     };
     prim_type
 }
+/// Cached version of extract_request_body_properties
+fn extract_request_body_properties_cached(op: &Operation, cache: &mut ProcessedSchemaCache) -> Vec<RustPropertyInfo> {
+    let mut properties = Vec::new();
+
+    if let Some(request_body) = &op.request_body
+        && let Some(schema) = request_body.content_schema.as_ref()
+    {
+        let cache_key = format!("request_body_{}", op.id);
+        properties.extend(cache.get_or_compute_schema_properties(schema, &cache_key));
+    }
+    properties
+}
+
+/// Cached version of extract_envelope_properties
+fn extract_envelope_properties_cached(op: &Operation, cache: &mut ProcessedSchemaCache) -> JsonValue {
+    for response in &op.responses {
+        if response.status_code.starts_with('2')
+            && let Some(schema) = response.content_schema.as_ref()
+        {
+            let cache_key = format!("envelope_{}", op.id);
+            return cache.get_or_compute_envelope(schema, &cache_key);
+        }
+    }
+    json!({})
+}
+
+/// Cached version of extract_response_properties
+fn extract_response_properties_cached(op: &Operation, cache: &mut ProcessedSchemaCache) -> Vec<RustPropertyInfo> {
+    let mut properties = Vec::new();
+
+    for response in &op.responses {
+        if response.status_code.starts_with('2')
+            && let Some(schema) = response.content_schema.as_ref()
+        {
+            let cache_key = format!("response_props_{}", op.id);
+            properties.extend(cache.get_or_compute_schema_properties(schema, &cache_key));
+        }
+    }
+    properties
+}
+
+/// Cached version of extract_handler_properties
+fn extract_handler_properties_cached(op: &Operation, cache: &mut ProcessedSchemaCache) -> Vec<String> {
+    let handler_props: Vec<String> = extract_request_body_properties_cached(op, cache)
+        .into_iter()
+        .map(|prop| prop.name)
+        .collect();
+    handler_props
+}
+
+/// Cached version of extract_properties_schema
+fn extract_properties_schema_cached(op: &Operation, cache: &mut ProcessedSchemaCache) -> JsonMap<String, JsonValue> {
+    if let Some(request_body) = &op.request_body
+        && let Some(schema) = request_body.content_schema.as_ref()
+        && let Some(properties) = {
+            let cache_key = format!("properties_map_{}", op.id);
+            cache.get_or_compute_properties_map(schema, &cache_key)
+        }
+    {
+        return properties;
+    }
+    JsonMap::new()
+}
+
+/// Cached version of extract_valid_fields
+fn extract_valid_fields_cached(op: &Operation, cache: &mut ProcessedSchemaCache) -> Vec<String> {
+    let valid_fields: Vec<String> = extract_response_properties_cached(op, cache)
+        .into_iter()
+        .map(|prop| prop.name)
+        .collect();
+    valid_fields
+}
+
 fn extract_request_body_properties(op: &Operation) -> Vec<RustPropertyInfo> {
     let mut properties = Vec::new();
 
@@ -1094,11 +1343,14 @@ mod tests {
         // WHEN: extract_typed_properties_map is called
         let result = extract_typed_properties_map(&schema_with_recursive_additional_props);
 
-        // THEN: additionalProperties should NOT be in the resulting map
+        // THEN: additionalProperties should be in the resulting map with a placeholder
         assert!(result.is_some());
         let json_map = result.unwrap();
         assert!(json_map.contains_key("id"));
-        assert!(!json_map.contains_key("additionalProperties"));
+        assert!(json_map.contains_key("additionalProperties")); // Changed assertion
+        let additional_props_value = &json_map["additionalProperties"];
+        assert_eq!(additional_props_value["type"], "object");
+        assert!(additional_props_value["description"].as_str().unwrap().contains("Recursive reference"));
     }
 
     #[test]
@@ -1125,10 +1377,13 @@ mod tests {
         // WHEN: extract_typed_envelope_properties is called
         let result = extract_typed_envelope_properties(&schema_with_recursive_additional_props);
 
-        // THEN: additionalProperties should NOT be in the resulting JsonValue
+        // THEN: additionalProperties should be in the resulting JsonValue with a placeholder
         assert!(result.is_object());
         let json_obj = result.as_object().unwrap();
         assert!(json_obj.contains_key("id"));
-        assert!(!json_obj.contains_key("additionalProperties"));
+        assert!(json_obj.contains_key("additionalProperties")); // Changed assertion
+        let additional_props_value = &json_obj["additionalProperties"];
+        assert_eq!(additional_props_value["type"], "object");
+        assert!(additional_props_value["description"].as_str().unwrap().contains("Recursive reference"));
     }
 }

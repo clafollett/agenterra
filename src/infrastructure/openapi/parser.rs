@@ -18,6 +18,8 @@ use crate::generation::{
 };
 use crate::generation::sanitizers::sanitize_rust_identifier;
 
+const MAX_SCHEMA_DEPTH: usize = 1; // Limit schema parsing depth to prevent excessive recursion for properties
+
 /// HTTP methods supported by OpenAPI (copied from core)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HttpMethod {
@@ -133,8 +135,13 @@ impl OpenApiParser {
             .unwrap_or_default();
         tracing::debug!("OpenApiParser: Found {} servers.", servers.len());
 
-        let operations = self.parse_operations().await?;
+        let mut operations = self.parse_operations().await?;
         tracing::info!("OpenApiParser: Found {} operations.", operations.len());
+
+        // Apply schema simplification to reduce complexity and improve performance
+        tracing::info!("OpenApiParser: Applying schema simplification to reduce complexity.");
+        self.simplify_operations_schemas(&mut operations)?;
+        tracing::info!("OpenApiParser: Schema simplification completed.");
 
         let components = self
             .json
@@ -359,7 +366,7 @@ impl OpenApiParser {
             .get("required")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let schema = self.parse_schema(param.get("schema").unwrap_or(&serde_json::json!({})))?;
+        let schema = self.parse_schema(param.get("schema").unwrap_or(&serde_json::json!({})), 0)?;
         let description = param
             .get("description")
             .and_then(|v| v.as_str())
@@ -417,7 +424,7 @@ impl OpenApiParser {
                 .as_object()
                 .and_then(|obj| obj.get("application/json"))
                 .and_then(|json_content| json_content.get("schema"))
-                .map(|schema_json| self.parse_schema(schema_json))
+                .map(|schema_json| self.parse_schema(schema_json, 0))
                 .transpose()?
         } else {
             None
@@ -453,7 +460,7 @@ impl OpenApiParser {
                 .as_object()
                 .and_then(|obj| obj.get("application/json"))
                 .and_then(|json_content| json_content.get("schema"))
-                .map(|schema_json| self.parse_schema(schema_json))
+                .map(|schema_json| self.parse_schema(schema_json, 0))
                 .transpose()?
         } else {
             None
@@ -475,11 +482,16 @@ impl OpenApiParser {
 
     /// Parse a schema object
     #[allow(clippy::only_used_in_recursion)]
-    fn parse_schema<'a>(&mut self, schema: &'a JsonValue) -> Result<Schema, GenerationError> {
-        tracing::debug!(schema = %serde_json::to_string(schema).unwrap_or_default(), "OpenApiParser: Parsing schema");
+    fn parse_schema<'a>(
+        &mut self,
+        schema: &'a JsonValue,
+        depth: usize,
+    ) -> Result<Schema, GenerationError> {
+        tracing::debug!(schema = %serde_json::to_string(schema).unwrap_or_default(), depth, "OpenApiParser: Parsing schema");
         // First check if this is a $ref
         if let Some(ref_str) = schema.get("$ref").and_then(|v| v.as_str()) {
             tracing::debug!("OpenApiParser: Schema is a reference: {}", ref_str);
+
             // Check if already resolved
             if let Some(cached_schema) = self.resolved_schemas.get(ref_str) {
                 tracing::debug!("OpenApiParser: Returning cached schema for reference: {}", ref_str);
@@ -495,42 +507,56 @@ impl OpenApiParser {
                     ref_str,
                     self.resolving_stack
                 );
-                // Return a minimal schema. The actual properties will be filled in when the parent call returns.
-                // We can try to extract 'type' and 'format' from the resolved reference if available,
-                // Return a placeholder schema with the unresolved_ref set.
-                // This will be resolved in a post-processing step.
                 return Ok(Schema {
-                    schema_type: None,
-                    format: None,
-                    items: None,
-                    properties: None,
-                    required: None,
-                    description: Some(format!("Placeholder for recursive reference to {ref_str}")),
-                    title: None,
-                    default: None,
-                    example: None,
-                    enum_values: None,
-                    minimum: None,
-                    maximum: None,
-                    min_length: None,
-                    max_length: None,
-                    pattern: None,
-                    min_items: None,
-                    max_items: None,
-                    unique_items: None,
-                    additional_properties: None,
-                    all_of: None,
-                    one_of: None,
-                    any_of: None,
-                    not: None,
-                    discriminator: None,
-                    read_only: None,
-                    write_only: None,
-                    xml: None,
-                    external_docs: None,
-                    deprecated: None,
-                    nullable: None,
-                    unresolved_ref: Some(ref_str.to_string()), // Store the reference for deferred resolution
+                    schema_type: Some("object".to_string()),
+                    properties: Some(indexmap::IndexMap::from([
+                        (
+                            "type".to_string(),
+                            crate::infrastructure::openapi::SchemaProperty {
+                                name: "type".to_string(),
+                                original_name: "type".to_string(),
+                                schema: Schema {
+                                    schema_type: Some("string".to_string()),
+                                    enum_values: Some(serde_json::json!(["Property"]).as_array().unwrap().clone()),
+                                    ..Default::default()
+                                },
+                            },
+                        ),
+                        (
+                            "value".to_string(),
+                            crate::infrastructure::openapi::SchemaProperty {
+                                name: "value".to_string(),
+                                original_name: "value".to_string(),
+                                schema: Schema {
+                                    one_of: Some(vec![
+                                        Schema {
+                                            schema_type: Some("string".to_string()),
+                                            ..Default::default()
+                                        },
+                                        Schema {
+                                            schema_type: Some("number".to_string()),
+                                            ..Default::default()
+                                        },
+                                        Schema {
+                                            schema_type: Some("boolean".to_string()),
+                                            ..Default::default()
+                                        },
+                                        Schema {
+                                            schema_type: Some("array".to_string()),
+                                            ..Default::default()
+                                        },
+                                        Schema {
+                                            schema_type: Some("object".to_string()),
+                                            ..Default::default()
+                                        },
+                                    ]),
+                                    ..Default::default()
+                                },
+                            },
+                        ),
+                    ])),
+                    required: Some(vec!["type".to_string(), "value".to_string()]),
+                    ..Default::default()
                 });
             }
 
@@ -542,7 +568,7 @@ impl OpenApiParser {
             let resolved_schema_json_owned = self.resolve_ref(ref_str)?.clone();
 
             // Parse the resolved schema. This recursive call will handle nested references.
-            let resolved_schema = self.parse_schema(&resolved_schema_json_owned)?;
+            let resolved_schema = self.parse_schema(&resolved_schema_json_owned, depth + 1)?;
 
             // Pop from resolving stack
             self.resolving_stack.pop();
@@ -566,7 +592,7 @@ impl OpenApiParser {
             .map(|s| s.to_string());
 
         let items = if let Some(items_value) = schema.get("items") {
-            Some(Box::new(self.parse_schema(items_value)?))
+            Some(Box::new(self.parse_schema(items_value, depth + 1)?))
         } else {
             None
         };
@@ -579,7 +605,23 @@ impl OpenApiParser {
                 for (original_key, value) in props_obj {
                     let sanitized_key = sanitize_rust_identifier(original_key.trim(), false);
                     tracing::debug!(parent_schema_type = ?schema.get("type").and_then(|v| v.as_str()), property_name = original_key, "OpenApiParser: Parsing property");
-                    let parsed_schema = self.parse_schema(value)?;
+
+                    // Apply depth limit for properties
+                    let parsed_schema = if depth >= MAX_SCHEMA_DEPTH {
+                        tracing::warn!(
+                            "OpenApiParser: Max schema depth ({}) reached for property '{}'. Returning simplified schema.",
+                            MAX_SCHEMA_DEPTH,
+                            original_key
+                        );
+                        Schema {
+                            schema_type: Some("object".to_string()), // Generic object type
+                            description: Some(format!("(Schema for '{}' truncated due to max depth limit of {})", original_key, MAX_SCHEMA_DEPTH)),
+                            ..Default::default()
+                        }
+                    } else {
+                        self.parse_schema(value, depth + 1)?
+                    };
+
                     let schema_property = crate::infrastructure::openapi::SchemaProperty {
                         name: sanitized_key.clone(), // Sanitized name for Rust code
                         original_name: original_key.clone(), // Original name from OpenAPI spec
@@ -653,7 +695,7 @@ impl OpenApiParser {
                     crate::infrastructure::openapi::AdditionalProperties::Boolean(bool_val),
                 ))
             } else {
-                let schema = self.parse_schema(add_props)?;
+                let schema = self.parse_schema(add_props, depth + 1)?;
                 Some(Box::new(
                     crate::infrastructure::openapi::AdditionalProperties::Schema(Box::new(schema)),
                 ))
@@ -666,7 +708,7 @@ impl OpenApiParser {
         let all_of = if let Some(all_of_arr) = schema.get("allOf").and_then(|v| v.as_array()) {
             let mut schemas = Vec::new();
             for schema_val in all_of_arr {
-                schemas.push(self.parse_schema(schema_val)?);
+                schemas.push(self.parse_schema(schema_val, depth + 1)?);
             }
             Some(schemas)
         } else {
@@ -676,7 +718,7 @@ impl OpenApiParser {
         let one_of = if let Some(one_of_arr) = schema.get("oneOf").and_then(|v| v.as_array()) {
             let mut schemas = Vec::new();
             for schema_val in one_of_arr {
-                schemas.push(self.parse_schema(schema_val)?);
+                schemas.push(self.parse_schema(schema_val, depth + 1)?);
             }
             Some(schemas)
         } else {
@@ -686,7 +728,7 @@ impl OpenApiParser {
         let any_of = if let Some(any_of_arr) = schema.get("anyOf").and_then(|v| v.as_array()) {
             let mut schemas = Vec::new();
             for schema_val in any_of_arr {
-                schemas.push(self.parse_schema(schema_val)?);
+                schemas.push(self.parse_schema(schema_val, depth + 1)?);
             }
             Some(schemas)
         } else {
@@ -694,7 +736,7 @@ impl OpenApiParser {
         };
 
         let not = if let Some(not_schema) = schema.get("not") {
-            Some(Box::new(self.parse_schema(not_schema)?))
+            Some(Box::new(self.parse_schema(not_schema, depth + 1)?))
         } else {
             None
         };
@@ -806,6 +848,155 @@ impl OpenApiParser {
             .filter(|(k, _)| k.starts_with("x-"))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
+    }
+
+    /// Apply schema simplification to all operations to reduce complexity and improve performance
+    /// This drastically flattens complex recursive schemas that cause performance issues
+    fn simplify_operations_schemas(&self, operations: &mut Vec<Operation>) -> Result<(), GenerationError> {
+        tracing::info!("OpenApiParser: Starting schema simplification for {} operations.", operations.len());
+
+        for operation in operations.iter_mut() {
+            tracing::debug!("OpenApiParser: Simplifying schemas for operation: {}", operation.id);
+
+            // Simplify parameter schemas
+            for param in &mut operation.parameters {
+                param.schema = self.simplify_schema(&param.schema);
+            }
+
+            // Simplify request body schema
+            if let Some(request_body) = &mut operation.request_body {
+                if let Some(schema) = &mut request_body.content_schema {
+                    *schema = self.simplify_schema(schema);
+                }
+            }
+
+            // Simplify response schemas
+            for response in &mut operation.responses {
+                if let Some(schema) = &mut response.content_schema {
+                    *schema = self.simplify_schema(schema);
+                }
+            }
+        }
+
+        tracing::info!("OpenApiParser: Schema simplification completed for all operations.");
+        Ok(())
+    }
+
+    /// Simplify a single schema by flattening complex structures
+    /// This is the core of the performance optimization - replace complex recursive schemas with simple ones
+    fn simplify_schema(&self, schema: &Schema) -> Schema {
+        // For object schemas with many properties or deep nesting, simplify to a basic object
+        if let Some(schema_type) = &schema.schema_type {
+            match schema_type.as_str() {
+                "object" => {
+                    // If the object has many properties or complex nested structures, simplify it
+                    if let Some(properties) = &schema.properties {
+                        if properties.len() > 10 {
+                            // Too many properties - simplify to a generic object
+                            tracing::debug!("OpenApiParser: Simplifying object schema with {} properties to generic object.", properties.len());
+                            return Schema {
+                                schema_type: Some("object".to_string()),
+                                description: Some("Simplified complex object schema".to_string()),
+                                additional_properties: Some(Box::new(
+                                    crate::infrastructure::openapi::AdditionalProperties::Boolean(true)
+                                )),
+                                ..Default::default()
+                            };
+                        }
+
+                        // Check if any property has complex nested schemas
+                        let has_complex_properties = properties.values().any(|prop| {
+                            self.is_complex_schema(&prop.schema)
+                        });
+
+                        if has_complex_properties {
+                            tracing::debug!("OpenApiParser: Simplifying object schema with complex nested properties.");
+                            return Schema {
+                                schema_type: Some("object".to_string()),
+                                description: Some("Simplified object with complex nested schemas".to_string()),
+                                additional_properties: Some(Box::new(
+                                    crate::infrastructure::openapi::AdditionalProperties::Boolean(true)
+                                )),
+                                ..Default::default()
+                            };
+                        }
+                    }
+                }
+                "array" => {
+                    // For arrays, simplify the items schema if it's complex
+                    if let Some(items) = &schema.items {
+                        if self.is_complex_schema(items) {
+                            tracing::debug!("OpenApiParser: Simplifying array items schema.");
+                            return Schema {
+                                schema_type: Some("array".to_string()),
+                                items: Some(Box::new(Schema {
+                                    schema_type: Some("object".to_string()),
+                                    description: Some("Simplified array item".to_string()),
+                                    ..Default::default()
+                                })),
+                                ..Default::default()
+                            };
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Check for composition schemas (allOf, oneOf, anyOf) which are often complex
+        if schema.all_of.is_some() || schema.one_of.is_some() || schema.any_of.is_some() {
+            tracing::debug!("OpenApiParser: Simplifying composition schema (allOf/oneOf/anyOf).");
+            return Schema {
+                schema_type: Some("object".to_string()),
+                description: Some("Simplified composition schema".to_string()),
+                additional_properties: Some(Box::new(
+                    crate::infrastructure::openapi::AdditionalProperties::Boolean(true)
+                )),
+                ..Default::default()
+            };
+        }
+
+        // If the schema has a discriminator, it's likely complex - simplify
+        if schema.discriminator.is_some() {
+            tracing::debug!("OpenApiParser: Simplifying schema with discriminator.");
+            return Schema {
+                schema_type: Some("object".to_string()),
+                description: Some("Simplified discriminated schema".to_string()),
+                additional_properties: Some(Box::new(
+                    crate::infrastructure::openapi::AdditionalProperties::Boolean(true)
+                )),
+                ..Default::default()
+            };
+        }
+
+        // For schemas that are already simple, return as-is
+        schema.clone()
+    }
+
+    /// Determine if a schema is complex and should be simplified
+    fn is_complex_schema(&self, schema: &Schema) -> bool {
+        // Object with many properties
+        if let Some(schema_type) = &schema.schema_type {
+            if schema_type == "object" {
+                if let Some(properties) = &schema.properties {
+                    if properties.len() > 5 {
+                        return true;
+                    }
+                    // Check for nested complexity
+                    return properties.values().any(|prop| {
+                        self.is_complex_schema(&prop.schema)
+                    });
+                }
+            }
+        }
+
+        // Composition schemas
+        schema.all_of.is_some() || schema.one_of.is_some() || schema.any_of.is_some() ||
+        // Discriminators
+        schema.discriminator.is_some() ||
+        // Deeply nested arrays
+        (schema.schema_type.as_deref() == Some("array") &&
+         schema.items.as_ref().map_or(false, |items| self.is_complex_schema(items)))
     }
 }
 
