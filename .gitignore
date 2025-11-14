@@ -3,3 +3,4 @@
 /target
 cline_task*.md
 *.log
+*.old
