@@ -89,3 +89,7 @@ cd /Users/alaingaldemas/Documents/mcp-openapi/agenterra && RUST_LOG=debug RUST_B
 
 
 cd /Users/alaingaldemas/Documents/mcp-openapi/agenterra && RUST_LOG=debug RUST_BACKTRACE=1 cargo run -- scaffold mcp server --schema-path ../ngsi-mcp-servers/ngsi-ld-api-simple.yaml --project-name ngsi-ld-mcp --port 3400 --base-url http://localhost:1026/ngsi-ld/v1 --output-dir ../ > agenterra_debug_output_new.log 2>&1
+
+
+cd /Users/alaingaldemas/Documents/mcp-openapi/agenterra && RUST_LOG=debug RUST_BACKTRACE=1 cargo run -- scaffold mcp server --schema-path ../ngsi-mcp-servers/ngsi-ld-api.yaml --project-name ngsi-ld-mcp-2 --port 3400 --base-url http://localhost:1026/ngsi-ld/v1 --output-dir ../ > agenterra_debug_output_new.log 2>&1
+
