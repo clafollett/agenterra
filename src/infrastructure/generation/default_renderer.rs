@@ -38,16 +38,20 @@ impl TemplateRenderingStrategy for DefaultTemplateRenderer {
         let mut tera = Tera::default();
         tracing::debug!("DefaultTemplateRenderer: Initialized Tera instance.");
 
+        // First, add all template files to the Tera instance
         for file in &template.files {
-            let template_name = file.path.to_string_lossy().to_string();
-            tera.add_raw_template(&template_name, &file.content)
-                .map_err(|e| {
-                    tracing::error!("DefaultTemplateRenderer: Failed to add template '{}': {}", template_name, e);
-                    GenerationError::RenderError(format!("Failed to add template: {e}"))
-                })?;
-            tracing::debug!("DefaultTemplateRenderer: Added template file to Tera: {}", template_name);
+            if let TemplateFileType::Template { .. } = &file.file_type {
+                let template_name = file.path.to_string_lossy().to_string();
+                tera.add_raw_template(&template_name, &file.content)
+                    .map_err(|e| {
+                        tracing::error!("DefaultTemplateRenderer: Failed to add template '{}': {}", template_name, e);
+                        GenerationError::RenderError(format!("Failed to add template: {e}"))
+                    })?;
+                tracing::debug!("DefaultTemplateRenderer: Added template file to Tera: {}", template_name);
+            }
         }
 
+        // Now, iterate through the files to render or copy them
         for file in &template.files {
             let template_name = file.path.to_string_lossy().to_string();
             tracing::debug!("DefaultTemplateRenderer: Processing template file: {}", template_name);

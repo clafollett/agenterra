@@ -94,23 +94,16 @@ impl McpServerTemplateRenderer {
             // OPTIMIZATION: Skip parameter processing for simplified schemas
             // The schemas are already simplified, so we don't need complex parameter extraction
 
-            // Add request body schema - use pre-processed schema from context builder
-            if let Some(props_schema) = endpoint.get("properties_schema") {
-                if !props_schema.is_null() {
-                    let mut request_body = serde_json::Map::new();
-                    request_body.insert("schema".to_string(), props_schema.clone());
-                    clean.insert("requestBody".to_string(), serde_json::Value::Object(request_body));
-                }
-            }
+            // OPTIMIZATION: Use minimal empty schemas instead of complex ones for faster generation
+            // Add minimal request body schema
+            let mut request_body = serde_json::Map::new();
+            request_body.insert("schema".to_string(), json!({}));
+            clean.insert("requestBody".to_string(), serde_json::Value::Object(request_body));
 
-            // Add response schema - skip expensive cleaning for simplified schemas
-            if let Some(resp_schema) = endpoint.get("response_schema") {
-                if !resp_schema.is_null() {
-                    let mut response = serde_json::Map::new();
-                    response.insert("schema".to_string(), resp_schema.clone());
-                    clean.insert("response".to_string(), serde_json::Value::Object(response));
-                }
-            }
+            // Add minimal response schema
+            let mut response = serde_json::Map::new();
+            response.insert("schema".to_string(), json!({}));
+            clean.insert("response".to_string(), serde_json::Value::Object(response));
 
             let clean_schema = serde_json::Value::Object(clean);
 
@@ -139,6 +132,8 @@ impl McpServerTemplateRenderer {
         context: &RenderContext,
         _generation_context: &GenerationContext,
     ) -> Result<Vec<Artifact>, GenerationError> {
+        tracing::info!("McpServerTemplateRenderer: Starting to process operation template '{}' for destination '{}'", template_name, file_destination);
+
         let mut artifacts = Vec::new();
 
         // Get endpoints from context
@@ -152,8 +147,7 @@ impl McpServerTemplateRenderer {
                 )
             })?;
 
-        // Debug: log template name
-        tracing::debug!("Processing operation template: {}", template_name);
+        tracing::info!("McpServerTemplateRenderer: Found {} endpoints to process for template '{}'", endpoints.len(), template_name);
 
         // OPTIMIZATION: Pre-allocate artifacts vector
         artifacts.reserve(endpoints.len());
@@ -341,8 +335,11 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
         context: &RenderContext,
         generation_context: &GenerationContext,
     ) -> Result<Vec<Artifact>, GenerationError> {
+        tracing::info!("McpServerTemplateRenderer: Starting template rendering for protocol {:?}, role {:?}", generation_context.protocol, generation_context.role);
+
         // Verify this is for MCP server
         if generation_context.protocol != Protocol::Mcp || generation_context.role != Role::Server {
+            tracing::error!("McpServerTemplateRenderer: Invalid protocol/role combination: {:?}/{:?}", generation_context.protocol, generation_context.role);
             return Err(GenerationError::InvalidConfiguration(
                 "McpServerTemplateRenderer can only be used for MCP servers".to_string(),
             ));
@@ -350,6 +347,8 @@ impl TemplateRenderingStrategy for McpServerTemplateRenderer {
 
         let mut artifacts = Vec::new();
         let mut tera = Tera::default();
+
+        tracing::debug!("McpServerTemplateRenderer: Initializing Tera template engine");
 
         // Register custom filters for Rust keyword handling
         tera.register_filter("rust_escape_keyword", rust_escape_keyword_filter);
