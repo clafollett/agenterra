@@ -44,7 +44,8 @@ pub struct Operation {
 /// Operation parameter
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Parameter {
-    pub name: String,
+    pub name: String, // Sanitized Rust identifier
+    pub original_name: String, // Original name from OpenAPI spec
     pub location: ParameterLocation,
     pub required: bool,
     pub schema: Schema,
@@ -65,7 +66,9 @@ pub enum ParameterLocation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestBody {
     pub required: bool,
-    pub content: serde_json::Value,
+    // Changed from raw JsonValue to parsed Schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_schema: Option<Schema>,
     pub description: Option<String>,
 }
 
@@ -74,17 +77,28 @@ pub struct RequestBody {
 pub struct Response {
     pub status_code: String,
     pub description: String,
-    pub content: Option<serde_json::Value>,
+    // Changed from raw JsonValue to parsed Schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_schema: Option<Schema>,
+}
+
+/// Represents a property within a Schema, including its original and sanitized names.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaProperty {
+    pub name: String, // Sanitized Rust identifier
+    pub original_name: String, // Original name from OpenAPI spec
+    #[serde(flatten)] // Flatten the Schema fields into this struct
+    pub schema: Schema,
 }
 
 /// Schema representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)] // Added Default derive
 pub struct Schema {
     #[serde(rename = "type")]
     pub schema_type: Option<String>,
     pub format: Option<String>,
     pub items: Option<Box<Schema>>,
-    pub properties: Option<indexmap::IndexMap<String, Schema>>,
+    pub properties: Option<indexmap::IndexMap<String, SchemaProperty>>, // Changed to SchemaProperty
     pub required: Option<Vec<String>>,
     // Additional OpenAPI schema fields
     pub description: Option<String>,
@@ -113,6 +127,10 @@ pub struct Schema {
     pub external_docs: Option<ExternalDocs>,
     pub deprecated: Option<bool>,
     pub nullable: Option<bool>,
+    /// Stores the original $ref string if this schema is a placeholder for a recursive reference.
+    /// This is used for deferred resolution.
+    #[serde(rename = "$ref", skip_serializing_if = "Option::is_none")]
+    pub unresolved_ref: Option<String>,
 }
 
 /// Additional properties specification

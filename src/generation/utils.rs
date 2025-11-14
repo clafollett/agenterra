@@ -3,6 +3,8 @@
 //! These utilities belong in the generation domain as they are used
 //! for transforming identifiers during code generation.
 
+use crate::generation::sanitizers::sanitize_rust_identifier;
+
 /// Converts a string to snake_case format for Rust identifiers.
 ///
 /// This function handles various input formats including camelCase, PascalCase,
@@ -24,10 +26,19 @@
 /// assert_eq!(to_snake_case("get HTTP Response"), "get_http_response");
 /// ```
 pub fn to_snake_case(s: &str) -> String {
+    let mut input_str = s;
+    let mut prefix = "";
+
+    // Check for raw identifier prefix
+    if s.starts_with("r#") {
+        prefix = "r#";
+        input_str = &s[2..]; // Skip "r#"
+    }
+
     let mut result = String::new();
     let mut prev_is_lowercase = false;
 
-    for (i, ch) in s.chars().enumerate() {
+    for (i, ch) in input_str.chars().enumerate() {
         if ch.is_uppercase() {
             // Add underscore before uppercase letter if:
             // - Not at the start
@@ -63,7 +74,7 @@ pub fn to_snake_case(s: &str) -> String {
         }
     }
 
-    final_result.trim_matches('_').to_string()
+    format!("{}{}", prefix, final_result.trim_matches('_'))
 }
 
 /// Converts a string to UpperCamelCase (PascalCase) format for Rust type names.
@@ -156,17 +167,7 @@ pub fn to_camel_case(s: &str) -> String {
 /// ```
 pub fn sanitize_rust_field_name(s: &str) -> String {
     let snake_case = to_snake_case(s);
-
-    // List of Rust reserved keywords
-    match snake_case.as_str() {
-        "as" | "break" | "const" | "continue" | "crate" | "else" | "enum" | "extern" | "false"
-        | "fn" | "for" | "if" | "impl" | "in" | "let" | "loop" | "match" | "mod" | "move"
-        | "mut" | "pub" | "ref" | "return" | "self" | "Self" | "static" | "struct" | "super"
-        | "trait" | "true" | "type" | "unsafe" | "use" | "where" | "while" | "async" | "await"
-        | "dyn" | "abstract" | "become" | "box" | "do" | "final" | "macro" | "override"
-        | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" => format!("{snake_case}_"),
-        _ => snake_case,
-    }
+    sanitize_rust_identifier(&snake_case, false)
 }
 
 #[cfg(test)]
@@ -205,17 +206,17 @@ mod tests {
     #[test]
     fn test_sanitize_rust_field_name() {
         // Test reserved keywords
-        assert_eq!(sanitize_rust_field_name("type"), "type_");
-        assert_eq!(sanitize_rust_field_name("self"), "self_");
-        assert_eq!(sanitize_rust_field_name("match"), "match_");
-        assert_eq!(sanitize_rust_field_name("async"), "async_");
+        assert_eq!(sanitize_rust_field_name("type"), "r#type");
+        assert_eq!(sanitize_rust_field_name("self"), "r#self");
+        assert_eq!(sanitize_rust_field_name("match"), "r#match");
+        assert_eq!(sanitize_rust_field_name("async"), "r#async");
 
         // Test normal field names
         assert_eq!(sanitize_rust_field_name("firstName"), "first_name");
         assert_eq!(sanitize_rust_field_name("user_id"), "user_id");
         assert_eq!(sanitize_rust_field_name("HTTPResponse"), "httpresponse");
 
-        // Test that already snake_case keywords still get underscore
-        assert_eq!(sanitize_rust_field_name("for"), "for_");
+        // Test that already snake_case keywords still get r# prefix
+        assert_eq!(sanitize_rust_field_name("for"), "r#for");
     }
 }

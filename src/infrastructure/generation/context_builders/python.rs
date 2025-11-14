@@ -175,37 +175,14 @@ fn map_schema_to_python_type(schema: &crate::generation::Schema) -> String {
 fn map_response_to_python_type(op: &Operation) -> String {
     for response in &op.responses {
         if response.status_code.starts_with('2')
-            && let Some(content) = response.content.as_ref()
-            && let Some(json_content) = content.get("application/json")
-            && let Some(schema) = json_content.get("schema")
+            && let Some(schema) = response.content_schema.as_ref()
         {
-            return map_json_to_python_type(schema);
+            return map_schema_to_python_type(schema);
         }
     }
     "Dict[str, Any]".to_string()
 }
 
-fn map_json_to_python_type(schema: &JsonValue) -> String {
-    if let Some(typ) = schema.get("type").and_then(|v| v.as_str()) {
-        match typ {
-            "string" => "str".to_string(),
-            "integer" => "int".to_string(),
-            "boolean" => "bool".to_string(),
-            "number" => "float".to_string(),
-            "array" => {
-                if let Some(items) = schema.get("items") {
-                    format!("List[{}]", map_json_to_python_type(items))
-                } else {
-                    "List[Any]".to_string()
-                }
-            }
-            "object" => "Dict[str, Any]".to_string(),
-            _ => "Any".to_string(),
-        }
-    } else {
-        "Any".to_string()
-    }
-}
 
 #[cfg(test)]
 mod tests {

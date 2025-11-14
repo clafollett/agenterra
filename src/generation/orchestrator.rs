@@ -35,10 +35,13 @@ impl GenerationOrchestrator {
         &self,
         context: GenerationContext,
     ) -> Result<GenerationResult, GenerationError> {
+        tracing::info!("GenerationOrchestrator: Starting generation workflow.");
+
         // 1. Validate context
         context.validate()?;
+        tracing::info!("GenerationOrchestrator: Context validated successfully.");
 
-        tracing::debug!(
+        tracing::info!(
             "Orchestrator starting generation for {:?}/{:?}",
             context.protocol,
             context.role
@@ -49,8 +52,9 @@ impl GenerationOrchestrator {
             .template_discovery
             .discover(context.protocol, context.role.clone(), context.language)
             .await?;
+        tracing::info!("GenerationOrchestrator: Template discovered: {}", template.source);
 
-        tracing::debug!(
+        tracing::info!(
             protocol = %context.protocol,
             role = %context.role,
             language = %context.language,
@@ -60,20 +64,24 @@ impl GenerationOrchestrator {
 
         // 3. Build render context from generation context
         let render_context = self.context_builder.build(&context, &template).await?;
+        tracing::info!("GenerationOrchestrator: Render context built.");
 
         // 4. Render templates to artifacts using strategy pattern
         let artifacts = self
             .template_renderer
             .render(&template, &render_context, &context)
             .await?;
+        tracing::info!("GenerationOrchestrator: Templates rendered to {} artifacts.", artifacts.len());
 
         // 5. Post-process artifacts (permissions only, not commands)
         let processed_artifacts = self
             .post_processor
             .process(artifacts, &context, &[]) // Empty commands - we'll run them later
             .await?;
+        tracing::info!("GenerationOrchestrator: Artifacts post-processed.");
 
         // 6. Return result with post-generation commands
+        tracing::info!("GenerationOrchestrator: Generation workflow completed successfully.");
         Ok(GenerationResult {
             artifacts: processed_artifacts,
             metadata: context.metadata,
