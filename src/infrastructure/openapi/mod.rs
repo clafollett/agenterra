@@ -2,12 +2,14 @@
 
 pub mod composite_loader;
 pub mod file_loader;
+pub mod filter;
 pub mod http_loader;
 pub mod parser;
 pub mod types;
 
 pub use composite_loader::CompositeOpenApiLoader;
 pub use file_loader::FileOpenApiLoader;
+pub use filter::filter_openapi_spec;
 pub use http_loader::HttpOpenApiLoader;
 pub use types::*;
 
